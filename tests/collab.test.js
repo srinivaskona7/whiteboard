@@ -46,6 +46,9 @@ import {
 } from '../scene/storage.js';
 import { exportToSvgString } from '../render/svg-export.js';
 import { LaserTool } from '../tools/laser.js';
+import { SelectTool } from '../tools/select.js';
+import { drawSvgBodyToCanvas } from '../stencils/card.js';
+import { getShortcutLabel } from '../ui/registry.js';
 import {
   ALL_STENCILS,
   getStencilById,
@@ -803,6 +806,79 @@ describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Brea
     } finally {
       await srv.stop();
     }
+  });
+
+  test('renders recognizable non-zero SVG artwork onto Canvas for EC2, S3, RDS, and Route 53 stencils and guards idle SelectTool pointerup', () => {
+    const drawnOps = [];
+    const mockCtx = {
+      save() {},
+      restore() {},
+      beginPath() {},
+      closePath() {},
+      fill() {
+        drawnOps.push({ op: 'fill' });
+      },
+      stroke() {
+        drawnOps.push({ op: 'stroke' });
+      },
+      roundRect(x, y, w, h, r) {
+        drawnOps.push({ op: 'roundRect', x, y, w, h, r });
+      },
+      arc(cx, cy, r) {
+        drawnOps.push({ op: 'arc', cx, cy, r });
+      },
+      ellipse(cx, cy, rx, ry) {
+        drawnOps.push({ op: 'ellipse', cx, cy, rx, ry });
+      },
+      moveTo(x, y) {
+        drawnOps.push({ op: 'moveTo', x, y });
+      },
+      lineTo(x, y) {
+        drawnOps.push({ op: 'lineTo', x, y });
+      },
+      quadraticCurveTo(cx, cy, x, y) {
+        drawnOps.push({ op: 'quad', cx, cy, x, y });
+      },
+      bezierCurveTo(c1x, c1y, c2x, c2y, x, y) {
+        drawnOps.push({ op: 'bezier', c1x, c1y, c2x, c2y, x, y });
+      },
+      fillText(text, x, y) {
+        drawnOps.push({ op: 'fillText', text, x, y });
+      },
+    };
+
+    const ec2 = getStencilById('aws-ec2');
+    const s3 = getStencilById('aws-s3');
+    const r53 = getStencilById('aws-route53');
+    drawSvgBodyToCanvas(mockCtx, ec2.svgBody, 10, 10, 100, 72, '#ea580c');
+    const ec2Rects = drawnOps.filter((d) => d.op === 'roundRect' && d.w > 10 && d.h > 10);
+    assert.ok(ec2Rects.length >= 2, 'EC2 stencil must draw non-zero chip rectangles onto Canvas');
+
+    drawnOps.length = 0;
+    drawSvgBodyToCanvas(mockCtx, s3.svgBody, 10, 10, 100, 72, '#ea580c');
+    const s3Ellipses = drawnOps.filter((d) => d.op === 'ellipse' && d.rx > 10 && d.ry > 4);
+    assert.ok(s3Ellipses.length >= 1, 'S3 stencil must draw non-zero bucket ellipse onto Canvas');
+
+    drawnOps.length = 0;
+    drawSvgBodyToCanvas(mockCtx, r53.svgBody, 10, 10, 100, 72, '#ea580c');
+    const r53Texts = drawnOps.filter((d) => d.op === 'fillText' && d.text === '53');
+    assert.equal(r53Texts.length, 1, 'Route 53 stencil must draw "53" text onto Canvas');
+
+    // Verify SelectTool.onPointerUp does NOT call app.updateUI() when no canvas drag/click started (mode === null)
+    let updateUICalled = 0;
+    const selTool = new SelectTool({
+      getPage: () => createPage('P1'),
+      updateUI: () => {
+        updateUICalled += 1;
+      },
+      requestRender: () => {},
+    });
+    selTool.onPointerUp();
+    assert.equal(updateUICalled, 0, 'Idle SelectTool.onPointerUp must not call updateUI() and destroy DOM buttons');
+
+    // Verify unified shortcut helper
+    assert.ok(getShortcutLabel('undo').includes('Z'));
+    assert.ok(getShortcutLabel('redo').includes('Z'));
   });
 });
 

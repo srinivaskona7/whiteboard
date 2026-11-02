@@ -253,12 +253,18 @@ export function initClassroomUI(app) {
       app.dialogs.showToast('Please set your display name before asking a question.');
       return null;
     }
-    const qx = targetEl ? Math.round(targetEl.x + Math.max(0, targetEl.w - 30)) : Math.round(x);
-    const qy = targetEl ? Math.round(targetEl.y - 36) : Math.round(y);
-    const offsetX = targetEl ? qx - targetEl.x : 0;
-    const offsetY = targetEl ? qy - targetEl.y : 0;
-    const anchorRx = targetEl && targetEl.w > 0 ? Math.max(0, Math.min(1, offsetX / targetEl.w)) : 0.85;
-    const anchorRy = targetEl && targetEl.h > 0 ? Math.max(0, Math.min(1, (y - targetEl.y) / targetEl.h)) : 0;
+    const hitCandidate =
+      targetEl ||
+      (() => {
+        const h = hitTestScene(page, x, y, page.camera?.zoom || 1);
+        return h && h.type !== 'question' ? h : null;
+      })();
+    const qx = hitCandidate ? Math.round(hitCandidate.x + Math.max(0, hitCandidate.w - 30)) : Math.round(x);
+    const qy = hitCandidate ? Math.round(hitCandidate.y - 36) : Math.round(y);
+    const offsetX = hitCandidate ? qx - hitCandidate.x : 0;
+    const offsetY = hitCandidate ? qy - hitCandidate.y : 0;
+    const anchorRx = hitCandidate && hitCandidate.w > 0 ? Math.max(0, Math.min(1, offsetX / hitCandidate.w)) : 0.85;
+    const anchorRy = hitCandidate && hitCandidate.h > 0 ? Math.max(0, Math.min(1, (y - hitCandidate.y) / hitCandidate.h)) : 0;
 
     const qEl = createElement('question', {
       x: qx,
@@ -267,8 +273,8 @@ export function initClassroomUI(app) {
       h: 78,
       text: text.trim(),
       authorName: author,
-      targetElementId: targetEl?.id || null,
-      targetElementName: targetEl ? targetEl.text || targetEl.name || targetEl.type : '',
+      targetElementId: hitCandidate?.id || null,
+      targetElementName: hitCandidate ? hitCandidate.text || hitCandidate.name || hitCandidate.type : '',
       offsetX,
       offsetY,
       anchorRx,
@@ -366,11 +372,18 @@ export function initClassroomUI(app) {
       <div class="wb-panel-body">
         <div class="wb-prop-section">
           <div class="wb-prop-title">Connection & Access Status</div>
-          <div class="wb-status-card ${isLive ? 'wb-status-live' : isSnapshot ? 'wb-status-ro' : 'wb-status-offline'}">
+          <div class="wb-status-card ${isLive ? 'wb-status-live' : collab?.backendAvailable ? 'wb-status-live' : isSnapshot ? 'wb-status-ro' : 'wb-status-offline'}">
             <div><strong>${escapeXml(collab?.statusMessage || 'Local board')}</strong></div>
+            <div class="wb-muted" style="font-size:11px;margin-top:2px;">
+              Backend: <code>${escapeXml(collab?.apiBase || (typeof window !== 'undefined' ? window.location.origin : 'same-origin'))}</code> · ${collab?.backendAvailable ? '✓ Online' : 'Offline'}
+            </div>
             ${
               !collab?.backendAvailable && !isLive
-                ? `<div class="wb-muted" style="font-size:11px;margin-top:4px;">Short links and cross-device live collaboration require a configured collaboration server.</div>`
+                ? `<div class="wb-muted" style="font-size:11px;margin-top:4px;">Short links and cross-device live collaboration require a reachable collaboration server.</div>
+                   <div style="display:flex;gap:4px;margin-top:6px;">
+                     <input type="text" id="cls-backend-url" class="wb-input" style="font-size:11px;padding:3px 6px;" placeholder="http://127.0.0.1:4179" value="${escapeXml(collab?.apiBase || 'http://127.0.0.1:4179')}" aria-label="Collaboration Server URL"/>
+                     <button type="button" class="wb-btn wb-sm" id="btn-cls-connect-backend">Connect</button>
+                   </div>`
                 : ''
             }
             ${
@@ -549,6 +562,19 @@ export function initClassroomUI(app) {
 
     panel.querySelector('#btn-close-classroom')?.addEventListener('click', () => {
       panel.classList.add('wb-hidden');
+      app.toolbarUI?.update();
+    });
+
+    panel.querySelector('#btn-cls-connect-backend')?.addEventListener('click', async () => {
+      const urlVal = panel.querySelector('#cls-backend-url')?.value?.trim() || '';
+      app.collab?.setApiBase(urlVal);
+      const ok = await app.collab?.checkBackendHealth();
+      if (ok) {
+        app.dialogs.showToast(`✓ Connected to collaboration server (${app.collab.apiBase || 'same-origin'})`, 'success');
+      } else {
+        app.dialogs.showToast('Collaboration server not reachable at that URL.', 'warn');
+      }
+      render();
       app.toolbarUI?.update();
     });
 
@@ -742,7 +768,13 @@ export function initClassroomUI(app) {
       app.clearPlacementPreview?.();
     }
     panel.classList.toggle('wb-hidden');
-    if (!panel.classList.contains('wb-hidden')) render();
+    if (!panel.classList.contains('wb-hidden')) {
+      render();
+      app.collab?.checkBackendHealth().then(() => {
+        if (!panel.classList.contains('wb-hidden')) render();
+        app.toolbarUI?.update();
+      });
+    }
     app.toolbarUI?.update();
   }
 

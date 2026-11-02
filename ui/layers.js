@@ -55,8 +55,18 @@ export function initLayersPanel(app) {
     });
 
     panel.querySelectorAll('[data-sel-layer]').forEach((b) => {
-      b.addEventListener('click', () => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
         app.selectedIds = new Set([b.dataset.selLayer]);
+        app.updateUI();
+        app.requestRender();
+      });
+    });
+
+    panel.querySelectorAll('[data-layer-id]').forEach((row) => {
+      row.addEventListener('click', (ev) => {
+        if (ev.target.closest('.wb-layer-actions')) return;
+        app.selectedIds = new Set([row.dataset.layerId]);
         app.updateUI();
         app.requestRender();
       });

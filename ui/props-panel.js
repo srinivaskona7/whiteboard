@@ -40,20 +40,14 @@ export function initPropsPanel(app) {
     const page = app.getPage();
     const selected = page.elements.filter((e) => app.selectedIds.has(e.id));
     const tool = app.activeTool;
-    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
 
-    const shouldShow = isMobile
-      ? Boolean(app.propsDrawerOpen)
-      : Boolean(
-          app.propsDrawerOpen ||
-            selected.length > 0 ||
-            (tool !== 'select' && tool !== 'hand' && tool !== 'eraser' && tool !== 'laser')
-        );
+    const shouldShow = Boolean(app.propsDrawerOpen);
 
     if (!shouldShow) {
       container.classList.add('wb-hidden');
       return;
     }
+    const prevScroll = container.scrollTop;
     container.classList.remove('wb-hidden');
 
     const sections = [
@@ -236,6 +230,76 @@ export function initPropsPanel(app) {
     const swMeta = getSharedProp(selected, (e) => e.strokeWidth || 2, ref.strokeWidth || 2);
     const ssMeta = getSharedProp(selected, (e) => e.strokeStyle || 'solid', ref.strokeStyle || 'solid');
     const fillMeta = getSharedProp(selected, (e) => e.fill || 'transparent', ref.fill || 'transparent');
+
+    // Table controls placed at top of Inspector when a table is selected
+    if (types.has('table') && selected.length === 1) {
+      const tbl = selected[0];
+      sections.push(`
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Table (${tbl.rows} × ${tbl.cols})</div>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" id="btn-table-add-row">+ Row</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-table-del-row">− Row</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-table-add-col">+ Col</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-table-del-col">− Col</button>
+          </div>
+        </div>
+      `);
+    }
+
+    // Code block controls placed at top of Inspector when a code block is selected
+    if (types.has('code') && selected.length === 1) {
+      const cd = selected[0];
+      sections.push(`
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Code Highlight</div>
+          <label class="wb-prop-row">
+            <span>Lines (e.g. 1,3-4)</span>
+            <input type="text" id="prop-code-hl" value="${escapeXml(cd.highlightLines || '')}" style="width:90px"/>
+          </label>
+        </div>
+      `);
+    }
+
+    // Frame / Boundary Container controls placed near top of Inspector
+    if (
+      selected.length === 1 &&
+      (types.has('frame') || selected[0].isContainer || selected[0].isBoundary)
+    ) {
+      const fr = selected[0];
+      sections.push(`
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">${fr.type === 'frame' ? 'Presentation Frame / Slide' : 'Architecture Boundary Container'}</div>
+          <label class="wb-prop-row">
+            <span>Move Contents Together</span>
+            <input type="checkbox" id="prop-move-children" ${fr.moveChildren !== false ? 'checked' : ''}/>
+          </label>
+          ${
+            fr.type === 'frame'
+              ? `<label class="wb-prop-row">
+                  <span>Include in Presentation</span>
+                  <input type="checkbox" id="prop-frame-include-pres" ${isFrameIncludedInPresentation(fr) ? 'checked' : ''}/>
+                </label>
+                <label class="wb-prop-row">
+                  <span>Slide Order #</span>
+                  <input type="number" id="prop-slide-order" min="1" max="99" value="${fr.slideOrder || 1}" style="width:60px"/>
+                </label>
+                <label class="wb-prop-row">
+                  <span>Clip Children</span>
+                  <input type="checkbox" id="prop-frame-clip" ${fr.clip ? 'checked' : ''}/>
+                </label>
+                <button type="button" class="wb-btn wb-sm" id="btn-frame-collapse">${fr.collapsed ? 'Expand Frame' : 'Collapse Frame'}</button>`
+              : ''
+          }
+          ${
+            !isStudentRestrictedRole()
+              ? `<div class="wb-prop-subtitle" style="margin-top:8px;">Teacher Notes (Private)</div>
+                 <textarea id="prop-el-teacher-notes" class="wb-textarea" rows="3" placeholder="Private speaker notes for this frame/section (never sent to students)..." aria-label="Frame Teacher Notes">${escapeXml(fr.teacherNotes || '')}</textarea>`
+              : ''
+          }
+        </div>
+      `);
+    }
 
     // Stroke & Fill
     if (!isImage) {
@@ -478,76 +542,6 @@ export function initPropsPanel(app) {
       `);
     }
 
-    // Table controls
-    if (types.has('table') && selected.length === 1) {
-      const tbl = selected[0];
-      sections.push(`
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">Table (${tbl.rows} × ${tbl.cols})</div>
-          <div class="wb-btn-group">
-            <button type="button" class="wb-btn wb-sm" id="btn-table-add-row">+ Row</button>
-            <button type="button" class="wb-btn wb-sm" id="btn-table-del-row">− Row</button>
-            <button type="button" class="wb-btn wb-sm" id="btn-table-add-col">+ Col</button>
-            <button type="button" class="wb-btn wb-sm" id="btn-table-del-col">− Col</button>
-          </div>
-        </div>
-      `);
-    }
-
-    // Code block controls
-    if (types.has('code') && selected.length === 1) {
-      const cd = selected[0];
-      sections.push(`
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">Code Highlight</div>
-          <label class="wb-prop-row">
-            <span>Lines (e.g. 1,3-4)</span>
-            <input type="text" id="prop-code-hl" value="${escapeXml(cd.highlightLines || '')}" style="width:90px"/>
-          </label>
-        </div>
-      `);
-    }
-
-    // Frame / Boundary Container controls
-    if (
-      selected.length === 1 &&
-      (types.has('frame') || selected[0].isContainer || selected[0].isBoundary)
-    ) {
-      const fr = selected[0];
-      sections.push(`
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">${fr.type === 'frame' ? 'Presentation Frame / Slide' : 'Architecture Boundary Container'}</div>
-          <label class="wb-prop-row">
-            <span>Move Contents Together</span>
-            <input type="checkbox" id="prop-move-children" ${fr.moveChildren !== false ? 'checked' : ''}/>
-          </label>
-          ${
-            fr.type === 'frame'
-              ? `<label class="wb-prop-row">
-                  <span>Include in Presentation</span>
-                  <input type="checkbox" id="prop-frame-include-pres" ${isFrameIncludedInPresentation(fr) ? 'checked' : ''}/>
-                </label>
-                <label class="wb-prop-row">
-                  <span>Slide Order #</span>
-                  <input type="number" id="prop-slide-order" min="1" max="99" value="${fr.slideOrder || 1}" style="width:60px"/>
-                </label>
-                <label class="wb-prop-row">
-                  <span>Clip Children</span>
-                  <input type="checkbox" id="prop-frame-clip" ${fr.clip ? 'checked' : ''}/>
-                </label>
-                <button type="button" class="wb-btn wb-sm" id="btn-frame-collapse">${fr.collapsed ? 'Expand Frame' : 'Collapse Frame'}</button>`
-              : ''
-          }
-          ${
-            !isStudentRestrictedRole()
-              ? `<div class="wb-prop-subtitle" style="margin-top:8px;">Teacher Notes (Private)</div>
-                 <textarea id="prop-el-teacher-notes" class="wb-textarea" rows="3" placeholder="Private speaker notes for this frame/section (never sent to students)..." aria-label="Frame Teacher Notes">${escapeXml(fr.teacherNotes || '')}</textarea>`
-              : ''
-          }
-        </div>
-      `);
-    }
-
     // Image controls
     if (isImage && selected.length === 1) {
       const imgEl = selected[0];
@@ -641,14 +635,19 @@ export function initPropsPanel(app) {
     }
 
     container.innerHTML = sections.join('');
+    container.scrollTop = prevScroll;
     bindEvents(selected);
   }
 
   function bindEvents(selected) {
     container.querySelector('#btn-close-props')?.addEventListener('click', () => {
-      app.propsDrawerOpen = false;
-      container.classList.add('wb-hidden');
-      app.toolbarUI?.update();
+      if (app.setPropsDrawerOpen) {
+        app.setPropsDrawerOpen(false);
+      } else {
+        app.propsDrawerOpen = false;
+        container.classList.add('wb-hidden');
+        app.toolbarUI?.update();
+      }
     });
 
     container.querySelector('#prop-page-teacher-notes')?.addEventListener('change', (e) => {

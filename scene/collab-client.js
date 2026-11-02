@@ -125,27 +125,43 @@ export class CollabClient {
     return `${base}${routeHash.startsWith('#') ? routeHash : `#${routeHash}`}`;
   }
 
+  async _probeHealthUrl(base) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 1800);
+    try {
+      const res = await fetch(`${base}/api/health`, { signal: ctl.signal });
+      clearTimeout(t);
+      if (!res.ok) return false;
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('json')) return false;
+      const data = await res.json();
+      return Boolean(data && data.ok);
+    } catch {
+      clearTimeout(t);
+      return false;
+    }
+  }
+
   async checkBackendHealth() {
     if (typeof fetch === 'undefined') {
       this.backendAvailable = false;
       return false;
     }
-    try {
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 2200);
-      const res = await fetch(this.getEndpoint('/api/health'), { signal: ctl.signal });
-      clearTimeout(t);
-      if (!res.ok) {
-        this.backendAvailable = false;
-        return false;
-      }
-      const data = await res.json();
-      this.backendAvailable = Boolean(data && data.ok);
-      return this.backendAvailable;
-    } catch {
-      this.backendAvailable = false;
-      return false;
+    const candidates = [this.apiBase];
+    if (this.apiBase !== '') candidates.push('');
+    // If hosted on a static server or local preview without middleware, also probe local standalone collab port 4179
+    if (!candidates.includes('http://127.0.0.1:4179')) {
+      candidates.push('http://127.0.0.1:4179');
     }
+    for (const cand of candidates) {
+      if (await this._probeHealthUrl(cand)) {
+        this.apiBase = cand;
+        this.backendAvailable = true;
+        return true;
+      }
+    }
+    this.backendAvailable = false;
+    return false;
   }
 
   canEditBoard() {
@@ -584,7 +600,11 @@ export class CollabClient {
         elements: (p.elements || []).filter((e) => !this.deletedIds.has(e.id)),
       }));
       if (!this.app.scene.pages.some((p) => p.id === this.app.scene.activePageId)) {
-        this.app.scene.activePageId = this.app.scene.pages[0]?.id;
+        this.app.scene.activePageId =
+          remoteScene.activePageId &&
+          this.app.scene.pages.some((p) => p.id === remoteScene.activePageId)
+            ? remoteScene.activePageId
+            : this.app.scene.pages[0]?.id;
       }
       this.app.updateUI?.();
       this.app.requestRender?.();

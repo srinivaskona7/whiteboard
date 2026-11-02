@@ -462,6 +462,7 @@ export class SelectTool {
   }
 
   onPointerUp() {
+    if (!this.mode) return;
     const page = this.app.getPage();
     if (this.mode === 'move' && this.didMutate) {
       if (this.app.scene.settings.snapToGrid && this.movingElements.length === 1) {

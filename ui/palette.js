@@ -1,5 +1,5 @@
 // ui/palette.js
-import { TOOL_REGISTRY } from './registry.js';
+import { TOOL_REGISTRY, getShortcutLabel } from './registry.js';
 import { ALL_STENCILS } from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { escapeXml } from '../render/svg-export.js';
@@ -24,10 +24,15 @@ export function initCommandPalette(app) {
       });
     }
 
+    const undoKey = getShortcutLabel('undo');
+    const redoKey = getShortcutLabel('redo');
+    const groupKey = getShortcutLabel('group');
+    const ungroupKey = getShortcutLabel('ungroup');
+
     const actions = [
       { id: 'act:image', title: 'Insert: Image from File', shortcut: 'I', run: () => app.openImageFilePicker() },
-      { id: 'act:undo', title: 'Action: Undo', shortcut: '⌘Z', run: () => app.undo() },
-      { id: 'act:redo', title: 'Action: Redo', shortcut: '⌘Y', run: () => app.redo() },
+      { id: 'act:undo', title: 'Action: Undo', shortcut: undoKey, run: () => app.undo() },
+      { id: 'act:redo', title: 'Action: Redo', shortcut: redoKey, run: () => app.redo() },
       { id: 'act:fit', title: 'View: Fit to Content', shortcut: '1', run: () => app.fitToContent() },
       { id: 'act:zoom100', title: 'View: Reset Zoom 100%', shortcut: '0', run: () => app.setZoom(1) },
       { id: 'act:theme', title: 'Theme: Toggle Light / Dark Mode', shortcut: '', run: () => app.toggleTheme() },
@@ -49,8 +54,8 @@ export function initCommandPalette(app) {
       { id: 'act:open', title: 'File: Open .whiteboard.json', shortcut: '', run: () => app.openWhiteboardFilePicker() },
       { id: 'act:recovery', title: 'File: Restore Earlier Version (Recovery Snapshots)', shortcut: '', run: () => app.dialogs.openRecoveryModal() },
       { id: 'act:share', title: 'File: Share by URL Hash', shortcut: '', run: () => app.dialogs.openShareUrlModal() },
-      { id: 'act:group', title: 'Selection: Group Elements', shortcut: '⌘G', run: () => app.groupSelection() },
-      { id: 'act:ungroup', title: 'Selection: Ungroup Elements', shortcut: '⇧⌘G', run: () => app.ungroupSelection() },
+      { id: 'act:group', title: 'Selection: Group Elements', shortcut: groupKey, run: () => app.groupSelection() },
+      { id: 'act:ungroup', title: 'Selection: Ungroup Elements', shortcut: ungroupKey, run: () => app.ungroupSelection() },
     ];
     cmds.push(...actions);
 

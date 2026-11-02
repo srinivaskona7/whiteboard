@@ -483,17 +483,66 @@ export function importLibraryJson(jsonString) {
 }
 
 // URL Hash sharing (base64url UTF-8 encoding with size warning)
-// Strips teacherNotes by default so ordinary shared links never leak private instructor notes.
+// Strips teacherNotes and default-valued properties so fallback URLs stay as compact as possible.
+const DEFAULT_EL_PROPS = {
+  rotation: 0,
+  stroke: '#1e293b',
+  fill: 'transparent',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  opacity: 1,
+  roundness: 0,
+  sloppy: false,
+  text: '',
+  fontFamily: 'sans',
+  fontSize: 18,
+  textAlign: 'center',
+  autoGrow: true,
+  locked: false,
+  hidden: false,
+  revealStep: 0,
+  groupId: null,
+  containerId: null,
+  link: '',
+  startArrow: 'none',
+  startLabel: '',
+  endLabel: '',
+  manualRoute: false,
+  elbowOffset: 0,
+};
+
+function compactElementForHash(el) {
+  const out = {};
+  for (const [k, v] of Object.entries(el)) {
+    if (k === 'createdAt' || k === 'updatedAt' || k === 'teacherNotes') continue;
+    if (v === undefined || v === null || v === '') {
+      if (k !== 'id' && k !== 'type') continue;
+    }
+    if (k in DEFAULT_EL_PROPS && DEFAULT_EL_PROPS[k] === v) continue;
+    if (Array.isArray(v) && v.length === 0 && k === 'waypoints') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 export function encodeSceneToHash(scene, options = {}) {
   const stripNotes = options.includeTeacherNotes !== true;
   const clean = sanitizeSceneForPersistence(scene, { stripNotes });
   assertValidSceneGeometry(clean);
+  const compactPages = clean.pages.map((p) => ({
+    id: p.id,
+    name: p.name,
+    background: p.background,
+    camera: p.camera,
+    ...(p.teacherNotes ? { teacherNotes: p.teacherNotes } : {}),
+    elements: p.elements.map(compactElementForHash),
+  }));
   const compact = {
     version: SCHEMA_VERSION,
     theme: clean.theme,
     activePageId: clean.activePageId,
-    pages: clean.pages,
-    files: clean.files || {},
+    pages: compactPages,
+    ...(clean.files && Object.keys(clean.files).length > 0 ? { files: clean.files } : {}),
     settings: clean.settings,
   };
   const json = JSON.stringify(compact);

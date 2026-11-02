@@ -36,8 +36,8 @@ export function initPagesBar(app) {
         `
           )
           .join('')}
-        <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add new page" title="Add new page">+ Page</button>
       </div>
+      <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add new page" title="Add new page">+ Page</button>
     `;
 
     bar.querySelectorAll('[data-switch-page]').forEach((b) => {

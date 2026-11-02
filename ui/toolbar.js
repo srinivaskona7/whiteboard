@@ -1,5 +1,5 @@
 // ui/toolbar.js — Top Bar, Workspace Presets, Compact Primary Toolset, Insert Menu, Spotlight Banner & Zoom Controls
-import { TOOL_REGISTRY, ICONS } from './registry.js';
+import { TOOL_REGISTRY, ICONS, getShortcutLabel } from './registry.js';
 import { WORKSPACE_PRESETS } from '../scene/storage.js';
 import { escapeXml } from '../render/svg-export.js';
 
@@ -29,6 +29,9 @@ export function initToolbar(app) {
   function renderTopBar() {
     if (!topBar) return;
     const preset = app.activePreset || 'diagram';
+    const undoKey = getShortcutLabel('undo');
+    const redoKey = getShortcutLabel('redo');
+    const paletteKey = getShortcutLabel('palette');
     topBar.innerHTML = `
       <div class="wb-top-left">
         <button type="button" class="wb-brand-btn" id="btn-brand-home" title="StudioBoard — Reset View">
@@ -58,18 +61,18 @@ export function initToolbar(app) {
             .join('')}
         </div>
         <span class="wb-sep"></span>
-        <button type="button" class="wb-btn" id="btn-undo" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl/Cmd+Z)">${ICONS.undo}</button>
-        <button type="button" class="wb-btn" id="btn-redo" aria-label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)">${ICONS.redo}</button>
+        <button type="button" class="wb-btn" id="btn-undo" aria-label="Undo (${escapeXml(undoKey)})" title="Undo (${escapeXml(undoKey)})">${ICONS.undo}</button>
+        <button type="button" class="wb-btn" id="btn-redo" aria-label="Redo (${escapeXml(redoKey)})" title="Redo (${escapeXml(redoKey)})">${ICONS.redo}</button>
         <span class="wb-sep"></span>
-        <button type="button" class="wb-btn" id="btn-library" aria-label="Toggle Stencil & Template Library" title="DevOps & Cloud Icon Library">${ICONS.library} <span class="wb-hide-sm">Library</span></button>
-        <button type="button" class="wb-btn" id="btn-layers" aria-label="Toggle Layers Panel" title="Layers & Z-Order">${ICONS.layers} <span class="wb-hide-sm">Layers</span></button>
-        <button type="button" class="wb-btn" id="btn-classroom" aria-label="Toggle Live Classroom & Questions" title="Live Classroom Share, Pointers & Student Questions">${ICONS.classroom} <span class="wb-hide-sm" id="wb-classroom-label">Classroom</span></button>
-        <button type="button" class="wb-btn" id="btn-props-toggle" aria-label="Toggle Inspector Panel" title="Toggle Style & Properties Inspector">${ICONS.sliders} <span class="wb-hide-sm">Inspector</span></button>
-        <button type="button" class="wb-btn ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-present" title="Enter Lesson Presentation Mode (F6)">${ICONS.present} <span class="wb-hide-sm">Present</span></button>
-        <button type="button" class="wb-btn ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-timer" title="Toggle Class Countdown / Stopwatch">${ICONS.timer} <span class="wb-hide-sm">Timer</span></button>
+        <button type="button" class="wb-btn" id="btn-library" aria-label="Toggle Stencil & Template Library" title="DevOps & Cloud Icon Library">${ICONS.library} <span class="wb-hide-lg">Library</span></button>
+        <button type="button" class="wb-btn" id="btn-layers" aria-label="Toggle Layers Panel" title="Layers & Z-Order">${ICONS.layers} <span class="wb-hide-lg">Layers</span></button>
+        <button type="button" class="wb-btn" id="btn-classroom" aria-label="Toggle Live Classroom & Questions" title="Live Classroom Share, Pointers & Student Questions">${ICONS.classroom} <span class="wb-hide-md" id="wb-classroom-label">Classroom</span></button>
+        <button type="button" class="wb-btn" id="btn-props-toggle" aria-label="Toggle Inspector Panel" title="Toggle Style & Properties Inspector">${ICONS.sliders} <span class="wb-hide-lg">Inspector</span></button>
+        <button type="button" class="wb-btn wb-hide-lg ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-present" title="Enter Lesson Presentation Mode (F6)">${ICONS.present} <span class="wb-hide-sm">Present</span></button>
+        <button type="button" class="wb-btn wb-hide-lg ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-timer" title="Toggle Class Countdown / Stopwatch">${ICONS.timer} <span class="wb-hide-sm">Timer</span></button>
 
         <div class="wb-dropdown">
-          <button type="button" class="wb-btn" id="btn-teaching-menu" aria-haspopup="true" title="Teaching & Classroom Tools">${ICONS.teaching} <span class="wb-hide-sm">Teaching ▾</span></button>
+          <button type="button" class="wb-btn" id="btn-teaching-menu" aria-haspopup="true" title="Teaching & Classroom Tools">${ICONS.teaching} <span class="wb-hide-md">Teaching ▾</span></button>
           <div class="wb-dropdown-menu wb-hidden" id="menu-teaching">
             <button type="button" class="wb-menu-item" id="btn-present">${ICONS.present} Presentation Mode (F6)</button>
             <button type="button" class="wb-menu-item" id="btn-reveal-timeline">${ICONS.timeline} Step-by-Step Reveal Timeline</button>
@@ -84,7 +87,7 @@ export function initToolbar(app) {
       </div>
 
       <div class="wb-top-right">
-        <button type="button" class="wb-btn" id="btn-palette" aria-label="Command Palette (Ctrl+K)" title="Command Palette (Ctrl/Cmd+K)">${ICONS.search} <span class="wb-hide-md">⌘K</span></button>
+        <button type="button" class="wb-btn" id="btn-palette" aria-label="Command Palette (${escapeXml(paletteKey)})" title="Command Palette (${escapeXml(paletteKey)})">${ICONS.search} <span class="wb-hide-md">${escapeXml(paletteKey)}</span></button>
         <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Light / Dark Theme">${ICONS.theme}</button>
 
         <div class="wb-dropdown">
@@ -166,15 +169,45 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-shortcuts')?.addEventListener('click', () => app.dialogs.openShortcutsModal());
   }
 
-  let lastRenderedPreset = null;
+  let lastDockSignature = '';
 
-  function renderDock() {
+  function renderDock(forceRebuild = false) {
     if (!dock) return;
     const pinnedIds = app.focusMode
       ? app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
       : app.getPinnedTools
         ? app.getPinnedTools()
         : PRIMARY_TOOL_IDS;
+    const sig = `${Boolean(app.focusMode)}:${pinnedIds.join(',')}`;
+
+    if (!forceRebuild && sig === lastDockSignature && dock.querySelector('.wb-tool-list')) {
+      const pinnedSet = new Set(pinnedIds);
+      const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id));
+      dock.querySelectorAll('[data-tool]').forEach((btn) => {
+        const isAct = btn.dataset.tool === app.activeTool;
+        btn.classList.toggle('active', isAct);
+        btn.setAttribute('aria-pressed', String(isAct));
+      });
+      dock.querySelectorAll('[data-insert-tool]').forEach((btn) => {
+        const isAct = btn.dataset.insertTool === app.activeTool;
+        btn.classList.toggle('active', isAct);
+      });
+      const moreBtn = dock.querySelector('#btn-insert-more');
+      if (moreBtn) {
+        moreBtn.classList.toggle(
+          'active',
+          advancedTools.some((t) => t.id === app.activeTool)
+        );
+      }
+      const lockBtn = dock.querySelector('#btn-tool-lock');
+      if (lockBtn) {
+        lockBtn.classList.toggle('active', Boolean(app.toolLock));
+        lockBtn.setAttribute('aria-pressed', String(Boolean(app.toolLock)));
+      }
+      return;
+    }
+
+    lastDockSignature = sig;
     const pinnedSet = new Set(pinnedIds);
     const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id));
     const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id));
@@ -433,9 +466,16 @@ export function initToolbar(app) {
     });
   }
 
-  function renderBottomBar() {
+  function renderBottomBar(forceRebuild = false) {
     if (!bottomBar) return;
     const zoomPct = Math.round(app.getPage().camera.zoom * 100);
+    const existingReset = bottomBar.querySelector('#btn-zoom-reset');
+    const existingMinimap = bottomBar.querySelector('#btn-minimap');
+    if (!forceRebuild && existingReset && existingMinimap) {
+      existingReset.textContent = `${zoomPct}%`;
+      existingMinimap.classList.toggle('active', Boolean(app.minimapOpen));
+      return;
+    }
     bottomBar.innerHTML = `
       <div class="wb-zoom-controls">
         <button type="button" class="wb-btn wb-sm" id="btn-zoom-out" aria-label="Zoom Out (-)">−</button>

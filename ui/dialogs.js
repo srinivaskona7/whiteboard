@@ -258,8 +258,16 @@ export function initDialogs(app) {
           <details style="margin-top:8px;">
             <summary class="wb-muted" style="cursor:pointer;font-size:12px;">Offline Fallback: Embedded Snapshot URL (${length.toLocaleString()} chars)</summary>
             <div style="padding-top:8px;display:flex;flex-direction:column;gap:6px;">
-              <input type="text" id="share-url-input" class="wb-input" readonly value="${escapeXml(fallbackUrl)}" aria-label="Offline Fallback Shareable URL" />
-              <button type="button" class="wb-btn wb-sm" id="btn-copy-share-url">Copy Offline Fallback Link</button>
+              ${
+                length > 6000
+                  ? `<div class="wb-warning-box" style="margin:0;">⚠️ This embedded URL is <strong>${length.toLocaleString()} characters</strong> because it encodes the full board inside the hash. Many chat apps and browsers truncate URLs above 8,000 characters. Use a <strong>Short Read-Only Snapshot (#/b/…)</strong> above or <strong>Save .whiteboard.json</strong> instead.</div>`
+                  : `<p class="wb-muted" style="margin:0;">Self-contained URL hash for small boards when no collaboration server is available.</p>`
+              }
+              <input type="text" id="share-url-input" class="wb-input" readonly value="${escapeXml(length > 32000 ? `${fallbackUrl.slice(0, 256)}… (${length.toLocaleString()} chars)` : fallbackUrl)}" aria-label="Offline Fallback Shareable URL" />
+              <div class="wb-btn-group">
+                <button type="button" class="wb-btn wb-sm" id="btn-copy-share-url">Copy Offline Fallback Link</button>
+                <button type="button" class="wb-btn wb-sm" id="btn-share-download-json">⬇ Save .whiteboard.json</button>
+              </div>
             </div>
           </details>
         `,
@@ -317,6 +325,11 @@ export function initDialogs(app) {
             } catch {
               showToast('Could not copy to clipboard.');
             }
+          });
+
+          modal.querySelector('#btn-share-download-json')?.addEventListener('click', () => {
+            app.saveSceneFile();
+            close();
           });
         }
       );

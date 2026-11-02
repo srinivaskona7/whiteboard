@@ -97,6 +97,7 @@ export function createDevOpsStencil({
     isBoundary: false,
     iconKind,
     packKey,
+    svgBody,
     draw(ctx, x, y, w, h) {
       const r = Math.min(12, w * 0.08, h * 0.08);
       ctx.save();
@@ -171,7 +172,7 @@ export function createDevOpsStencil({
       ctx.save();
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
-      ctx.lineWidth = Math.max(1.6, Math.min(2.6, Math.min(w, h) * 0.022));
+      ctx.lineWidth = Math.max(2.0, Math.min(3.0, Math.min(w, h) * 0.025));
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       if (canvasDraw) {
@@ -230,13 +231,14 @@ export function drawSvgBodyToCanvas(ctx, svgBody, ix, iy, iw, ih, color) {
   const ox = ix + (iw - 100 * s) / 2;
   const oy = iy + (ih - 72 * s) / 2;
 
-  const tagRe = /<(rect|circle|ellipse|line|polyline|polygon|path)\b([^>]*)\/?>/gi;
+  const tagRe = /<(rect|circle|ellipse|line|polyline|polygon|path|text)\b([^>]*)(?:\/>|>([^<]*)<\/\1>|>)/gi;
   let match;
   while ((match = tagRe.exec(svgBody)) !== null) {
     const tag = match[1].toLowerCase();
     const attrStr = match[2];
+    const innerText = match[3] || '';
     const getAttr = (name) => {
-      const m = new RegExp(`\b${name}="([^"]*)"`, 'i').exec(attrStr);
+      const m = new RegExp(`(?:^|\\s)${name}="([^"]*)"`, 'i').exec(attrStr);
       return m ? m[1] : null;
     };
     const num = (name, def = 0) => {
@@ -253,7 +255,7 @@ export function drawSvgBodyToCanvas(ctx, svgBody, ix, iy, iw, ih, color) {
     ctx.save();
     if (shouldFill) {
       ctx.fillStyle = fillAttr === 'currentColor' ? color : fillAttr;
-      if (fillOpacity < 1) ctx.globalAlpha *= fillOpacity;
+      if (fillOpacity < 1) ctx.globalAlpha *= Math.max(0.22, fillOpacity);
     }
     if (shouldStroke) {
       ctx.strokeStyle = !strokeAttr || strokeAttr === 'currentColor' ? color : strokeAttr;
@@ -305,6 +307,16 @@ export function drawSvgBodyToCanvas(ctx, svgBody, ix, iy, iw, ih, color) {
         if (shouldFill) ctx.fill();
         if (shouldStroke) ctx.stroke();
       }
+    } else if (tag === 'text' && innerText) {
+      const tx = ox + num('x', 50) * s;
+      const ty = oy + num('y', 40) * s;
+      const fSize = Math.max(8, num('font-size', 16) * s);
+      const weight = getAttr('font-weight') || '700';
+      ctx.font = `${weight} ${fSize}px Inter, -apple-system, sans-serif`;
+      ctx.fillStyle = !fillAttr || fillAttr === 'currentColor' ? color : fillAttr;
+      ctx.textAlign = getAttr('text-anchor') === 'middle' ? 'center' : 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(innerText, tx, ty);
     } else if (tag === 'path') {
       const d = getAttr('d') || '';
       if (typeof Path2D !== 'undefined' && typeof ctx.scale === 'function') {

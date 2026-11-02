@@ -5,6 +5,24 @@ import { bindConnectorEndpoint } from '../scene/bindings.js';
 const svg = (inner) =>
   `<svg class="wb-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 
+export function isMacPlatform() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
+}
+
+export function getShortcutLabel(action) {
+  const mac = isMacPlatform();
+  const map = {
+    undo: mac ? '⌘Z' : 'Ctrl+Z',
+    redo: mac ? '⇧⌘Z' : 'Ctrl+Shift+Z',
+    palette: mac ? '⌘K' : 'Ctrl+K',
+    group: mac ? '⌘G' : 'Ctrl+G',
+    ungroup: mac ? '⇧⌘G' : 'Ctrl+Shift+G',
+    duplicate: mac ? '⌘D' : 'Ctrl+D',
+  };
+  return map[action] || '';
+}
+
 export const ICONS = {
   select: svg('<path d="M4 3l7 17 2.5-6.5L20 11z"/>'),
   lasso: svg('<path d="M7 22a5 5 0 0 1-2-4"/><path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1"/><circle cx="5" cy="18" r="2"/>'),
@@ -91,11 +109,6 @@ export const TOOL_REGISTRY = [
   { id: 'laser', label: 'Laser Pointer', shortcut: 'K', group: 'teaching', icon: ICONS.laser },
 ];
 
-export function isMacPlatform() {
-  if (typeof navigator === 'undefined') return false;
-  return /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
-}
-
 export function formatShortcut(shortcut = '', mac = isMacPlatform()) {
   if (!shortcut) return '';
   if (mac) {
@@ -112,7 +125,8 @@ export const SHORTCUT_REFERENCE = [
   { key: 'Shift + Q', desc: 'Toggle Keep Active Tool Locked' },
   { key: 'I', desc: 'Insert Image from File' },
   { key: 'Double-Click', desc: 'Edit Shape, Connector, or Table Cell Text' },
-  { key: 'Ctrl/Cmd + Z / Y', desc: 'Undo / Redo (Isolated per Page)' },
+  { key: 'Ctrl/Cmd + Z', desc: 'Undo (Isolated per Page)' },
+  { key: 'Ctrl/Cmd + Shift + Z', desc: 'Redo (Isolated per Page)' },
   { key: 'Ctrl/Cmd + C / X / V', desc: 'Copy / Cut / Paste (Cascading Offset)' },
   { key: 'Ctrl/Cmd + D / Alt+Drag', desc: 'Duplicate / Clone Selection' },
   { key: 'Ctrl/Cmd + A', desc: 'Select All Elements on Page' },

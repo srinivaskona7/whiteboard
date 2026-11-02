@@ -514,10 +514,6 @@ export class WhiteboardApp {
   }
 
   updateUI() {
-    const rightPanel = document.getElementById('wb-props-panel');
-    if (rightPanel) {
-      this.propsDrawerOpen = !rightPanel.classList.contains('wb-hidden');
-    }
     this.toolbarUI.update();
     this.propsUI.update();
     this.pagesUI.update();
@@ -1210,12 +1206,23 @@ export class WhiteboardApp {
     this.updateUI();
   }
 
-  togglePropsDrawer() {
+  setPropsDrawerOpen(open) {
+    this.propsDrawerOpen = Boolean(open);
     const p = document.getElementById('wb-props-panel');
-    if (!p) return;
-    p.classList.toggle('wb-hidden');
-    this.propsDrawerOpen = !p.classList.contains('wb-hidden');
-    this.toolbarUI.update();
+    if (p) {
+      p.classList.toggle('wb-hidden', !this.propsDrawerOpen);
+    }
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      inspectorOpen: this.propsDrawerOpen,
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.propsUI?.update();
+    this.toolbarUI?.update();
+  }
+
+  togglePropsDrawer() {
+    this.setPropsDrawerOpen(!this.propsDrawerOpen);
   }
 
   toggleSpotlight(magnifier = false) {
@@ -1531,6 +1538,7 @@ export class WhiteboardApp {
     if (ev.button === 1 || this.spacePressed || this.activeTool === 'hand') {
       if (this.collab.followingTeacher) this.collab.setFollowTeacher(false);
       this.isPanning = true;
+      this._canvasPointerActive = true;
       this.panStart = { x: ev.clientX, y: ev.clientY };
       this._updateCanvasCursor();
       return;
@@ -1542,6 +1550,7 @@ export class WhiteboardApp {
       return;
     }
 
+    this._canvasPointerActive = true;
     const world = this.screenToWorld(ev.clientX, ev.clientY);
     this._getToolHandler().onPointerDown(world, ev);
   }
@@ -1565,6 +1574,10 @@ export class WhiteboardApp {
       return;
     }
 
+    if (!this._canvasPointerActive && ev.target !== this.canvas) {
+      return;
+    }
+
     const world = this.screenToWorld(ev.clientX, ev.clientY);
     this.collab.sendCursorUpdate(world, Array.from(this.selectedIds));
     this._getToolHandler().onPointerMove(world, ev);
@@ -1573,9 +1586,14 @@ export class WhiteboardApp {
   _onPointerUp(ev) {
     if (this.isPanning) {
       this.isPanning = false;
+      this._canvasPointerActive = false;
       this._updateCanvasCursor();
       return;
     }
+    if (!this._canvasPointerActive) {
+      return;
+    }
+    this._canvasPointerActive = false;
     if (this.spotlight.active) return;
     const world = this.screenToWorld(ev.clientX, ev.clientY);
     this._getToolHandler().onPointerUp(world, ev);
