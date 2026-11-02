@@ -45,3 +45,18 @@ export function insertMathHelper(app, kind = 'ruler') {
   app.requestRender();
   return el;
 }
+
+export class MathOverlayTool {
+  constructor(app) {
+    this.app = app;
+  }
+
+  onPointerDown() {
+    insertMathHelper(this.app, this.app.activeMathKind || 'ruler');
+  }
+
+  onPointerMove() {}
+
+  onPointerUp() {}
+}
+

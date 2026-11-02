@@ -61,7 +61,17 @@ export class CanvasRenderer {
     };
   }
 
-  render(appState) {
+  render(sceneOrState, maybeState = null) {
+    const appState = maybeState
+      ? {
+          ...maybeState,
+          scene: sceneOrState,
+          page:
+            maybeState.page ||
+            sceneOrState.pages.find((p) => p.id === sceneOrState.activePageId) ||
+            sceneOrState.pages[0],
+        }
+      : sceneOrState;
     const {
       scene,
       page,
@@ -160,6 +170,24 @@ export class CanvasRenderer {
 
     if (hoveredElement && !presentState?.active) {
       this.drawConnectionPorts(ctx, hoveredElement, hoveredPort, cam.zoom, theme);
+    }
+
+    if (appState.connectorPreview && !presentState?.active) {
+      const { startPort, endPort } = appState.connectorPreview;
+      if (startPort?.element) {
+        this.drawConnectionPorts(ctx, startPort.element, startPort, cam.zoom, theme);
+      }
+      if (endPort?.element && endPort.element !== startPort?.element) {
+        this.drawConnectionPorts(ctx, endPort.element, endPort, cam.zoom, theme);
+      }
+    }
+
+    if (appState.placementPreview?.elements?.length && !presentState?.active) {
+      this.drawPlacementPreview(ctx, appState.placementPreview, page, scene, theme, cam.zoom);
+    }
+
+    if (appState.remoteCursors && appState.remoteCursors.length > 0) {
+      this.drawRemoteCursors(ctx, appState.remoteCursors, page, cam.zoom);
     }
 
     if (!presentState?.active && selectedIds.size > 0) {
@@ -495,8 +523,77 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
+  drawPlacementPreview(ctx, preview, page, scene, theme, zoom) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    const previewPage = { ...page, elements: [...page.elements, ...preview.elements] };
+    for (const el of preview.elements) {
+      this.drawSingleElement(ctx, el, previewPage, scene, theme, Date.now(), null, null);
+    }
+    const b = getSelectionBounds(preview.elements);
+    if (b) {
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16);
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  drawRemoteCursors(ctx, remoteCursors, page, zoom) {
+    ctx.save();
+    for (const rc of remoteCursors) {
+      const color = rc.color || '#2563eb';
+      if (Array.isArray(rc.selectionIds) && rc.selectionIds.length > 0) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        for (const sid of rc.selectionIds) {
+          const target = page.elements.find((e) => e.id === sid && !e.hidden);
+          if (target) {
+            ctx.strokeRect(target.x - 3, target.y - 3, (target.w || 40) + 6, (target.h || 40) + 6);
+          }
+        }
+        ctx.restore();
+      }
+
+      const s = 1 / zoom;
+      ctx.save();
+      ctx.translate(rc.x, rc.y);
+      ctx.scale(s, s);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, 15);
+      ctx.lineTo(4.2, 11.5);
+      ctx.lineTo(10.5, 13.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      const label = rc.name || 'Participant';
+      ctx.font = `600 11px ${FONT_MAP.sans}`;
+      const lw = ctx.measureText(label).width + 12;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(10, 12, lw, 19, 5);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 16, 21.5);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   drawSpotlightAndMagnifier(ctx, spotlight) {
-    const { x, y, radius = 130, magnifier = false } = spotlight;
+    const { x, y, radius = 130, magnifier = false, dimOpacity = 0.72 } = spotlight;
     ctx.save();
     if (magnifier) {
       const dpr = this.dpr || 1;
@@ -519,7 +616,8 @@ export class CanvasRenderer {
       ctx.restore();
     }
 
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.72)';
+    const alpha = Math.max(0.2, Math.min(0.92, Number(dimOpacity) || 0.72));
+    ctx.fillStyle = `rgba(2, 6, 23, ${alpha})`;
     ctx.beginPath();
     ctx.rect(0, 0, this.width, this.height);
     ctx.arc(x, y, radius, 0, Math.PI * 2, true);

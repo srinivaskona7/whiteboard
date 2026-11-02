@@ -3,97 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>StudioBoard — DevOps Architecture &amp; Live Classroom Whiteboard</title>
+    <title>StudioBoard — DevOps Architecture &amp; Live Teaching Whiteboard</title>
     <link
       rel="icon"
       type="image/svg+xml"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%230d9488'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='36' height='36' rx='9' fill='url(%23g)'/%3E%3Cpolygon points='18,6 29,12 29,24 18,30 7,24 7,12' fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpolyline points='7,12 18,18 29,12' fill='none' stroke='%2393c5fd' stroke-width='2'/%3E%3Cline x1='18' y1='18' x2='18' y2='30' stroke='%2393c5fd' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='3' fill='%23facc15'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='3' width='28' height='26' rx='6' fill='%232563eb'/%3E%3Cpath d='M9 12h14M9 17h10M9 22h6' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='21' r='3' fill='%23facc15'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div id="wb-app" class="wb-app">
-      <!-- Top Action Bar -->
-      <header class="wb-topbar" role="banner">
-        <div class="wb-brand">
-          <span class="wb-brand-logo" aria-hidden="true" title="StudioBoard — DevOps & Live Classroom Studio">
-            <svg width="24" height="24" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="sb-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#2563eb" />
-                  <stop offset="55%" stop-color="#4f46e5" />
-                  <stop offset="100%" stop-color="#0d9488" />
-                </linearGradient>
-              </defs>
-              <rect width="36" height="36" rx="9" fill="url(#sb-grad)" />
-              <polygon points="18,6.5 28.5,12.2 28.5,23.8 18,29.5 7.5,23.8 7.5,12.2" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round" />
-              <polyline points="7.5,12.2 18,18 28.5,12.2" stroke="#bae6fd" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
-              <line x1="18" y1="18" x2="18" y2="29.5" stroke="#bae6fd" stroke-width="1.9" stroke-linecap="round" />
-              <circle cx="18" cy="18" r="2.8" fill="#facc15" />
-              <circle cx="28.5" cy="12.2" r="2.2" fill="#38bdf8" />
-              <circle cx="7.5" cy="12.2" r="2.2" fill="#34d399" />
-            </svg>
-          </span>
-          <span class="wb-brand-title">StudioBoard</span>
-          <input
-            type="text"
-            id="wb-doc-title"
-            class="wb-doc-title-input"
-            value="StudioBoard Lesson"
-            aria-label="Document Title"
-            title="Edit Document Title"
-          />
-          <span id="wb-save-status" class="wb-save-status" role="status" aria-live="polite" title="Local persistence status">
-            Saved locally
-          </span>
-        </div>
-        <nav id="wb-topbar-actions" class="wb-topbar-actions" aria-label="Workspace Actions"></nav>
-      </header>
+      <!-- Top Bar -->
+      <header id="wb-topbar" class="wb-topbar" role="banner"></header>
 
-      <!-- Main Interactive Canvas -->
-      <main class="wb-canvas-wrap" role="main">
-        <canvas id="wb-canvas" tabindex="0" aria-label="Whiteboard Canvas"></canvas>
-        <textarea
-          id="wb-inline-text-editor"
-          class="wb-inline-text-editor wb-hidden"
-          aria-label="Inline Text Editor"
-        ></textarea>
-      </main>
+      <!-- Floating Active Teaching Mode & Spotlight Banner -->
+      <div id="wb-mode-banner" class="wb-mode-banner wb-hidden" aria-live="polite"></div>
 
-      <!-- Left Floating Tool Dock -->
-      <aside id="wb-toolbar" class="wb-toolbar" role="toolbar" aria-label="Drawing Tools"></aside>
+      <!-- Main Workspace -->
+      <div class="wb-workspace">
+        <!-- Left Tool Dock -->
+        <aside id="wb-toolbar" class="wb-toolbar" aria-label="Drawing Tools"></aside>
 
-      <!-- Left Collapsible Side Panel: Stencils, Packs & Templates -->
-      <aside id="wb-library-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Stencil Library and Templates"></aside>
+        <!-- Collapsible Left Side Panels -->
+        <aside id="wb-library-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Stencil and Template Library"></aside>
+        <aside id="wb-layers-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Layers Panel"></aside>
+        <aside id="wb-classroom-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Live Classroom and Student Questions"></aside>
 
-      <!-- Left Collapsible Side Panel: Layers -->
-      <aside id="wb-layers-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Layers Panel"></aside>
+        <!-- Interactive Canvas Viewport -->
+        <main id="wb-canvas-wrap" class="wb-canvas-wrap" tabindex="-1">
+          <canvas id="wb-canvas" aria-label="Interactive Whiteboard Canvas"></canvas>
+          <canvas id="wb-minimap" class="wb-minimap" width="180" height="120" aria-label="Minimap Navigation"></canvas>
+        </main>
 
-      <!-- Left Collapsible Side Panel: Live Classroom & Student Q&A -->
-      <aside id="wb-classroom-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Live Classroom and Student Q&A"></aside>
+        <!-- Right Properties Inspector -->
+        <aside id="wb-props-panel" class="wb-side-panel wb-right-panel" aria-label="Element Properties Inspector"></aside>
+      </div>
 
-      <!-- Right Collapsible Contextual Properties Panel -->
-      <aside id="wb-props-panel" class="wb-side-panel wb-right-panel wb-hidden" aria-label="Properties Panel"></aside>
-
-      <!-- Classroom Timer Overlay -->
-      <div id="wb-timer-widget" class="wb-timer-widget wb-hidden" role="region" aria-label="Classroom Timer"></div>
-
-      <!-- Presentation Mode Overlay Bar -->
-      <div id="wb-present-bar" class="wb-present-bar wb-hidden" role="region" aria-label="Presentation Controls"></div>
-
-      <!-- Bottom Bar: Page Tabs + Zoom / Undo Controls -->
-      <footer class="wb-bottombar" role="contentinfo">
-        <div id="wb-pages-bar" class="wb-pages-bar" aria-label="Pages Navigation"></div>
-        <div id="wb-zoom-bar" class="wb-zoom-bar" aria-label="Zoom and History Controls"></div>
+      <!-- Bottom Bar (Pages + Zoom) -->
+      <footer class="wb-footer">
+        <div id="wb-pages-bar" class="wb-pages-bar" role="navigation" aria-label="Document Pages"></div>
+        <div id="wb-bottombar" class="wb-bottombar"></div>
       </footer>
 
-      <!-- Command Palette Modal -->
-      <div id="wb-palette-backdrop" class="wb-backdrop wb-hidden" role="dialog" aria-modal="true" aria-label="Command Palette">
+      <!-- Floating Teaching Widgets -->
+      <div id="wb-timer-widget" class="wb-timer-widget wb-hidden" role="region" aria-label="Classroom Timer"></div>
+      <div id="wb-present-bar" class="wb-present-bar wb-hidden" role="region" aria-label="Presentation Controls"></div>
+
+      <!-- Command Palette Overlay -->
+      <div id="wb-palette-backdrop" class="wb-modal-backdrop wb-hidden" role="dialog" aria-modal="true" aria-label="Command Palette">
         <div id="wb-palette-box" class="wb-palette-box"></div>
       </div>
 
-      <!-- Generic Dialog Modal -->
-      <div id="wb-modal-backdrop" class="wb-backdrop wb-hidden" role="dialog" aria-modal="true" aria-label="Dialog">
+      <!-- Generic Modal Overlay -->
+      <div id="wb-modal-backdrop" class="wb-modal-backdrop wb-hidden" role="dialog" aria-modal="true">
         <div id="wb-modal-box" class="wb-modal-box"></div>
       </div>
 
@@ -102,7 +64,7 @@
 
       <!-- Hidden File Inputs -->
       <input type="file" id="wb-file-open-json" accept=".json,.whiteboard.json" class="wb-hidden" />
-      <input type="file" id="wb-file-insert-image" accept="image/*" class="wb-hidden" />
+      <input type="file" id="wb-file-image" accept="image/*" class="wb-hidden" />
       <input type="file" id="wb-file-import-lib" accept=".json,.library.json" class="wb-hidden" />
     </div>
 

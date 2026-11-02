@@ -15,6 +15,17 @@ export class ConnectorTool {
     this.startedFromPort = null;
   }
 
+  cancel() {
+    if (this.activeConnector) {
+      const page = this.app.getPage();
+      page.elements = page.elements.filter((e) => e.id !== this.activeConnector.id);
+      this.activeConnector = null;
+      this.startedFromPort = null;
+      this.app.connectorPreview = null;
+      this.app.requestRender();
+    }
+  }
+
   startFromPort(portInfo, world) {
     const page = this.app.getPage();
     const style = this.app.currentStyle;
@@ -34,6 +45,7 @@ export class ConnectorTool {
     page.elements.push(conn);
     this.activeConnector = conn;
     this.startedFromPort = portInfo;
+    this.app.connectorPreview = { startPort: portInfo, endPort: null };
     this.app.selectedIds = new Set([conn.id]);
     this.app.requestRender();
   }
@@ -42,7 +54,7 @@ export class ConnectorTool {
     const page = this.app.getPage();
     const style = this.app.currentStyle;
     const type = this.app.activeTool === 'line' ? 'line' : 'arrow';
-    const portHit = findHoverPort(page, world.x, world.y, 22 / page.camera.zoom);
+    const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom);
     this.startedFromPort = null;
 
     const conn = createElement(type, {
@@ -53,15 +65,21 @@ export class ConnectorTool {
       stroke: style.stroke,
       strokeWidth: style.strokeWidth,
       strokeStyle: style.strokeStyle,
-      routing: type === 'line' ? style.routing || 'straight' : style.routing || 'orthogonal',
+      routing: type === 'line' ? 'straight' : style.routing || 'orthogonal',
       startArrow: style.startArrow || 'none',
       endArrow: type === 'line' ? 'none' : style.endArrow || 'arrow',
     });
 
     if (portHit) {
-      bindConnectorEndpoint(conn, 'start', portHit.element, portHit.port);
+      bindConnectorEndpoint(
+        conn,
+        'start',
+        portHit.element,
+        portHit.isExplicitPort ? portHit.port : 'auto'
+      );
     }
 
+    this.app.connectorPreview = { startPort: portHit || null, endPort: null };
     page.elements.push(conn);
     this.activeConnector = conn;
     this.app.selectedIds = new Set([conn.id]);
@@ -71,7 +89,7 @@ export class ConnectorTool {
   onPointerMove(world, ev) {
     const page = this.app.getPage();
     if (!this.activeConnector) {
-      const portHit = findHoverPort(page, world.x, world.y, 22 / page.camera.zoom);
+      const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom);
       this.app.hoveredPort = portHit;
       this.app.hoveredElement = portHit ? portHit.element : null;
       this.app.requestRender();
@@ -79,14 +97,27 @@ export class ConnectorTool {
     }
 
     const conn = this.activeConnector;
-    const portHit = findHoverPort(page, world.x, world.y, 22 / page.camera.zoom, conn.id);
+    const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom, conn.id);
     this.app.hoveredPort = portHit;
     this.app.hoveredElement = portHit ? portHit.element : null;
 
     if (portHit && portHit.elementId !== conn.startBinding?.elementId) {
-      bindConnectorEndpoint(conn, 'end', portHit.element, portHit.port);
+      bindConnectorEndpoint(
+        conn,
+        'end',
+        portHit.element,
+        portHit.isExplicitPort ? portHit.port : 'auto'
+      );
+      this.app.connectorPreview = {
+        startPort: this.app.connectorPreview?.startPort || null,
+        endPort: portHit,
+      };
     } else {
       unbindConnectorEndpoint(conn, 'end');
+      this.app.connectorPreview = {
+        startPort: this.app.connectorPreview?.startPort || null,
+        endPort: null,
+      };
       let tx = world.x;
       let ty = world.y;
       if (ev.shiftKey && this.app.scene.settings.snapToAngle) {
@@ -111,6 +142,7 @@ export class ConnectorTool {
     const fromPort = this.startedFromPort;
     this.activeConnector = null;
     this.startedFromPort = null;
+    this.app.connectorPreview = null;
     const page = this.app.getPage();
 
     if (fromPort && !conn.endBinding && Math.hypot(conn.x2 - conn.x, conn.y2 - conn.y) >= 36) {

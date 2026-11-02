@@ -1,6 +1,9 @@
 // ui/props-panel.js
 import { PALETTE_STROKE_COLORS, PALETTE_FILL_COLORS } from '../render/themes.js';
 import { escapeXml } from '../render/svg-export.js';
+import { getConnectorDirectionPreset, applyConnectorDirectionPreset } from '../scene/model.js';
+import { resetConnectorRoute } from '../scene/routing.js';
+import { updateConnectorBindings } from '../scene/bindings.js';
 
 export function initPropsPanel(app) {
   const container = document.getElementById('wb-props-panel');
@@ -194,7 +197,7 @@ export function initPropsPanel(app) {
       `);
     }
 
-    // Connector Routing & Arrowheads
+    // Connector Routing, Direction Presets & Arrowheads
     if (isConnector) {
       const arrowTypes = ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'];
       const routingModes = [
@@ -202,14 +205,30 @@ export function initPropsPanel(app) {
         ['orthogonal', 'Right-Angle'],
         ['curved', 'Curved'],
       ];
+      const dirPreset = getConnectorDirectionPreset(ref);
+      const dirPresets = [
+        ['plain', '— Plain'],
+        ['one-way', '→ One-Way'],
+        ['two-way', '↔ Two-Way'],
+      ];
+      const quickLabels = ['HTTPS', 'TCP 443', 'DNS', 'gRPC', 'replication'];
+      const portOpts = ['auto', 'top', 'right', 'bottom', 'left'];
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Connector Routing & Label</div>
-          <div class="wb-btn-group">
+          <div class="wb-prop-title">Connector Route & Direction</div>
+          <div class="wb-btn-group" role="group" aria-label="Connector Routing Mode">
             ${routingModes
               .map(
                 ([rt, label]) =>
                   `<button type="button" class="wb-btn wb-sm ${(ref.routing || 'orthogonal') === rt ? 'active' : ''}" data-routing="${rt}">${label}</button>`
+              )
+              .join('')}
+          </div>
+          <div class="wb-btn-group" role="group" aria-label="Connector Direction Preset">
+            ${dirPresets
+              .map(
+                ([dp, label]) =>
+                  `<button type="button" class="wb-btn wb-sm ${dirPreset === dp ? 'active' : ''}" data-dir-preset="${dp}">${label}</button>`
               )
               .join('')}
           </div>
@@ -218,6 +237,18 @@ export function initPropsPanel(app) {
               ? `<label class="wb-prop-row">
                   <span>Label</span>
                   <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. HTTPS / gRPC" value="${escapeXml(ref.text || '')}" aria-label="Connector Label"/>
+                </label>
+                <div class="wb-btn-group" style="flex-wrap:wrap;gap:3px;">
+                  ${quickLabels
+                    .map(
+                      (ql) =>
+                        `<button type="button" class="wb-btn wb-sm ${ref.text === ql ? 'active' : ''}" style="font-size:10px;padding:2px 5px;" data-quick-label="${ql}">${ql}</button>`
+                    )
+                    .join('')}
+                </div>
+                <label class="wb-prop-row">
+                  <span>Label Pos (${Math.round((ref.labelT ?? 0.5) * 100)}%)</span>
+                  <input type="range" id="prop-label-t" min="10" max="90" value="${Math.round((ref.labelT ?? 0.5) * 100)}" aria-label="Connector Label Position"/>
                 </label>`
               : ''
           }
@@ -241,6 +272,37 @@ export function initPropsPanel(app) {
                 .join('')}
             </select>
           </label>
+          ${
+            selected.length === 1 && (ref.startBinding || ref.endBinding)
+              ? `<div class="wb-prop-row" style="gap:4px;">
+                  ${
+                    ref.startBinding
+                      ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;">Start Port <select id="prop-start-port" aria-label="Start Port">${portOpts
+                          .map(
+                            (p) =>
+                              `<option value="${p}" ${(ref.startBinding.port || 'auto') === p ? 'selected' : ''}>${p}</option>`
+                          )
+                          .join('')}</select></label>`
+                      : ''
+                  }
+                  ${
+                    ref.endBinding
+                      ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;">End Port <select id="prop-end-port" aria-label="End Port">${portOpts
+                          .map(
+                            (p) =>
+                              `<option value="${p}" ${(ref.endBinding.port || 'auto') === p ? 'selected' : ''}>${p}</option>`
+                          )
+                          .join('')}</select></label>`
+                      : ''
+                  }
+                </div>`
+              : ''
+          }
+          ${
+            selected.length >= 1
+              ? `<button type="button" class="wb-btn wb-sm" id="btn-reset-route" title="Reset manual bend/elbow adjustments and recompute automatic route">↺ Reset Route</button>`
+              : ''
+          }
         </div>
       `);
     }
@@ -317,21 +379,32 @@ export function initPropsPanel(app) {
       `);
     }
 
-    // Frame controls
-    if (types.has('frame') && selected.length === 1) {
+    // Frame / Boundary Container controls
+    if (
+      selected.length === 1 &&
+      (types.has('frame') || selected[0].isContainer || selected[0].isBoundary)
+    ) {
       const fr = selected[0];
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Frame / Slide</div>
+          <div class="wb-prop-title">${fr.type === 'frame' ? 'Frame / Slide' : 'Architecture Boundary Container'}</div>
           <label class="wb-prop-row">
-            <span>Slide Order #</span>
-            <input type="number" id="prop-slide-order" min="1" max="99" value="${fr.slideOrder || 1}" style="width:60px"/>
+            <span>Move Contents Together</span>
+            <input type="checkbox" id="prop-move-children" ${fr.moveChildren !== false ? 'checked' : ''}/>
           </label>
-          <label class="wb-prop-row">
-            <span>Clip Children</span>
-            <input type="checkbox" id="prop-frame-clip" ${fr.clip ? 'checked' : ''}/>
-          </label>
-          <button type="button" class="wb-btn wb-sm" id="btn-frame-collapse">${fr.collapsed ? 'Expand Frame' : 'Collapse Frame'}</button>
+          ${
+            fr.type === 'frame'
+              ? `<label class="wb-prop-row">
+                  <span>Slide Order #</span>
+                  <input type="number" id="prop-slide-order" min="1" max="99" value="${fr.slideOrder || 1}" style="width:60px"/>
+                </label>
+                <label class="wb-prop-row">
+                  <span>Clip Children</span>
+                  <input type="checkbox" id="prop-frame-clip" ${fr.clip ? 'checked' : ''}/>
+                </label>
+                <button type="button" class="wb-btn wb-sm" id="btn-frame-collapse">${fr.collapsed ? 'Expand Frame' : 'Collapse Frame'}</button>`
+              : ''
+          }
         </div>
       `);
     }
@@ -378,6 +451,10 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" data-arrange="column" title="Arrange in Vertical Column">↓ Col</button>
             <button type="button" class="wb-btn wb-sm" data-arrange="grid" title="Arrange in Balanced Grid">⊞ Grid</button>
             <button type="button" class="wb-btn wb-sm" id="btn-auto-connect" title="Connect Selected Components in Sequence">⛓ Connect</button>
+          </div>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" id="btn-auto-layout-lr" title="Auto-Layout Architecture Left-to-Right">⇄ Auto-Layout LR</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-auto-layout-tb" title="Auto-Layout Architecture Top-to-Bottom">⇅ Auto-Layout TB</button>
           </div>
           <div class="wb-btn-group">
             <button type="button" class="wb-btn wb-sm" id="btn-group">Group (⌘G)</button>
@@ -460,7 +537,65 @@ export function initPropsPanel(app) {
     container.querySelector('#prop-roundness')?.addEventListener('change', (e) => applyProp((t) => (t.roundness = Number(e.target.value))));
     container.querySelector('#prop-sloppy')?.addEventListener('change', (e) => applyProp((t) => (t.sloppy = e.target.checked)));
     container.querySelector('#prop-autogrow')?.addEventListener('change', (e) => applyProp((t) => (t.autoGrow = e.target.checked)));
-    container.querySelectorAll('[data-routing]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.routing = b.dataset.routing))));
+    container.querySelectorAll('[data-routing]').forEach((b) =>
+      b.addEventListener('click', () =>
+        applyProp((t) => {
+          t.routing = b.dataset.routing;
+          if (t.id) updateConnectorBindings(app.getPage(), [t.id]);
+        })
+      )
+    );
+    container.querySelectorAll('[data-dir-preset]').forEach((b) =>
+      b.addEventListener('click', () =>
+        applyProp((t) => applyConnectorDirectionPreset(t, b.dataset.dirPreset))
+      )
+    );
+    container.querySelectorAll('[data-quick-label]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (selected[0] && !selected[0].locked) {
+          selected[0].text = selected[0].text === b.dataset.quickLabel ? '' : b.dataset.quickLabel;
+          app.commitChange();
+          app.requestRender();
+          render();
+        }
+      })
+    );
+    container.querySelector('#prop-label-t')?.addEventListener('input', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].labelT = Number(e.target.value) / 100;
+        app.commitChange();
+        app.requestRender();
+        render();
+      }
+    });
+    container.querySelector('#prop-start-port')?.addEventListener('change', (e) => {
+      if (selected[0]?.startBinding) {
+        selected[0].startBinding.port = e.target.value;
+        updateConnectorBindings(app.getPage(), [selected[0].id]);
+        app.commitChange();
+        app.requestRender();
+      }
+    });
+    container.querySelector('#prop-end-port')?.addEventListener('change', (e) => {
+      if (selected[0]?.endBinding) {
+        selected[0].endBinding.port = e.target.value;
+        updateConnectorBindings(app.getPage(), [selected[0].id]);
+        app.commitChange();
+        app.requestRender();
+      }
+    });
+    container.querySelector('#btn-reset-route')?.addEventListener('click', () => {
+      const page = app.getPage();
+      for (const el of selected) {
+        if (el.type === 'line' || el.type === 'arrow') {
+          resetConnectorRoute(el, page);
+          updateConnectorBindings(page, [el.id]);
+        }
+      }
+      app.commitChange();
+      app.requestRender();
+      render();
+    });
     container.querySelector('#prop-start-arrow')?.addEventListener('change', (e) => applyProp((t) => (t.startArrow = e.target.value)));
     container.querySelector('#prop-end-arrow')?.addEventListener('change', (e) => applyProp((t) => (t.endArrow = e.target.value)));
     container.querySelector('#prop-font-family')?.addEventListener('change', (e) => applyProp((t) => (t.fontFamily = e.target.value)));
@@ -501,7 +636,13 @@ export function initPropsPanel(app) {
       });
     }
 
-    // Code highlight & Frame options
+    // Code highlight & Frame / Boundary Container options
+    container.querySelector('#prop-move-children')?.addEventListener('change', (e) => {
+      if (selected[0]) {
+        selected[0].moveChildren = e.target.checked;
+        app.commitChange();
+      }
+    });
     container.querySelector('#prop-code-hl')?.addEventListener('input', (e) => {
       if (selected[0]) { selected[0].highlightLines = e.target.value; app.commitChange(); app.requestRender(); }
     });
@@ -528,6 +669,8 @@ export function initPropsPanel(app) {
     container.querySelectorAll('[data-dist]').forEach((b) => b.addEventListener('click', () => app.distributeSelection(b.dataset.dist)));
     container.querySelectorAll('[data-arrange]').forEach((b) => b.addEventListener('click', () => app.arrangeSelection(b.dataset.arrange)));
     container.querySelector('#btn-auto-connect')?.addEventListener('click', () => app.connectSelectionFlow());
+    container.querySelector('#btn-auto-layout-lr')?.addEventListener('click', () => app.autoLayoutSelection('LR'));
+    container.querySelector('#btn-auto-layout-tb')?.addEventListener('click', () => app.autoLayoutSelection('TB'));
     container.querySelector('#btn-match-size')?.addEventListener('click', () => app.matchSelectionSize());
     container.querySelector('#btn-group')?.addEventListener('click', () => app.groupSelection());
     container.querySelector('#btn-ungroup')?.addEventListener('click', () => app.ungroupSelection());

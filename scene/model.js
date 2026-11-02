@@ -124,6 +124,7 @@ export function createElement(type, props = {}) {
       ? props.waypoints.map((p) => ({ x: p.x, y: p.y }))
       : [];
     base.labelT = props.labelT ?? 0.5;
+    base.manualRoute = Boolean(props.manualRoute);
   }
 
   if (type === 'image') {
@@ -141,6 +142,9 @@ export function createElement(type, props = {}) {
   if (type === 'stencil') {
     base.stencilId = props.stencilId ?? 'flow-process';
     base.category = props.category ?? 'flowchart';
+    base.isBoundary = Boolean(props.isBoundary);
+    base.isContainer = Boolean(props.isContainer ?? props.isBoundary);
+    base.moveChildren = props.moveChildren !== false;
   }
 
   if (isFrame) {
@@ -148,6 +152,8 @@ export function createElement(type, props = {}) {
     base.collapsed = Boolean(props.collapsed);
     base.expandedHeight = props.expandedHeight ?? base.h;
     base.slideOrder = props.slideOrder ?? 1;
+    base.isContainer = true;
+    base.moveChildren = props.moveChildren !== false;
   }
 
   if (isTable) {
@@ -185,6 +191,9 @@ export function createElement(type, props = {}) {
     base.targetElementName = props.targetElementName ?? '';
     base.offsetX = props.offsetX ?? 0;
     base.offsetY = props.offsetY ?? 0;
+    base.anchorRx = props.anchorRx ?? 0.85;
+    base.anchorRy = props.anchorRy ?? 0;
+    base.anchorDeleted = Boolean(props.anchorDeleted);
     base.resolved = Boolean(props.resolved);
     base.reply = props.reply ?? '';
     base.createdAt = props.createdAt ?? Date.now();
@@ -194,7 +203,57 @@ export function createElement(type, props = {}) {
     base.stroke = props.stroke ?? '#d97706';
   }
 
+  base.updatedAt = props.updatedAt ?? Date.now();
   return base;
+}
+
+export function getConnectorDirectionPreset(el) {
+  if (!el) return 'one-way';
+  const hasStart = el.startArrow && el.startArrow !== 'none';
+  const hasEnd = el.endArrow && el.endArrow !== 'none';
+  if (!hasStart && !hasEnd) return 'plain';
+  if (hasStart && hasEnd) return 'two-way';
+  return 'one-way';
+}
+
+export function applyConnectorDirectionPreset(el, preset = 'one-way') {
+  if (!el) return el;
+  if (preset === 'plain') {
+    el.startArrow = 'none';
+    el.endArrow = 'none';
+  } else if (preset === 'two-way') {
+    el.startArrow = el.startArrow && el.startArrow !== 'none' ? el.startArrow : 'arrow';
+    el.endArrow = el.endArrow && el.endArrow !== 'none' ? el.endArrow : 'arrow';
+  } else {
+    el.startArrow = 'none';
+    el.endArrow = el.endArrow && el.endArrow !== 'none' ? el.endArrow : 'arrow';
+  }
+  return el;
+}
+
+export function handleAnchorDeletion(page, deletedIds) {
+  if (!page || !Array.isArray(page.elements)) return;
+  const delSet = deletedIds instanceof Set ? deletedIds : new Set(deletedIds || []);
+  if (delSet.size === 0) return;
+  for (const el of page.elements) {
+    if (el.type === 'question' && el.targetElementId && delSet.has(el.targetElementId)) {
+      const prevTarget = page.elements.find((t) => t.id === el.targetElementId);
+      if (prevTarget && Number.isFinite(prevTarget.x) && Number.isFinite(prevTarget.y)) {
+        el.x = prevTarget.x + (el.offsetX ?? Math.max(0, (prevTarget.w || 140) - 30));
+        el.y = prevTarget.y + (el.offsetY ?? -36);
+      }
+      el.targetElementId = null;
+      el.anchorDeleted = true;
+    }
+    if ((el.type === 'line' || el.type === 'arrow')) {
+      if (el.startBinding && delSet.has(el.startBinding.elementId)) {
+        el.startBinding = null;
+      }
+      if (el.endBinding && delSet.has(el.endBinding.elementId)) {
+        el.endBinding = null;
+      }
+    }
+  }
 }
 
 export function createPage(name = 'Page 1', id = uid('page')) {
@@ -336,17 +395,31 @@ export function expandSelectionWithGroups(page, selectedIds) {
   return Array.from(result);
 }
 
-export function getContainerChildren(page, containerId) {
+export function getContainerChildren(page, containerId, options = {}) {
   const frame = findElement(page, containerId);
   if (!frame) return [];
-  return page.elements.filter((el) => {
+  if (options.forDrag && frame.moveChildren === false) return [];
+  const fh = frame.type === 'frame' && frame.collapsed ? 42 : frame.h;
+  const childNodes = page.elements.filter((el) => {
     if (el.id === containerId || el.hidden) return false;
+    if (el.type === 'line' || el.type === 'arrow') return false;
     if (el.containerId === containerId) return true;
-    const cx = el.type === 'line' || el.type === 'arrow' ? (el.x + el.x2) / 2 : el.x + el.w / 2;
-    const cy = el.type === 'line' || el.type === 'arrow' ? (el.y + el.y2) / 2 : el.y + el.h / 2;
-    const fh = frame.collapsed ? 42 : frame.h;
+    const cx = el.x + (el.w || 0) / 2;
+    const cy = el.y + (el.h || 0) / 2;
     return cx >= frame.x && cx <= frame.x + frame.w && cy >= frame.y && cy <= frame.y + fh;
   });
+  const childIdSet = new Set(childNodes.map((n) => n.id));
+  const internalConnectors = page.elements.filter((el) => {
+    if (el.hidden || (el.type !== 'line' && el.type !== 'arrow')) return false;
+    if (el.containerId === containerId) return true;
+    const startInside = el.startBinding && childIdSet.has(el.startBinding.elementId);
+    const endInside = el.endBinding && childIdSet.has(el.endBinding.elementId);
+    if (startInside && endInside) return true;
+    const cx = (el.x + el.x2) / 2;
+    const cy = (el.y + el.y2) / 2;
+    return !el.startBinding && !el.endBinding && cx >= frame.x && cx <= frame.x + frame.w && cy >= frame.y && cy <= frame.y + fh;
+  });
+  return [...childNodes, ...internalConnectors];
 }
 
 export function toggleFrameCollapse(page, frameId) {

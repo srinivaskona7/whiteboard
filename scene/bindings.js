@@ -4,6 +4,7 @@ import {
   getConnectionPorts,
   getPortPoint,
   getNearestPort,
+  chooseBestCardinalPort,
   getEdgePointToward,
   getElementCenter,
 } from './geometry.js';
@@ -38,14 +39,15 @@ export function findHoverPort(page, px, py, radius = 16, excludeId = null) {
           x: p.x,
           y: p.y,
           element: el,
+          isExplicitPort: true,
         };
       }
     }
   }
   if (best) return best;
 
-  // Fallback: if pointer is inside or within 10px of a component body, snap to its nearest port
-  const bodyPad = Math.min(10, radius * 0.5);
+  // Component body hover: snap in automatic boundary mode ('auto')
+  const bodyPad = Math.min(12, radius * 0.6);
   for (let i = page.elements.length - 1; i >= 0; i--) {
     const el = page.elements[i];
     if (
@@ -56,6 +58,7 @@ export function findHoverPort(page, px, py, radius = 16, excludeId = null) {
       el.type === 'pen' ||
       el.type === 'highlighter' ||
       el.type === 'frame' ||
+      el.isBoundary ||
       el.type === 'question'
     ) {
       continue;
@@ -67,34 +70,57 @@ export function findHoverPort(page, px, py, radius = 16, excludeId = null) {
       py <= el.y + el.h + bodyPad
     ) {
       const nearest = getNearestPort(el, px, py);
-      if (nearest) {
-        return {
-          elementId: el.id,
-          port: nearest.port,
-          portId: nearest.port,
-          x: nearest.x,
-          y: nearest.y,
-          element: el,
-        };
-      }
+      const edgePt = getEdgePointToward(el, px, py);
+      return {
+        elementId: el.id,
+        port: 'auto',
+        resolvedPort: nearest?.port || 'right',
+        portId: 'auto',
+        x: nearest ? nearest.x : edgePt.x,
+        y: nearest ? nearest.y : edgePt.y,
+        element: el,
+        isExplicitPort: false,
+      };
     }
   }
   return null;
 }
 
-export function bindConnectorEndpoint(connector, which, element, port = null) {
+export function bindConnectorEndpoint(
+  connector,
+  which,
+  element,
+  port = null,
+  customRatio = null
+) {
   if (!connector || !element) return;
-  const pt =
+  const oppositePt =
     which === 'start'
-      ? { x: connector.x, y: connector.y }
-      : { x: connector.x2, y: connector.y2 };
-  const chosenPort = port || getNearestPort(element, pt.x, pt.y)?.port || 'right';
-  const portPos = getPortPoint(element, chosenPort);
+      ? { x: connector.x2 ?? element.x + element.w + 80, y: connector.y2 ?? element.y + element.h / 2 }
+      : { x: connector.x ?? element.x - 80, y: connector.y ?? element.y + element.h / 2 };
+
+  const chosenPort = port || 'auto';
+  const resolvedCardinal =
+    chosenPort === 'auto'
+      ? chooseBestCardinalPort(element, oppositePt.x, oppositePt.y)
+      : chosenPort;
+
+  const portPos =
+    chosenPort === 'custom' && customRatio
+      ? getPortPoint(element, 'custom', customRatio)
+      : chosenPort === 'auto' && connector.routing === 'straight'
+        ? getEdgePointToward(element, oppositePt.x, oppositePt.y)
+        : getPortPoint(element, resolvedCardinal);
 
   const binding = {
     elementId: element.id,
     port: chosenPort,
+    resolvedPort: resolvedCardinal,
   };
+  if (chosenPort === 'custom' && customRatio) {
+    binding.rx = customRatio.rx;
+    binding.ry = customRatio.ry;
+  }
 
   if (which === 'start') {
     connector.startBinding = binding;
@@ -105,6 +131,8 @@ export function bindConnectorEndpoint(connector, which, element, port = null) {
     connector.x2 = portPos.x;
     connector.y2 = portPos.y;
   }
+  connector.w = Math.abs(connector.x2 - connector.x);
+  connector.h = Math.abs(connector.y2 - connector.y);
 }
 
 export function unbindConnectorEndpoint(connector, which) {
@@ -136,12 +164,28 @@ export function updateConnectorBindings(page, changedElementIds = null) {
     if (el.startBinding) {
       if (!startShape) {
         el.startBinding = null;
-      } else if (el.startBinding.port === 'auto') {
-        const ref = endShape ? getElementCenter(endShape) : { x: el.x2, y: el.y2 };
-        const p = getEdgePointToward(startShape, ref.x, ref.y);
+      } else if (el.startBinding.port === 'custom') {
+        const p = getPortPoint(startShape, 'custom', {
+          rx: el.startBinding.rx ?? 0.5,
+          ry: el.startBinding.ry ?? 0.5,
+        });
         el.x = p.x;
         el.y = p.y;
+      } else if (el.startBinding.port === 'auto') {
+        const ref = endShape ? getElementCenter(endShape) : { x: el.x2, y: el.y2 };
+        const bestPort = chooseBestCardinalPort(startShape, ref.x, ref.y);
+        el.startBinding.resolvedPort = bestPort;
+        if (el.routing === 'straight') {
+          const p = getEdgePointToward(startShape, ref.x, ref.y);
+          el.x = p.x;
+          el.y = p.y;
+        } else {
+          const p = getPortPoint(startShape, bestPort);
+          el.x = p.x;
+          el.y = p.y;
+        }
       } else {
+        el.startBinding.resolvedPort = el.startBinding.port;
         const p = getPortPoint(startShape, el.startBinding.port);
         el.x = p.x;
         el.y = p.y;
@@ -151,12 +195,28 @@ export function updateConnectorBindings(page, changedElementIds = null) {
     if (el.endBinding) {
       if (!endShape) {
         el.endBinding = null;
-      } else if (el.endBinding.port === 'auto') {
-        const ref = startShape ? getElementCenter(startShape) : { x: el.x, y: el.y };
-        const p = getEdgePointToward(endShape, ref.x, ref.y);
+      } else if (el.endBinding.port === 'custom') {
+        const p = getPortPoint(endShape, 'custom', {
+          rx: el.endBinding.rx ?? 0.5,
+          ry: el.endBinding.ry ?? 0.5,
+        });
         el.x2 = p.x;
         el.y2 = p.y;
+      } else if (el.endBinding.port === 'auto') {
+        const ref = startShape ? getElementCenter(startShape) : { x: el.x, y: el.y };
+        const bestPort = chooseBestCardinalPort(endShape, ref.x, ref.y);
+        el.endBinding.resolvedPort = bestPort;
+        if (el.routing === 'straight') {
+          const p = getEdgePointToward(endShape, ref.x, ref.y);
+          el.x2 = p.x;
+          el.y2 = p.y;
+        } else {
+          const p = getPortPoint(endShape, bestPort);
+          el.x2 = p.x;
+          el.y2 = p.y;
+        }
       } else {
+        el.endBinding.resolvedPort = el.endBinding.port;
         const p = getPortPoint(endShape, el.endBinding.port);
         el.x2 = p.x;
         el.y2 = p.y;
@@ -174,9 +234,18 @@ export function updateConnectorBindings(page, changedElementIds = null) {
       const target = findElement(page, el.targetElementId);
       if (target) {
         if (!filterSet || filterSet.has(target.id) || filterSet.has(el.id)) {
-          el.x = target.x + (el.offsetX ?? Math.max(0, target.w - 30));
-          el.y = target.y + (el.offsetY ?? -36);
+          if (typeof el.anchorRx === 'number' && typeof el.anchorRy === 'number' && el.offsetX === undefined) {
+            el.x = Math.round(target.x + target.w * el.anchorRx);
+            el.y = Math.round(target.y + target.h * el.anchorRy - 36);
+          } else {
+            el.x = target.x + (el.offsetX ?? Math.max(0, target.w - 30));
+            el.y = target.y + (el.offsetY ?? -36);
+          }
         }
+      } else {
+        // Target component was deleted: preserve question at last valid position
+        el.targetElementId = null;
+        el.anchorDeleted = true;
       }
     }
   }

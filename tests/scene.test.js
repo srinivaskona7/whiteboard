@@ -525,19 +525,25 @@ describe('DevOps Icon Library, Arrangement, Multi-Resize & Live Classroom', () =
     assert.equal(seHit?.id, 'se');
   });
 
-  test('snaps connectors when hovering anywhere inside a component body', () => {
+  test('snaps connectors in auto mode when hovering inside a component body and explicit port on port dot', () => {
     const page = createPage('Snap Page');
     const eks = createElement('stencil', { stencilId: 'aws-eks', x: 200, y: 200, w: 152, h: 98, text: 'EKS Cluster' });
     page.elements.push(eks);
 
-    // Hover near right side inside component body
+    // Hover near right side inside component body -> automatic boundary mode ('auto') with resolvedPort 'right'
     const bodySnap = findHoverPort(page, 330, 248, 18);
     assert.ok(bodySnap, 'Should snap when pointer is inside component body');
     assert.equal(bodySnap.elementId, eks.id);
-    assert.equal(bodySnap.port, 'right');
+    assert.equal(bodySnap.port, 'auto');
+    assert.equal(bodySnap.resolvedPort, 'right');
+
+    // Hover directly on top port dot -> explicit port ('top')
+    const topPortSnap = findHoverPort(page, 276, 200, 18);
+    assert.equal(topPortSnap.port, 'top');
+    assert.equal(topPortSnap.isExplicitPort, true);
   });
 
-  test('encodes shareable classroom links, points at components, and keeps question pins attached on move', () => {
+  test('encodes shareable classroom links, points at components, and keeps question pins attached on move and anchor deletion', () => {
     const scene = createScene('light');
     const page = scene.pages[0];
     const k8sPod = createElement('stencil', {
@@ -584,3 +590,4 @@ describe('DevOps Icon Library, Arrangement, Multi-Resize & Live Classroom', () =
     assert.equal(parsed.scene.pages[0].elements.length, 2);
   });
 });
+

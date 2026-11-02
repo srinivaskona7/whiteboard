@@ -2,7 +2,11 @@
 import { getThemeTokens, FONT_MAP, resolveThemeColor } from './themes.js';
 import { getSelectionBounds, syncFreehandBounds } from '../scene/geometry.js';
 import { wrapShapeTextLines } from '../scene/model.js';
-import { getConnectorPoints, getPointAlongConnector } from '../scene/routing.js';
+import {
+  getConnectorPoints,
+  getPointAlongConnector,
+  getConnectorTangentFromPoint,
+} from '../scene/routing.js';
 import { getStencilById } from '../stencils/index.js';
 import { parseHighlightSet } from './shapes.js';
 
@@ -46,10 +50,16 @@ function renderSvgArrowhead(type, tipX, tipY, fromX, fromY, strokeWidth, strokeC
 
 function renderSvgTextBlock(el, themeName, padding = 12) {
   if (!el.text) return '';
-  const isCard = el.type === 'stencil' && Boolean(getStencilById(el.stencilId)?.isCard);
-  const fontSize = isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
+  const stencil = el.type === 'stencil' ? getStencilById(el.stencilId) : null;
+  const isBoundary = Boolean(el.isBoundary || stencil?.isBoundary);
+  const isCard = el.type === 'stencil' && Boolean(stencil?.isCard) && !isBoundary;
+  const fontSize = isBoundary ? 13 : isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
   const fontStack = escapeXml(FONT_MAP[el.fontFamily || 'sans'] || FONT_MAP.sans);
   const color = resolveThemeColor(el.textColor || el.stroke || '#1e293b', themeName, 'text');
+  if (isBoundary) {
+    const firstLine = String(el.text).split(String.fromCharCode(10))[0];
+    return `<text x="${el.x + 38}" y="${el.y + 18}" font-family="${fontStack}" font-size="${fontSize}" font-weight="600" fill="${color}" text-anchor="start" dominant-baseline="central">${escapeXml(firstLine)}</text>`;
+  }
   const lines = wrapShapeTextLines(el, el.text);
   const lineH = fontSize * (isCard ? 1.18 : 1.32);
   const totalH = lines.length * lineH;
@@ -156,12 +166,13 @@ function elementToSvg(el, page, scene, theme) {
       }
       inner += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" ${dash}/>`;
       if (el.startArrow && el.startArrow !== 'none') {
-        inner += renderSvgArrowhead(el.startArrow, pts[0].x, pts[0].y, pts[1].x, pts[1].y, sw, stroke);
+        const pFrom = getConnectorTangentFromPoint(el, 'start', page);
+        inner += renderSvgArrowhead(el.startArrow, pts[0].x, pts[0].y, pFrom.x, pFrom.y, sw, stroke);
       }
       if (el.endArrow && el.endArrow !== 'none') {
         const last = pts[pts.length - 1];
-        const prev = pts[pts.length - 2];
-        inner += renderSvgArrowhead(el.endArrow, last.x, last.y, prev.x, prev.y, sw, stroke);
+        const pFrom = getConnectorTangentFromPoint(el, 'end', page);
+        inner += renderSvgArrowhead(el.endArrow, last.x, last.y, pFrom.x, pFrom.y, sw, stroke);
       }
       if (el.text) {
         const lp = getPointAlongConnector(el, el.labelT ?? 0.5, page);

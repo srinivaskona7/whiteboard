@@ -2,6 +2,120 @@
 
 export const PORTS = ['top', 'right', 'bottom', 'left'];
 
+export function isFiniteNumber(val) {
+  return typeof val === 'number' && Number.isFinite(val);
+}
+
+export function isValidElementGeometry(el) {
+  if (!el || typeof el !== 'object' || !el.id || !el.type) return false;
+  if (!isFiniteNumber(el.x) || !isFiniteNumber(el.y)) return false;
+  if (!isFiniteNumber(el.w) || !isFiniteNumber(el.h) || el.w < 0 || el.h < 0) return false;
+  if (el.rotation !== undefined && !isFiniteNumber(el.rotation)) return false;
+
+  if (el.type === 'line' || el.type === 'arrow') {
+    if (!isFiniteNumber(el.x2) || !isFiniteNumber(el.y2)) return false;
+    if (el.controlPoint) {
+      if (!isFiniteNumber(el.controlPoint.x) || !isFiniteNumber(el.controlPoint.y)) return false;
+    }
+    if (Array.isArray(el.waypoints)) {
+      for (const wp of el.waypoints) {
+        if (!wp || !isFiniteNumber(wp.x) || !isFiniteNumber(wp.y)) return false;
+      }
+    }
+  } else if (el.type === 'pen' || el.type === 'highlighter') {
+    if (!Array.isArray(el.points)) return false;
+    for (const pt of el.points) {
+      if (!pt || !isFiniteNumber(pt.x) || !isFiniteNumber(pt.y)) return false;
+    }
+  } else {
+    if (el.w <= 0 || el.h <= 0) return false;
+  }
+  return true;
+}
+
+export function validateElementsBatch(elements) {
+  if (!Array.isArray(elements) || elements.length === 0) {
+    return { valid: false, reason: 'No elements provided in batch.' };
+  }
+  const seenIds = new Set();
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    if (!el || !el.id) {
+      return { valid: false, reason: `Element at index ${i} is missing a unique ID.` };
+    }
+    if (seenIds.has(el.id)) {
+      return { valid: false, reason: `Duplicate element ID "${el.id}" in batch.` };
+    }
+    seenIds.add(el.id);
+    if (!isValidElementGeometry(el)) {
+      return {
+        valid: false,
+        reason: `Invalid non-finite geometry on element "${el.name || el.type || el.id}".`,
+      };
+    }
+  }
+  return { valid: true, reason: '' };
+}
+
+export function screenToWorldPoint(
+  clientX,
+  clientY,
+  canvasRect = { left: 0, top: 0, width: 1280, height: 800 },
+  camera = { x: 0, y: 0, zoom: 1 }
+) {
+  const left = isFiniteNumber(canvasRect?.left) ? canvasRect.left : 0;
+  const top = isFiniteNumber(canvasRect?.top) ? canvasRect.top : 0;
+  const camX = isFiniteNumber(camera?.x) ? camera.x : 0;
+  const camY = isFiniteNumber(camera?.y) ? camera.y : 0;
+  const zoom = isFiniteNumber(camera?.zoom) && camera.zoom > 0.01 ? camera.zoom : 1;
+  const sx = (isFiniteNumber(clientX) ? clientX : left) - left;
+  const sy = (isFiniteNumber(clientY) ? clientY : top) - top;
+  return {
+    x: (sx - camX) / zoom,
+    y: (sy - camY) / zoom,
+  };
+}
+
+export function worldToScreenPoint(
+  worldX,
+  worldY,
+  canvasRect = { left: 0, top: 0 },
+  camera = { x: 0, y: 0, zoom: 1 }
+) {
+  const left = isFiniteNumber(canvasRect?.left) ? canvasRect.left : 0;
+  const top = isFiniteNumber(canvasRect?.top) ? canvasRect.top : 0;
+  const camX = isFiniteNumber(camera?.x) ? camera.x : 0;
+  const camY = isFiniteNumber(camera?.y) ? camera.y : 0;
+  const zoom = isFiniteNumber(camera?.zoom) && camera.zoom > 0.01 ? camera.zoom : 1;
+  return {
+    x: left + worldX * zoom + camX,
+    y: top + worldY * zoom + camY,
+  };
+}
+
+export function getUsableViewportCenterWorld(
+  viewportWidth = 1280,
+  viewportHeight = 800,
+  camera = { x: 0, y: 0, zoom: 1 },
+  insets = { left: 0, right: 0, top: 0, bottom: 0 }
+) {
+  const vw = isFiniteNumber(viewportWidth) && viewportWidth > 0 ? viewportWidth : 1280;
+  const vh = isFiniteNumber(viewportHeight) && viewportHeight > 0 ? viewportHeight : 800;
+  const leftInset = Math.max(0, Math.min(vw * 0.65, Number(insets?.left) || 0));
+  const rightInset = Math.max(0, Math.min(vw * 0.65, Number(insets?.right) || 0));
+  const topInset = Math.max(0, Math.min(vh * 0.5, Number(insets?.top) || 0));
+  const bottomInset = Math.max(0, Math.min(vh * 0.5, Number(insets?.bottom) || 0));
+
+  const usableLeft = leftInset;
+  const usableRight = Math.max(usableLeft + 64, vw - rightInset);
+  const usableTop = topInset;
+  const usableBottom = Math.max(usableTop + 64, vh - bottomInset);
+
+  const screenCx = (usableLeft + usableRight) / 2;
+  const screenCy = (usableTop + usableBottom) / 2;
+  return screenToWorldPoint(screenCx, screenCy, { left: 0, top: 0 }, camera);
+}
+
 export function rotatePoint(px, py, cx, cy, angle) {
   if (!angle) return { x: px, y: py };
   const cos = Math.cos(angle);
@@ -32,11 +146,13 @@ export function syncFreehandBounds(el) {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const p of pts) {
+    if (!isFiniteNumber(p.x) || !isFiniteNumber(p.y)) continue;
     if (p.x < minX) minX = p.x;
     if (p.y < minY) minY = p.y;
     if (p.x > maxX) maxX = p.x;
     if (p.y > maxY) maxY = p.y;
   }
+  if (!Number.isFinite(minX)) return el;
   el.x = minX - pad;
   el.y = minY - pad;
   el.w = Math.max(4, maxX - minX + pad * 2);
@@ -45,13 +161,15 @@ export function syncFreehandBounds(el) {
 }
 
 export function getElementCenter(el) {
+  if (!el) return { x: 0, y: 0 };
   if (el.type === 'line' || el.type === 'arrow') {
     return { x: (el.x + el.x2) / 2, y: (el.y + el.y2) / 2 };
   }
   if (el.type === 'pen' || el.type === 'highlighter') {
     syncFreehandBounds(el);
   }
-  return { x: el.x + el.w / 2, y: el.y + el.h / 2 };
+  const h = el.type === 'frame' && el.collapsed ? 42 : el.h || 0;
+  return { x: el.x + (el.w || 0) / 2, y: el.y + h / 2 };
 }
 
 export function getElementBounds(el) {
@@ -59,10 +177,10 @@ export function getElementBounds(el) {
 
   if (el.type === 'pen' || el.type === 'highlighter') {
     syncFreehandBounds(el);
-    const x = el.x;
-    const y = el.y;
-    const w = el.w;
-    const h = el.h;
+    const x = Number(el.x) || 0;
+    const y = Number(el.y) || 0;
+    const w = Math.max(4, Number(el.w) || 4);
+    const h = Math.max(4, Number(el.h) || 4);
     if (!el.rotation) {
       return { x, y, w, h, minX: x, minY: y, maxX: x + w, maxY: y + h };
     }
@@ -88,25 +206,49 @@ export function getElementBounds(el) {
   }
 
   if (el.type === 'line' || el.type === 'arrow') {
-    const pts = [{ x: el.x, y: el.y }, { x: el.x2, y: el.y2 }, ...(el.waypoints || [])];
+    const pts = [
+      { x: Number(el.x) || 0, y: Number(el.y) || 0 },
+      { x: Number(el.x2) || 0, y: Number(el.y2) || 0 },
+      ...(Array.isArray(el.waypoints) ? el.waypoints : []),
+    ];
+    if (el.routing === 'curved' && el.controlPoint) {
+      pts.push(el.controlPoint);
+    }
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
     for (const p of pts) {
+      if (!p || !isFiniteNumber(p.x) || !isFiniteNumber(p.y)) continue;
       if (p.x < minX) minX = p.x;
       if (p.y < minY) minY = p.y;
       if (p.x > maxX) maxX = p.x;
       if (p.y > maxY) maxY = p.y;
     }
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, minX, minY, maxX, maxY };
+    if (!Number.isFinite(minX)) {
+      return { x: 0, y: 0, w: 0, h: 0, minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    }
+    const pad = Math.max(4, (el.strokeWidth || 2) * 2);
+    return {
+      x: minX - pad,
+      y: minY - pad,
+      w: Math.max(8, maxX - minX + pad * 2),
+      h: Math.max(8, maxY - minY + pad * 2),
+      minX: minX - pad,
+      minY: minY - pad,
+      maxX: maxX + pad,
+      maxY: maxY + pad,
+    };
   }
 
-  const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
-  const x = Math.min(el.x, el.x + el.w);
-  const y = Math.min(el.y, el.y + h);
-  const w = Math.abs(el.w);
-  const absH = Math.abs(h);
+  const rawH = el.type === 'frame' && el.collapsed ? 42 : Number(el.h) || 0;
+  const rawW = Number(el.w) || 0;
+  const rawX = Number(el.x) || 0;
+  const rawY = Number(el.y) || 0;
+  const x = Math.min(rawX, rawX + rawW);
+  const y = Math.min(rawY, rawY + rawH);
+  const w = Math.abs(rawW);
+  const absH = Math.abs(rawH);
 
   if (!el.rotation) {
     return { x, y, w, h: absH, minX: x, minY: y, maxX: x + w, maxY: y + absH };
@@ -140,12 +282,15 @@ export function getSelectionBounds(elements) {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const el of elements) {
+    if (!el) continue;
     const b = getElementBounds(el);
+    if (!isFiniteNumber(b.minX) || !isFiniteNumber(b.minY)) continue;
     if (b.minX < minX) minX = b.minX;
     if (b.minY < minY) minY = b.minY;
     if (b.maxX > maxX) maxX = b.maxX;
     if (b.maxY > maxY) maxY = b.maxY;
   }
+  if (!Number.isFinite(minX)) return null;
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, minX, minY, maxX, maxY };
 }
 
@@ -159,7 +304,13 @@ export function isElementInViewport(el, viewportBounds) {
 }
 
 export function getConnectionPorts(el) {
-  if (!el || el.type === 'line' || el.type === 'arrow' || el.type === 'pen' || el.type === 'highlighter') {
+  if (
+    !el ||
+    el.type === 'line' ||
+    el.type === 'arrow' ||
+    el.type === 'pen' ||
+    el.type === 'highlighter'
+  ) {
     return [];
   }
   const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
@@ -186,7 +337,17 @@ export function getConnectionPorts(el) {
   });
 }
 
-export function getPortPoint(el, portName = 'right') {
+export function getPortPoint(el, portName = 'right', customRatio = null) {
+  if (!el) return { x: 0, y: 0, nx: 1, ny: 0, port: 'right' };
+  const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
+  if (portName === 'custom' && customRatio && isFiniteNumber(customRatio.rx) && isFiniteNumber(customRatio.ry)) {
+    const lx = el.x + Math.max(0, Math.min(1, customRatio.rx)) * el.w;
+    const ly = el.y + Math.max(0, Math.min(1, customRatio.ry)) * h;
+    const cx = el.x + el.w / 2;
+    const cy = el.y + h / 2;
+    const rp = rotatePoint(lx, ly, cx, cy, el.rotation || 0);
+    return { port: 'custom', x: rp.x, y: rp.y, nx: 0, ny: 0 };
+  }
   const ports = getConnectionPorts(el);
   return ports.find((p) => p.port === portName) || ports[0] || getElementCenter(el);
 }
@@ -205,9 +366,24 @@ export function getNearestPort(el, px, py) {
   return best ? { ...best, distance: bestDist } : null;
 }
 
+export function chooseBestCardinalPort(el, targetX, targetY) {
+  if (!el) return 'right';
+  const c = getElementCenter(el);
+  const dx = targetX - c.x;
+  const dy = targetY - c.y;
+  const hw = Math.max(1, (el.w || 140) / 2);
+  const hh = Math.max(1, (el.h || 90) / 2);
+  // Compare normalized directional dominance relative to aspect ratio
+  if (Math.abs(dx) / hw >= Math.abs(dy) / hh) {
+    return dx >= 0 ? 'right' : 'left';
+  }
+  return dy >= 0 ? 'bottom' : 'top';
+}
+
 export function getEdgePointToward(el, targetX, targetY) {
+  const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
   const cx = el.x + el.w / 2;
-  const cy = el.y + el.h / 2;
+  const cy = el.y + h / 2;
   const localTarget = unrotatePoint(targetX, targetY, cx, cy, el.rotation || 0);
   const dx = localTarget.x - cx;
   const dy = localTarget.y - cy;
@@ -215,7 +391,7 @@ export function getEdgePointToward(el, targetX, targetY) {
     return getPortPoint(el, 'right');
   }
   const hw = Math.max(1, el.w / 2);
-  const hh = Math.max(1, el.h / 2);
+  const hh = Math.max(1, h / 2);
 
   let localEdge;
   if (el.type === 'ellipse') {
@@ -374,6 +550,7 @@ export function arrangeElements(elements, mode = 'grid', gapX = 48, gapY = 42) {
 
 export function translateElement(el, dx, dy) {
   if (!dx && !dy) return;
+  if (!isFiniteNumber(dx) || !isFiniteNumber(dy)) return;
   el.x += dx;
   el.y += dy;
   if (el.type === 'line' || el.type === 'arrow') {

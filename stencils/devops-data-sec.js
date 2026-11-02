@@ -42,6 +42,7 @@ export const DEVOPS_DATA_SEC_STENCILS = [
   obs('obs-alertmanager', 'Alertmanager / PagerDuty', 'ALERTS', 'Alertmanager', 'incident oncall paging webhook slack', D.bell, '#DC2626'),
 
   // Security, Governance & Secrets
+  sec('sec-sg', 'Security Group / NSG', 'SG', 'Security Group', 'sg nsg security group firewall ingress egress rules', D.shield, '#059669'),
   sec('sec-vault', 'HashiCorp Vault', 'VAULT', 'HashiCorp Vault', 'secrets encryption dynamic credentials kms', D.vault, '#334155'),
   sec('sec-trivy', 'Trivy / Vulnerability Scan', 'TRIVY', 'Trivy Scanner', 'sbom cve container image security scan', D.scan, '#1904DA'),
   sec('sec-opa', 'OPA / Kyverno Policy', 'POLICY', 'OPA Gatekeeper', 'policy as code admission rego kyverno', D.shield, '#059669'),

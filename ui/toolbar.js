@@ -1,369 +1,445 @@
-// ui/toolbar.js
+// ui/toolbar.js — Top Bar, Compact Primary Toolset, Insert Menu, Spotlight Banner & Zoom Controls
 import { TOOL_REGISTRY, ICONS } from './registry.js';
+import { escapeXml } from '../render/svg-export.js';
 
-export const PRIMARY_TOOLS = TOOL_REGISTRY;
+export const PRIMARY_TOOL_IDS = [
+  'select',
+  'hand',
+  'pen',
+  'highlighter',
+  'eraser',
+  'rect',
+  'arrow',
+  'text',
+  'sticky',
+  'laser',
+  'pointer',
+  'question',
+];
+
+export const PRIMARY_TOOLS = TOOL_REGISTRY.filter((t) => PRIMARY_TOOL_IDS.includes(t.id));
 
 export function initToolbar(app) {
   const dock = document.getElementById('wb-toolbar');
-  const topBar = document.getElementById('wb-topbar-actions');
-  const bottomBar = document.getElementById('wb-zoom-bar');
-  if (!dock || !topBar || !bottomBar) return {};
+  const topBar = document.getElementById('wb-topbar');
+  const bottomBar = document.getElementById('wb-bottombar');
+  const modeBanner = document.getElementById('wb-mode-banner');
 
-  const dockTools = TOOL_REGISTRY.filter((t) => t.group === 'dock');
-  const insertTools = TOOL_REGISTRY.filter((t) => t.group === 'insert');
+  function renderTopBar() {
+    if (!topBar) return;
+    topBar.innerHTML = `
+      <div class="wb-top-left">
+        <button type="button" class="wb-brand-btn" id="btn-brand-home" title="StudioBoard — Reset View">
+          <span class="wb-brand-logo">${ICONS.logo}</span>
+          <span class="wb-brand-title">StudioBoard</span>
+        </button>
+        <input type="text" id="wb-doc-title" class="wb-doc-title-input" value="" aria-label="Document Title" title="Click to rename lesson/board" />
+        <span id="wb-autosave-status" class="wb-status-pill" aria-live="polite" title="Local storage save status">Saved locally</span>
+        <button type="button" id="wb-conn-status" class="wb-status-pill wb-conn-pill" title="Collaboration connection status">Local board</button>
+      </div>
 
-  // Build Reduced Floating Tool Dock + Insert (+) Popover
-  dock.innerHTML = `
-    <div class="wb-dock-scroll" role="group" aria-label="Primary Drawing Tools">
-      ${dockTools
-        .map(
-          (t) => `
+      <div class="wb-top-center">
+        <button type="button" class="wb-btn" id="btn-undo" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl/Cmd+Z)">${ICONS.undo}</button>
+        <button type="button" class="wb-btn" id="btn-redo" aria-label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)">${ICONS.redo}</button>
+        <span class="wb-sep"></span>
+        <button type="button" class="wb-btn" id="btn-library" aria-label="Toggle Stencil & Template Library" title="DevOps & Cloud Icon Library">${ICONS.library} <span class="wb-hide-sm">Library</span></button>
+        <button type="button" class="wb-btn" id="btn-layers" aria-label="Toggle Layers Panel" title="Layers & Z-Order">${ICONS.layers} <span class="wb-hide-sm">Layers</span></button>
+        <button type="button" class="wb-btn" id="btn-classroom" aria-label="Toggle Live Classroom & Questions" title="Live Classroom Share, Pointers & Student Questions">${ICONS.classroom} <span class="wb-hide-sm" id="wb-classroom-label">Classroom</span></button>
+        <button type="button" class="wb-btn" id="btn-props-toggle" aria-label="Toggle Inspector Panel" title="Toggle Style & Properties Inspector (I)">${ICONS.sliders} <span class="wb-hide-sm">Inspector</span></button>
+
+        <div class="wb-dropdown">
+          <button type="button" class="wb-btn" id="btn-teaching-menu" aria-haspopup="true" title="Teaching & Classroom Tools">${ICONS.teaching} <span class="wb-hide-sm">Teaching ▾</span></button>
+          <div class="wb-dropdown-menu wb-hidden" id="menu-teaching">
+            <button type="button" class="wb-menu-item" id="btn-present">${ICONS.present} Presentation Mode (F6)</button>
+            <button type="button" class="wb-menu-item" id="btn-reveal-timeline">${ICONS.timeline} Step-by-Step Reveal Timeline</button>
+            <button type="button" class="wb-menu-item" id="btn-spotlight">${ICONS.spotlight} Spotlight (F7)</button>
+            <button type="button" class="wb-menu-item" id="btn-magnifier">${ICONS.spotlight} Magnifier Lens 2x</button>
+            <button type="button" class="wb-menu-item" id="btn-annotation-mode">${ICONS.annotation} Live Annotation Mode (F8)</button>
+            <button type="button" class="wb-menu-item" id="btn-timer">${ICONS.timer} Countdown / Stopwatch</button>
+            <button type="button" class="wb-menu-item" id="btn-focus-mode">${ICONS.focus} Teaching Focus Mode (F10)</button>
+            <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Focus Tools…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="wb-top-right">
+        <button type="button" class="wb-btn" id="btn-palette" aria-label="Command Palette (Ctrl+K)" title="Command Palette (Ctrl/Cmd+K)">${ICONS.search} <span class="wb-hide-md">⌘K</span></button>
+        <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Light / Dark / Chalkboard / Blueprint Theme">${ICONS.theme}</button>
+
+        <div class="wb-dropdown">
+          <button type="button" class="wb-btn wb-primary" id="btn-board-menu" aria-haspopup="true" title="Board File, Share & Export Actions">${ICONS.menu} <span class="wb-hide-sm">Board ▾</span></button>
+          <div class="wb-dropdown-menu wb-dropdown-right wb-hidden" id="menu-board">
+            <button type="button" class="wb-menu-item" id="btn-save-json">${ICONS.save} Save Board (.whiteboard.json)</button>
+            <button type="button" class="wb-menu-item" id="btn-open-json">${ICONS.folder} Open Board JSON…</button>
+            <button type="button" class="wb-menu-item" id="btn-export">${ICONS.download} Export PNG / SVG / PDF…</button>
+            <button type="button" class="wb-menu-item" id="btn-share-url">${ICONS.share} Short Share Links & Live Room…</button>
+            <button type="button" class="wb-menu-item" id="btn-mermaid">${ICONS.mermaid} Mermaid Diagram → Editable Nodes…</button>
+            <button type="button" class="wb-menu-item" id="btn-auto-layout-board">⇄ Auto-Layout Architecture Diagram</button>
+            <button type="button" class="wb-menu-item" id="btn-recovery">${ICONS.history} Recovery Snapshots & Checkpoints…</button>
+            <button type="button" class="wb-menu-item" id="btn-shortcuts">${ICONS.keyboard} Keyboard Shortcuts (?)</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const bindDropdown = (btnId, menuId) => {
+      const btn = topBar.querySelector(btnId);
+      const menu = topBar.querySelector(menuId);
+      btn?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        document.querySelectorAll('.wb-dropdown-menu').forEach((m) => {
+          if (m !== menu) m.classList.add('wb-hidden');
+        });
+        menu?.classList.toggle('wb-hidden');
+      });
+    };
+    bindDropdown('#btn-teaching-menu', '#menu-teaching');
+    bindDropdown('#btn-board-menu', '#menu-board');
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.wb-dropdown-menu').forEach((m) => m.classList.add('wb-hidden'));
+    });
+
+    topBar.querySelector('#btn-brand-home')?.addEventListener('click', () => app.resetZoom());
+    const titleInput = topBar.querySelector('#wb-doc-title');
+    if (titleInput) {
+      titleInput.value = app.scene.title || 'StudioBoard Lesson';
+      titleInput.addEventListener('change', (e) => {
+        app.scene.title = e.target.value.trim() || 'StudioBoard Lesson';
+        app.scheduleAutosave(app.scene);
+        app.collab?.broadcastSceneChange();
+      });
+    }
+
+    topBar.querySelector('#wb-conn-status')?.addEventListener('click', () => app.classroomUI.toggle());
+    topBar.querySelector('#btn-undo')?.addEventListener('click', () => app.undo());
+    topBar.querySelector('#btn-redo')?.addEventListener('click', () => app.redo());
+    topBar.querySelector('#btn-library')?.addEventListener('click', () => app.togglePanel('wb-library-panel'));
+    topBar.querySelector('#btn-layers')?.addEventListener('click', () => app.togglePanel('wb-layers-panel'));
+    topBar.querySelector('#btn-classroom')?.addEventListener('click', () => app.classroomUI.toggle());
+    topBar.querySelector('#btn-props-toggle')?.addEventListener('click', () => app.togglePropsDrawer());
+    topBar.querySelector('#btn-timer')?.addEventListener('click', () => app.timerUI.toggle());
+    topBar.querySelector('#btn-present')?.addEventListener('click', () => app.presentUI.enter());
+    topBar.querySelector('#btn-reveal-timeline')?.addEventListener('click', () => app.dialogs.openRevealTimelineModal());
+    topBar.querySelector('#btn-spotlight')?.addEventListener('click', () => app.toggleSpotlight(false));
+    topBar.querySelector('#btn-magnifier')?.addEventListener('click', () => app.toggleSpotlight(true));
+    topBar.querySelector('#btn-annotation-mode')?.addEventListener('click', () => app.toggleAnnotationMode());
+    topBar.querySelector('#btn-focus-mode')?.addEventListener('click', () => app.toggleFocusMode());
+    topBar.querySelector('#btn-customize-focus')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
+    topBar.querySelector('#btn-palette')?.addEventListener('click', () => app.paletteUI.open());
+    topBar.querySelector('#btn-theme')?.addEventListener('click', () => app.cycleTheme());
+    topBar.querySelector('#btn-mermaid')?.addEventListener('click', () => app.dialogs.openMermaidModal());
+    topBar.querySelector('#btn-auto-layout-board')?.addEventListener('click', () => app.autoLayoutSelection('LR'));
+    topBar.querySelector('#btn-save-json')?.addEventListener('click', () => app.saveSceneFile());
+    topBar.querySelector('#btn-open-json')?.addEventListener('click', () => document.getElementById('wb-file-open-json')?.click());
+    topBar.querySelector('#btn-export')?.addEventListener('click', () => app.dialogs.openExportModal());
+    topBar.querySelector('#btn-share-url')?.addEventListener('click', () => app.dialogs.openShareUrlModal());
+    topBar.querySelector('#btn-recovery')?.addEventListener('click', () => app.dialogs.openRecoveryModal());
+    topBar.querySelector('#btn-shortcuts')?.addEventListener('click', () => app.dialogs.openShortcutsModal());
+  }
+
+  function renderDock() {
+    if (!dock) return;
+    const focusSet = new Set(
+      app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
+    );
+    const visibleTools = app.focusMode
+      ? TOOL_REGISTRY.filter((t) => focusSet.has(t.id))
+      : PRIMARY_TOOLS;
+
+    const advancedTools = TOOL_REGISTRY.filter((t) => !PRIMARY_TOOL_IDS.includes(t.id));
+
+    dock.innerHTML = `
+      <div class="wb-tool-list" role="toolbar" aria-label="Drawing Tools">
+        ${visibleTools
+          .map(
+            (t) => `
+          <button
+            type="button"
+            class="wb-tool-btn ${app.activeTool === t.id ? 'active' : ''}"
+            data-tool="${t.id}"
+            aria-label="${t.label} (${t.shortcut})"
+            aria-pressed="${app.activeTool === t.id}"
+            title="${t.label} (${t.shortcut})"
+          >
+            <span class="wb-tool-icon">${t.icon}</span>
+            <span class="wb-tool-key">${t.shortcut}</span>
+          </button>
+        `
+          )
+          .join('')}
+        ${
+          !app.focusMode
+            ? `<div class="wb-insert-wrap">
+                <button
+                  type="button"
+                  class="wb-tool-btn ${advancedTools.some((t) => t.id === app.activeTool) ? 'active' : ''}"
+                  id="btn-insert-more"
+                  aria-label="Insert Advanced Shapes, Images, Tables, Code, Stamps & Math"
+                  title="Insert Shapes, Images, Tables, Code, Stamps & Math (+)"
+                >
+                  <span class="wb-tool-icon">${ICONS.plus || '+'}</span>
+                  <span class="wb-tool-key">+</span>
+                </button>
+                <div class="wb-insert-popover wb-hidden" id="wb-insert-popover" role="menu">
+                  <div class="wb-prop-title" style="margin-bottom:4px;">Insert Shapes & Media</div>
+                  ${advancedTools
+                    .map(
+                      (t) => `
+                    <button type="button" class="wb-menu-item ${app.activeTool === t.id ? 'active' : ''}" data-insert-tool="${t.id}">
+                      ${t.icon} <span>${escapeXml(t.label)}</span> <kbd style="margin-left:auto;font-size:10px;opacity:0.7;">${escapeXml(t.shortcut)}</kbd>
+                    </button>
+                  `
+                    )
+                    .join('')}
+                  <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
+                  <button type="button" class="wb-menu-item" data-insert-math="ruler">📏 Ruler Overlay</button>
+                  <button type="button" class="wb-menu-item" data-insert-math="protractor">📐 Protractor Overlay</button>
+                  <button type="button" class="wb-menu-item" id="btn-insert-mermaid-quick">${ICONS.mermaid} Mermaid Diagram…</button>
+                </div>
+              </div>`
+            : `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Questions" title="Open Classroom Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>
+               <button type="button" class="wb-tool-btn" id="btn-focus-customize" aria-label="Customize Focus Tools" title="Customize Focus Tools">${ICONS.sliders}</button>`
+        }
+      </div>
+      <div class="wb-dock-footer">
         <button
           type="button"
-          class="wb-tool-btn"
-          data-tool="${t.id}"
-          aria-label="${t.label} (${t.shortcut})"
-          title="${t.label} (${t.shortcut})"
+          class="wb-tool-btn ${app.toolLock ? 'active' : ''}"
+          id="btn-tool-lock"
+          aria-label="Lock active tool (Q)"
+          aria-pressed="${app.toolLock}"
+          title="Keep current tool active after drawing"
         >
-          <span class="wb-tool-icon">${t.icon}</span>
-          <span class="wb-tool-key">${t.shortcut}</span>
-        </button>
-      `
-        )
-        .join('')}
-      <button
-        type="button"
-        class="wb-tool-btn"
-        data-tool="laser"
-        aria-label="Laser Pointer (K)"
-        title="Laser Pointer (K)"
-      >
-        <span class="wb-tool-icon">${ICONS.laser}</span>
-        <span class="wb-tool-key">K</span>
-      </button>
-      <div class="wb-dock-divider"></div>
-      <button
-        type="button"
-        class="wb-tool-btn"
-        id="btn-dock-insert"
-        aria-label="Insert More Tools (Table, Code, Frame, Image, Stamp)"
-        aria-expanded="false"
-        title="Insert Table, Code, Frame, Image, Stamp & Math Tools"
-      >
-        <span class="wb-tool-icon">${ICONS.plus}</span>
-        <span class="wb-tool-key">+</span>
-      </button>
-    </div>
-    <div id="wb-insert-popover" class="wb-popover wb-hidden" role="menu" aria-label="Insert Tools Menu">
-      <div class="wb-popover-title">Insert Elements</div>
-      ${insertTools
-        .map(
-          (t) => `
-        <button type="button" class="wb-popover-item" role="menuitem" data-tool="${t.id}" aria-label="${t.label} (${t.shortcut})">
-          <span class="wb-popover-icon">${t.icon}</span>
-          <span class="wb-popover-label">${t.label}</span>
-          <kbd>${t.shortcut}</kbd>
-        </button>
-      `
-        )
-        .join('')}
-      <button type="button" class="wb-popover-item" role="menuitem" id="btn-insert-image" aria-label="Insert Image (I)">
-        <span class="wb-popover-icon">${ICONS.image}</span>
-        <span class="wb-popover-label">Insert Image</span>
-        <kbd>I</kbd>
-      </button>
-      <button type="button" class="wb-popover-item" role="menuitem" id="btn-insert-mermaid" aria-label="Import Mermaid Diagram">
-        <span class="wb-popover-icon">${ICONS.mermaid}</span>
-        <span class="wb-popover-label">Mermaid Diagram</span>
-      </button>
-      <div class="wb-popover-sep"></div>
-      <button type="button" class="wb-popover-item" role="menuitem" data-insert-math="ruler" aria-label="Insert Ruler Overlay">
-        <span class="wb-popover-label">📏 Ruler Overlay</span>
-      </button>
-      <button type="button" class="wb-popover-item" role="menuitem" data-insert-math="protractor" aria-label="Insert Protractor Overlay">
-        <span class="wb-popover-label">📐 Protractor Overlay</span>
-      </button>
-    </div>
-  `;
-
-  const insertPopover = dock.querySelector('#wb-insert-popover');
-  const insertBtn = dock.querySelector('#btn-dock-insert');
-
-  const closeInsertPopover = () => {
-    insertPopover?.classList.add('wb-hidden');
-    insertBtn?.setAttribute('aria-expanded', 'false');
-  };
-
-  dock.addEventListener('click', (ev) => {
-    if (ev.target.closest('#btn-dock-insert')) {
-      const hidden = insertPopover.classList.toggle('wb-hidden');
-      insertBtn.setAttribute('aria-expanded', String(!hidden));
-      return;
-    }
-    const toolBtn = ev.target.closest('[data-tool]');
-    if (toolBtn) {
-      app.setTool(toolBtn.dataset.tool);
-      closeInsertPopover();
-      return;
-    }
-    if (ev.target.closest('#btn-insert-image')) {
-      closeInsertPopover();
-      app.openImageFilePicker();
-      return;
-    }
-    if (ev.target.closest('#btn-insert-mermaid')) {
-      closeInsertPopover();
-      app.dialogs.openMermaidModal();
-      return;
-    }
-    const mathBtn = ev.target.closest('[data-insert-math]');
-    if (mathBtn) {
-      closeInsertPopover();
-      app.insertMathOverlay(mathBtn.dataset.insertMath);
-    }
-  });
-
-  // Build Top Action Bar with Teaching Menu, File Actions, and Style Drawer Trigger
-  topBar.innerHTML = `
-    <button type="button" class="wb-btn" id="btn-toggle-library" aria-label="Toggle Stencil Library & Templates" title="Stencils, DevOps Diagram Packs & Templates">
-      ${ICONS.library} <span class="wb-btn-label">Library</span>
-    </button>
-    <button type="button" class="wb-btn" id="btn-toggle-layers" aria-label="Toggle Layers Panel" title="Layers & Locking">
-      ${ICONS.layers} <span class="wb-btn-label">Layers</span>
-    </button>
-    <button type="button" class="wb-btn" id="btn-toggle-classroom" aria-label="Toggle Live Classroom Links, Student Join & Q&A" title="Live Classroom Shareable Link, Student Name Join, Component Pointers & Board Questions">
-      ${ICONS.classroom} <span class="wb-btn-label" id="wb-classroom-btn-label">Classroom</span>
-    </button>
-    <button type="button" class="wb-btn wb-hide-mobile" id="btn-mermaid" aria-label="Import Mermaid Diagram" title="Paste Mermaid Flowchart or Sequence Diagram">
-      ${ICONS.mermaid} <span class="wb-btn-label">Mermaid</span>
-    </button>
-
-    <div class="wb-menu-wrap">
-      <button type="button" class="wb-btn" id="btn-teaching-menu" aria-label="Teaching & Presentation Menu" aria-expanded="false" title="Teaching Tools: Annotate, Spotlight, Timer, Reveal Timeline & Focus Mode">
-        ${ICONS.teaching} <span class="wb-btn-label">Teaching ▾</span>
-      </button>
-      <div id="wb-teaching-popover" class="wb-popover wb-popover-top wb-hidden" role="menu" aria-label="Teaching Menu">
-        <button type="button" class="wb-popover-item" role="menuitem" id="btn-annotation-mode" aria-label="Toggle Live Annotation Mode">
-          <span class="wb-popover-icon">${ICONS.pen}</span>
-          <span class="wb-popover-label">Live Annotate (3s Fading Ink)</span>
-        </button>
-        <button type="button" class="wb-popover-item" role="menuitem" id="btn-spotlight" aria-label="Toggle Spotlight and Magnifier">
-          <span class="wb-popover-icon">${ICONS.spotlight}</span>
-          <span class="wb-popover-label">Spotlight & Magnifier</span>
-        </button>
-        <button type="button" class="wb-popover-item" role="menuitem" id="btn-timer" aria-label="Toggle Classroom Countdown Timer">
-          <span class="wb-popover-icon">${ICONS.timer}</span>
-          <span class="wb-popover-label">Classroom Timer</span>
-        </button>
-        <button type="button" class="wb-popover-item" role="menuitem" id="btn-reveal-timeline" aria-label="Open Step-by-Step Reveal Timeline">
-          <span class="wb-popover-icon">${ICONS.present}</span>
-          <span class="wb-popover-label">Reveal Step Timeline</span>
-        </button>
-        <button type="button" class="wb-popover-item" role="menuitem" id="btn-focus-mode" aria-label="Toggle Teaching Focus Mode (Shift+F)">
-          <span class="wb-popover-icon">${ICONS.teaching}</span>
-          <span class="wb-popover-label">Teaching Focus Mode</span>
-          <kbd>⇧F</kbd>
+          <span class="wb-tool-icon">${ICONS.lock}</span>
         </button>
       </div>
-    </div>
+    `;
 
-    <button type="button" class="wb-btn wb-primary-soft" id="btn-present" aria-label="Enter Presentation Mode" title="Present Frames & Step-by-Step Reveal">
-      ${ICONS.present} <span class="wb-btn-label">Present</span>
-    </button>
+    dock.querySelectorAll('[data-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const toolId = btn.dataset.tool;
+        if (toolId === 'image') {
+          document.getElementById('wb-file-image')?.click();
+        } else {
+          app.setTool(toolId);
+        }
+      });
+    });
 
-    <div class="wb-divider wb-hide-mobile"></div>
+    const insertBtn = dock.querySelector('#btn-insert-more');
+    const insertPop = dock.querySelector('#wb-insert-popover');
+    insertBtn?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      insertPop?.classList.toggle('wb-hidden');
+    });
 
-    <button type="button" class="wb-btn wb-hide-mobile" id="btn-save-json" aria-label="Save Whiteboard File (.whiteboard.json)" title="Save .whiteboard.json">
-      ${ICONS.save} <span class="wb-btn-label">Save</span>
-    </button>
-    <button type="button" class="wb-btn wb-hide-mobile" id="btn-open-json" aria-label="Open Whiteboard File (.whiteboard.json)" title="Open .whiteboard.json">
-      ${ICONS.open} <span class="wb-btn-label">Open</span>
-    </button>
-    <button type="button" class="wb-btn" id="btn-export" aria-label="Export PNG, SVG, or Student Handout PDF" title="Export PNG / SVG / Print Handout">
-      ${ICONS.export} <span class="wb-btn-label">Export</span>
-    </button>
-    <button type="button" class="wb-btn wb-hide-mobile" id="btn-share-url" aria-label="Share by URL Hash" title="Share compressed scene in URL hash">
-      ${ICONS.share} <span class="wb-btn-label">Share</span>
-    </button>
-    <button type="button" class="wb-btn wb-hide-mobile" id="btn-recovery" aria-label="Version Recovery History" title="Restore Earlier Board Snapshots">
-      ${ICONS.history}
-    </button>
+    dock.querySelectorAll('[data-insert-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tid = btn.dataset.insertTool;
+        insertPop?.classList.add('wb-hidden');
+        if (tid === 'image') {
+          document.getElementById('wb-file-image')?.click();
+        } else {
+          app.setTool(tid);
+        }
+      });
+    });
 
-    <button type="button" class="wb-btn" id="btn-toggle-props" aria-label="Toggle Inspector & Canvas Settings" title="Toggle Inspector & Background Settings">
-      ${ICONS.settings} <span class="wb-btn-label">Inspector</span>
-    </button>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-theme-toggle" aria-label="Toggle Light or Dark Theme" title="Toggle Light / Dark Theme">
-      ${ICONS.moon}
-    </button>
-    <button type="button" class="wb-btn wb-icon-only wb-hide-mobile" id="btn-fullscreen" aria-label="Toggle Full Screen (F)" title="Toggle Full Screen (F)">
-      ${ICONS.fullscreen}
-    </button>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-palette" aria-label="Open Command Palette (Ctrl/Cmd+K)" title="Command Palette (Ctrl/Cmd+K)">
-      ${ICONS.palette}
-    </button>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-shortcuts" aria-label="Keyboard Shortcuts Help (?)" title="Keyboard Shortcuts (?)">
-      ${ICONS.help}
-    </button>
-  `;
+    dock.querySelectorAll('[data-insert-math]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        insertPop?.classList.add('wb-hidden');
+        app.insertMathOverlay(btn.dataset.insertMath);
+      });
+    });
 
-  const teachingPopover = topBar.querySelector('#wb-teaching-popover');
-  const teachingBtn = topBar.querySelector('#btn-teaching-menu');
+    dock.querySelector('#btn-insert-mermaid-quick')?.addEventListener('click', () => {
+      insertPop?.classList.add('wb-hidden');
+      app.dialogs.openMermaidModal();
+    });
 
-  const closeTeachingMenu = () => {
-    teachingPopover?.classList.add('wb-hidden');
-    teachingBtn?.setAttribute('aria-expanded', 'false');
-  };
+    dock.querySelector('#btn-focus-qa')?.addEventListener('click', () => app.classroomUI.toggle());
+    dock.querySelector('#btn-focus-customize')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
 
-  document.addEventListener('pointerdown', (ev) => {
-    if (!ev.target.closest('#wb-toolbar')) closeInsertPopover();
-    if (!ev.target.closest('.wb-menu-wrap')) closeTeachingMenu();
-  });
+    dock.querySelector('#btn-tool-lock')?.addEventListener('click', () => {
+      app.toolLock = !app.toolLock;
+      renderDock();
+    });
+  }
 
-  topBar.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button');
-    if (!btn) return;
-    if (btn.id === 'btn-teaching-menu') {
-      const hidden = teachingPopover.classList.toggle('wb-hidden');
-      teachingBtn.setAttribute('aria-expanded', String(!hidden));
+  function renderModeBanner() {
+    if (!modeBanner) return;
+    const pills = [];
+
+    if (app.spotlight.active) {
+      const pct = Math.round((app.spotlight.dimOpacity ?? 0.72) * 100);
+      pills.push(`
+        <div class="wb-floating-mode-pill wb-spotlight-pill" id="wb-spotlight-banner" role="region" aria-label="Spotlight Controls">
+          <strong>Spotlight on · Esc to exit</strong>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm ${!app.spotlight.magnifier ? 'active wb-primary' : ''}" id="btn-spot-mode-dim">Spotlight</button>
+            <button type="button" class="wb-btn wb-sm ${app.spotlight.magnifier ? 'active wb-primary' : ''}" id="btn-spot-mode-mag">Magnifier 2x</button>
+          </div>
+          <label class="wb-spot-slider" title="Spotlight Radius">
+            <span>Radius ${Math.round(app.spotlight.radius)}px</span>
+            <input type="range" id="spot-radius-slider" min="60" max="280" value="${Math.round(app.spotlight.radius)}" aria-label="Spotlight Radius"/>
+          </label>
+          <label class="wb-spot-slider" title="Backdrop Dimming">
+            <span>Dim ${pct}%</span>
+            <input type="range" id="spot-dim-slider" min="25" max="90" value="${pct}" aria-label="Spotlight Dimming"/>
+          </label>
+          <button type="button" class="wb-btn wb-sm wb-danger" id="btn-exit-spotlight" aria-label="Exit Spotlight">✕ Close</button>
+        </div>
+      `);
+    }
+
+    if (app.activeTool === 'laser') {
+      pills.push(`
+        <div class="wb-floating-mode-pill">
+          <span>🔴 Laser Pointer active · Esc to exit</span>
+          <button type="button" class="wb-btn wb-sm" id="btn-exit-laser">✕ Exit</button>
+        </div>
+      `);
+    }
+
+    if (app.annotationMode) {
+      pills.push(`
+        <div class="wb-floating-mode-pill">
+          <span>✨ Fading Annotation Mode (3s ink) · Esc to exit</span>
+          <button type="button" class="wb-btn wb-sm" id="btn-exit-annotation">✕ Exit</button>
+        </div>
+      `);
+    }
+
+    if (app.focusMode) {
+      const pages = app.scene.pages;
+      const curIdx = pages.findIndex((p) => p.id === app.scene.activePageId);
+      pills.push(`
+        <div class="wb-floating-mode-pill">
+          <span>🎯 Teaching Focus · Page ${curIdx + 1}/${pages.length}</span>
+          <button type="button" class="wb-btn wb-sm" id="btn-focus-prev-page" ${curIdx <= 0 ? 'disabled' : ''}>◀ Prev</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-focus-next-page" ${curIdx >= pages.length - 1 ? 'disabled' : ''}>Next ▶</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-exit-focus">✕ Exit Focus</button>
+        </div>
+      `);
+    }
+
+    if (app.collab?.followingTeacher) {
+      pills.push(`
+        <div class="wb-floating-mode-pill">
+          <span>👁 Following Teacher Camera</span>
+          <button type="button" class="wb-btn wb-sm wb-danger" id="btn-banner-stop-follow">Stop Following</button>
+        </div>
+      `);
+    }
+
+    if (pills.length === 0) {
+      modeBanner.classList.add('wb-hidden');
+      modeBanner.innerHTML = '';
       return;
     }
-    closeTeachingMenu();
-    switch (btn.id) {
-      case 'btn-toggle-library':
-        app.togglePanel('library');
-        break;
-      case 'btn-toggle-layers':
-        app.togglePanel('layers');
-        break;
-      case 'btn-toggle-classroom':
-        app.togglePanel('classroom');
-        break;
-      case 'btn-mermaid':
-        app.dialogs.openMermaidModal();
-        break;
-      case 'btn-annotation-mode':
-        app.toggleAnnotationMode();
-        break;
-      case 'btn-spotlight':
-        app.toggleSpotlight();
-        break;
-      case 'btn-timer':
-        app.timerUI.toggle();
-        break;
-      case 'btn-reveal-timeline':
-        app.dialogs.openRevealTimelineModal();
-        break;
-      case 'btn-focus-mode':
-        app.toggleFocusMode();
-        break;
-      case 'btn-present':
-        app.presentUI.enter();
-        break;
-      case 'btn-save-json':
-        app.saveWhiteboardFile();
-        break;
-      case 'btn-open-json':
-        app.openWhiteboardFilePicker();
-        break;
-      case 'btn-export':
-        app.dialogs.openExportModal();
-        break;
-      case 'btn-share-url':
-        app.dialogs.openShareUrlModal();
-        break;
-      case 'btn-recovery':
-        app.dialogs.openRecoveryModal();
-        break;
-      case 'btn-toggle-props':
-        app.togglePropsDrawer();
-        break;
-      case 'btn-theme-toggle':
-        app.toggleTheme();
-        break;
-      case 'btn-fullscreen':
-        app.toggleFullScreen();
-        break;
-      case 'btn-palette':
-        app.paletteUI.open();
-        break;
-      case 'btn-shortcuts':
-        app.dialogs.openShortcutsModal();
-        break;
-    }
-  });
 
-  // Build Bottom Zoom / Undo Bar
-  bottomBar.innerHTML = `
-    <button type="button" class="wb-btn wb-icon-only" id="btn-undo" aria-label="Undo (Ctrl/Cmd+Z)" title="Undo (Ctrl/Cmd+Z)">↶</button>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-redo" aria-label="Redo (Ctrl/Cmd+Y)" title="Redo (Ctrl/Cmd+Y)">↷</button>
-    <div class="wb-divider"></div>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-zoom-out" aria-label="Zoom Out (-)" title="Zoom Out (-)">−</button>
-    <button type="button" class="wb-btn" id="btn-zoom-reset" aria-label="Reset Zoom to 100% (0)" title="Reset Zoom (0)">100%</button>
-    <button type="button" class="wb-btn wb-icon-only" id="btn-zoom-in" aria-label="Zoom In (+)" title="Zoom In (+)">+</button>
-    <button type="button" class="wb-btn" id="btn-zoom-fit" aria-label="Fit to Content (1)" title="Fit to Content (1)">Fit</button>
-  `;
+    modeBanner.classList.remove('wb-hidden');
+    modeBanner.innerHTML = pills.join('');
 
-  bottomBar.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button');
-    if (!btn) return;
-    if (btn.id === 'btn-undo') app.undo();
-    else if (btn.id === 'btn-redo') app.redo();
-    else if (btn.id === 'btn-zoom-out') app.zoomBy(1 / 1.2);
-    else if (btn.id === 'btn-zoom-in') app.zoomBy(1.2);
-    else if (btn.id === 'btn-zoom-reset') app.setZoom(1);
-    else if (btn.id === 'btn-zoom-fit') app.fitToContent();
-  });
+    modeBanner.querySelector('#btn-spot-mode-dim')?.addEventListener('click', () => {
+      app.spotlight.magnifier = false;
+      renderModeBanner();
+      app.requestRender();
+    });
+    modeBanner.querySelector('#btn-spot-mode-mag')?.addEventListener('click', () => {
+      app.spotlight.magnifier = true;
+      renderModeBanner();
+      app.requestRender();
+    });
+    modeBanner.querySelector('#spot-radius-slider')?.addEventListener('input', (e) => {
+      app.spotlight.radius = Number(e.target.value);
+      renderModeBanner();
+      app.requestRender();
+    });
+    modeBanner.querySelector('#spot-dim-slider')?.addEventListener('input', (e) => {
+      app.spotlight.dimOpacity = Number(e.target.value) / 100;
+      renderModeBanner();
+      app.requestRender();
+    });
+    modeBanner.querySelector('#btn-exit-spotlight')?.addEventListener('click', () => {
+      app.spotlight.active = false;
+      app.updateUI();
+      app.requestRender();
+    });
+    modeBanner.querySelector('#btn-exit-laser')?.addEventListener('click', () => app.setTool('select'));
+    modeBanner.querySelector('#btn-exit-annotation')?.addEventListener('click', () => app.toggleAnnotationMode());
+    modeBanner.querySelector('#btn-exit-focus')?.addEventListener('click', () => app.toggleFocusMode());
+    modeBanner.querySelector('#btn-focus-prev-page')?.addEventListener('click', () => {
+      const idx = app.scene.pages.findIndex((p) => p.id === app.scene.activePageId);
+      if (idx > 0) app.switchPage(app.scene.pages[idx - 1].id);
+    });
+    modeBanner.querySelector('#btn-focus-next-page')?.addEventListener('click', () => {
+      const idx = app.scene.pages.findIndex((p) => p.id === app.scene.activePageId);
+      if (idx < app.scene.pages.length - 1) app.switchPage(app.scene.pages[idx + 1].id);
+    });
+    modeBanner.querySelector('#btn-banner-stop-follow')?.addEventListener('click', () => {
+      app.collab?.setFollowTeacher(false);
+    });
+  }
+
+  function renderBottomBar() {
+    if (!bottomBar) return;
+    const zoomPct = Math.round(app.getPage().camera.zoom * 100);
+    bottomBar.innerHTML = `
+      <div class="wb-zoom-controls">
+        <button type="button" class="wb-btn wb-sm" id="btn-zoom-out" aria-label="Zoom Out (-)">−</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-zoom-reset" aria-label="Reset Zoom to 100%">${zoomPct}%</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-zoom-in" aria-label="Zoom In (+)">+</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-zoom-fit" title="Fit Entire Board (Shift+1)">Fit Board</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-zoom-sel" title="Zoom to Selection (Shift+2)">Zoom Sel</button>
+        <button type="button" class="wb-btn wb-sm ${app.minimapOpen ? 'active' : ''}" id="btn-minimap" title="Toggle Minimap">Map</button>
+      </div>
+    `;
+    bottomBar.querySelector('#btn-zoom-out')?.addEventListener('click', () => app.zoomBy(1 / 1.2));
+    bottomBar.querySelector('#btn-zoom-in')?.addEventListener('click', () => app.zoomBy(1.2));
+    bottomBar.querySelector('#btn-zoom-reset')?.addEventListener('click', () => app.resetZoom());
+    bottomBar.querySelector('#btn-zoom-fit')?.addEventListener('click', () => app.fitToContent());
+    bottomBar.querySelector('#btn-zoom-sel')?.addEventListener('click', () => app.zoomToSelection());
+    bottomBar.querySelector('#btn-minimap')?.addEventListener('click', () => {
+      app.minimapOpen = !app.minimapOpen;
+      renderBottomBar();
+      app.requestRender();
+    });
+  }
+
+  renderTopBar();
+  renderDock();
+  renderModeBanner();
+  renderBottomBar();
 
   return {
     update() {
+      renderDock();
+      renderModeBanner();
+      renderBottomBar();
       const page = app.getPage();
-      dock.querySelectorAll('[data-tool]').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tool === app.activeTool);
-      });
-      const activeInsertTool = insertTools.find((t) => t.id === app.activeTool);
-      if (insertBtn) {
-        insertBtn.classList.toggle('active', Boolean(activeInsertTool));
-      }
+      const undoBtn = topBar?.querySelector('#btn-undo');
+      const redoBtn = topBar?.querySelector('#btn-redo');
+      const spotBtn = topBar?.querySelector('#btn-spotlight');
+      const annBtn = topBar?.querySelector('#btn-annotation-mode');
+      const propsBtn = topBar?.querySelector('#btn-props-toggle');
+      const clsLabel = topBar?.querySelector('#wb-classroom-label');
+      const titleInput = topBar?.querySelector('#wb-doc-title');
+      const connPill = topBar?.querySelector('#wb-conn-status');
 
-      const zoomBtn = document.getElementById('btn-zoom-reset');
-      if (zoomBtn) {
-        zoomBtn.textContent = `${Math.round(page.camera.zoom * 100)}%`;
-      }
-      const undoBtn = document.getElementById('btn-undo');
-      const redoBtn = document.getElementById('btn-redo');
-      if (undoBtn) undoBtn.disabled = !app.history.canUndo(page);
-      if (redoBtn) redoBtn.disabled = !app.history.canRedo(page);
-
-      const fsBtn = document.getElementById('btn-fullscreen');
-      if (fsBtn) {
-        const isFs = Boolean(document.fullscreenElement || app.isPseudoFullscreen);
-        fsBtn.classList.toggle('active', isFs);
-      }
-
-      const teachBtn = document.getElementById('btn-teaching-menu');
-      if (teachBtn) {
-        teachBtn.classList.toggle(
-          'active',
-          Boolean(app.annotationMode || app.spotlight.active || app.focusMode)
-        );
-      }
-
-      const propsBtn = document.getElementById('btn-toggle-props');
-      if (propsBtn) {
-        propsBtn.classList.toggle('active', Boolean(app.propsDrawerOpen || app.selectedIds.size > 0));
-      }
-
-      const themeBtn = document.getElementById('btn-theme-toggle');
-      if (themeBtn) {
-        themeBtn.innerHTML = app.scene.theme === 'dark' ? ICONS.sun : ICONS.moon;
-      }
-
-      const titleInput = document.getElementById('wb-doc-title');
+      if (undoBtn) undoBtn.disabled = !app.history.canUndo(page.id);
+      if (redoBtn) redoBtn.disabled = !app.history.canRedo(page.id);
+      if (spotBtn) spotBtn.classList.toggle('active', app.spotlight.active && !app.spotlight.magnifier);
+      if (annBtn) annBtn.classList.toggle('active', app.annotationMode);
+      if (propsBtn) propsBtn.classList.toggle('active', Boolean(app.propsDrawerOpen));
       if (titleInput && document.activeElement !== titleInput) {
         titleInput.value = app.scene.title || 'StudioBoard Lesson';
       }
-
-      const clsLabel = document.getElementById('wb-classroom-btn-label');
+      if (connPill && app.collab) {
+        connPill.textContent = app.collab.statusMessage || 'Local board';
+        connPill.classList.toggle('wb-conn-live', app.collab.status === 'live');
+        connPill.classList.toggle('wb-conn-offline', app.collab.status === 'offline' || app.collab.status === 'error');
+      }
       if (clsLabel) {
         const qCount = page.elements.filter((e) => e.type === 'question' && !e.resolved && !e.hidden).length;
         clsLabel.textContent = qCount > 0 ? `Classroom (${qCount})` : 'Classroom';

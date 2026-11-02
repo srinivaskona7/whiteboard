@@ -1,75 +1,94 @@
-// ui/classroom.js — Shareable Classroom Links, Student Join, Component Pointers & Attached Question Pins
+// ui/classroom.js — Short Sharing Links, Live WebSocket Classroom, Named Pointers & Anchored Q&A
 import { createElement, uid } from '../scene/model.js';
 import { hitTestScene } from '../scene/hit.js';
 import { encodeSceneToHash, decodeSceneFromHash } from '../scene/storage.js';
 import { escapeXml } from '../render/svg-export.js';
+import { renderUrlQrSvg } from './qr.js';
 
-export const STUDENT_NAME_KEY = 'studioboard_student_name_v1';
+export const CLASSROOM_CHANNEL_NAME = 'studioboard_classroom_v1';
+export const STUDENT_NAME_STORAGE_KEY = 'studioboard_student_name_v1';
+
+export function encodeClassroomShareHash(scene, roomCode = 'DEVOPS-101') {
+  const { hash: baseHash } = encodeSceneToHash(scene);
+  const encodedScene = baseHash.replace(/^#scene=/, '');
+  const safeRoom = encodeURIComponent((roomCode || 'DEVOPS-101').trim());
+  return `#classroom=1&room=${safeRoom}&scene=${encodedScene}`;
+}
 
 export function buildClassroomShareHash(scene, roomCode = 'DEVOPS-101') {
-  const { hash, bytes } = encodeSceneToHash(scene);
-  const rawB64 = hash.replace(/^#scene=/, '');
-  return {
-    hash: `#classroom=1&room=${encodeURIComponent(roomCode)}&scene=${rawB64}`,
-    bytes,
-  };
+  const hash = encodeClassroomShareHash(scene, roomCode);
+  return { hash, length: hash.length };
 }
 
-export function parseClassroomHash(hashStr = '') {
-  if (!hashStr || (!hashStr.startsWith('#classroom=') && !hashStr.startsWith('#scene='))) {
-    return null;
+export function pointAtBoardLocation(page, worldPt, { authorName = 'Student' } = {}) {
+  const cleanName = String(authorName || '').trim();
+  if (!cleanName) {
+    throw new Error('Participant display name is required before pointing.');
   }
-  if (hashStr.startsWith('#scene=')) {
-    return { isClassroom: false, room: '', scene: decodeSceneFromHash(hashStr) };
-  }
-  const params = new URLSearchParams(hashStr.slice(1));
-  const isClassroom = params.get('classroom') === '1';
-  const room = params.get('room') || 'DEVOPS-101';
-  const sceneB64 = params.get('scene') || '';
-  const scene = sceneB64 ? decodeSceneFromHash(`#scene=${sceneB64}`) : null;
-  return { isClassroom, room, scene };
-}
-
-export function pointAtBoardLocation(page, world, { authorName = 'Student', color = '#ec4899' } = {}) {
-  const hit = hitTestScene(page, world.x, world.y, { includeLocked: true });
-  const target =
-    hit && hit.type !== 'question' && hit.type !== 'line' && hit.type !== 'arrow' ? hit : null;
+  const hit = hitTestScene(page, worldPt.x, worldPt.y, { includeLocked: true });
+  const target = hit && hit.type !== 'question' ? hit : null;
+  const targetElementName = target ? target.text || target.name || target.type : '';
   return {
     id: uid('ptr'),
-    authorName: authorName.trim() || 'Student',
-    color,
-    x: world.x,
-    y: world.y,
-    targetElementId: target ? target.id : null,
-    targetElementName: target ? target.text || target.stencilId || target.type : '',
-    time: Date.now(),
+    x: worldPt.x,
+    y: worldPt.y,
+    authorName: cleanName,
+    targetElementId: target?.id || null,
+    targetElementName,
+    targetLabel: targetElementName || 'Canvas Point',
+    createdAt: Date.now(),
   };
 }
 
 export function attachQuestionToBoard(
   page,
-  world,
-  { authorName = 'Student', questionText = 'How does this component work?' } = {}
+  worldPt,
+  { authorName = 'Student', questionText = 'Question?' } = {}
 ) {
-  const hit = hitTestScene(page, world.x, world.y, { includeLocked: true });
-  const target =
-    hit && hit.type !== 'question' && hit.type !== 'line' && hit.type !== 'arrow' ? hit : null;
-  const x = target ? target.x + Math.max(0, target.w - 30) : Math.round(world.x);
-  const y = target ? target.y - 36 : Math.round(world.y);
+  const cleanName = String(authorName || '').trim();
+  if (!cleanName) {
+    throw new Error('Participant display name is required before asking a question.');
+  }
+  const hit = hitTestScene(page, worldPt.x, worldPt.y, { includeLocked: true });
+  const target = hit && hit.type !== 'question' ? hit : null;
+  const qx = target ? Math.round(target.x + Math.max(0, target.w - 30)) : Math.round(worldPt.x);
+  const qy = target ? Math.round(target.y - 36) : Math.round(worldPt.y);
+  const offsetX = target ? qx - target.x : 0;
+  const offsetY = target ? qy - target.y : 0;
   const qEl = createElement('question', {
-    x,
-    y,
+    x: qx,
+    y: qy,
     w: 220,
-    h: 76,
-    authorName: authorName.trim() || 'Student',
-    text: questionText.trim() || 'Question about this component',
-    targetElementId: target ? target.id : null,
-    targetElementName: target ? target.text || target.stencilId || target.type : '',
-    offsetX: target ? x - target.x : 0,
-    offsetY: target ? y - target.y : 0,
+    h: 78,
+    text: String(questionText || '').trim(),
+    authorName: cleanName,
+    targetElementId: target?.id || null,
+    targetElementName: target ? target.text || target.name || target.type : '',
+    offsetX,
+    offsetY,
+    anchorDeleted: false,
+    resolved: false,
+    reply: '',
   });
   page.elements.push(qEl);
   return qEl;
+}
+
+export function parseClassroomHash(hashStr = '') {
+  if (!hashStr || !hashStr.startsWith('#classroom=1')) return null;
+  const query = hashStr.slice(1);
+  const params = new URLSearchParams(query);
+  const room = params.get('room') || 'DEVOPS-101';
+  const sceneParam = params.get('scene');
+  let scene = null;
+  if (sceneParam) {
+    try {
+      scene = decodeSceneFromHash(`#scene=${sceneParam}`);
+    } catch {
+      scene = null;
+    }
+  }
+  return { isClassroom: true, room, scene };
 }
 
 export class ClassroomTool {
@@ -79,34 +98,73 @@ export class ClassroomTool {
 
   onPointerDown(world) {
     const page = this.app.getPage();
-    const authorName = this.app.classroomUI?.getStudentName() || 'Student';
+    const hit = hitTestScene(page, world.x, world.y, { includeLocked: true });
+    const targetEl = hit && hit.type !== 'question' ? hit : null;
+    const targetLabel =
+      targetEl?.text || targetEl?.name || (targetEl ? targetEl.type : 'Canvas Point');
 
-    if (this.app.activeTool === 'pointer') {
-      const ping = pointAtBoardLocation(page, world, { authorName });
-      this.app.classroomUI?.recordPointer(ping, true);
+    const proceedWithAuthor = (authorName) => {
+      if (this.app.activeTool === 'pointer') {
+        this.app.classroomUI.recordPointer({
+          id: uid('ptr'),
+          x: world.x,
+          y: world.y,
+          authorName,
+          targetElementId: targetEl?.id || null,
+          targetLabel,
+          createdAt: Date.now(),
+        });
+        this.app.dialogs.showToast(`📍 ${authorName} pointed at ${targetLabel}`);
+        return;
+      }
+
+      if (this.app.activeTool === 'question') {
+        const draft = this.app.classroomUI.getDraftQuestion();
+        if (draft) {
+          this.app.classroomUI.createQuestionAt(world.x, world.y, draft, targetEl, authorName);
+        } else {
+          this.app.dialogs.openPromptModal({
+            title: `Ask Question (${authorName})`,
+            label: `Attach question to ${targetLabel}:`,
+            defaultValue: 'How does traffic fail over if this component goes down?',
+            confirmLabel: 'Pin Question to Board',
+            onConfirm: (val) => {
+              if (val && val.trim()) {
+                this.app.classroomUI.createQuestionAt(
+                  world.x,
+                  world.y,
+                  val.trim(),
+                  targetEl,
+                  authorName
+                );
+              }
+            },
+          });
+        }
+      }
+    };
+
+    const currentName = (this.app.classroomUI.getStudentName() || '').trim();
+    if (!currentName) {
+      this.app.dialogs.openPromptModal({
+        title: 'Enter Your Name First',
+        label: 'Your display name is required before pointing or asking a question:',
+        defaultValue: '',
+        confirmLabel: 'Save Name & Continue',
+        onConfirm: (entered) => {
+          const clean = String(entered || '').trim();
+          if (!clean) {
+            this.app.dialogs.showToast('Please enter your name before pointing or asking a question.');
+            return;
+          }
+          this.app.classroomUI.setStudentName(clean);
+          proceedWithAuthor(clean);
+        },
+      });
       return;
     }
 
-    if (this.app.activeTool === 'question') {
-      const hit = hitTestScene(page, world.x, world.y, { includeLocked: true });
-      const targetLabel =
-        hit && hit.type !== 'question' ? hit.text || hit.stencilId || hit.type : 'this board location';
-      const draft = this.app.classroomUI?.getDraftQuestion();
-      if (draft) {
-        this.app.classroomUI.createQuestionAt(world, draft);
-        return;
-      }
-      this.app.dialogs.openPromptModal({
-        title: `Ask Question (${authorName})`,
-        label: `Attach question to ${targetLabel}:`,
-        defaultValue: 'How does traffic fail over if this component goes down?',
-        confirmLabel: 'Pin Question to Board',
-        onConfirm: (val) => {
-          if (!val || !val.trim()) return;
-          this.app.classroomUI?.createQuestionAt(world, val.trim());
-        },
-      });
-    }
+    proceedWithAuthor(currentName);
   }
 
   onPointerMove() {}
@@ -115,35 +173,47 @@ export class ClassroomTool {
 
 export function initClassroomUI(app) {
   const panel = document.getElementById('wb-classroom-panel');
-  let studentName = '';
-  try {
-    studentName = localStorage.getItem(STUDENT_NAME_KEY) || 'Alex Rivera';
-  } catch {
-    studentName = 'Alex Rivera';
+  if (!panel) {
+    return {
+      update() {},
+      toggle() {},
+      openJoinBanner() {},
+      getStudentName: () => 'Student',
+      setStudentName() {},
+      getDraftQuestion: () => '',
+      recordPointer() {},
+      createQuestionAt() {},
+      focusQuestion() {},
+    };
   }
-  let roomCode = 'DEVOPS-101';
-  let draftQuestion = '';
-  const pointers = [];
-  let channel = null;
 
+  let studentName = localStorage.getItem(STUDENT_NAME_STORAGE_KEY) || '';
+  let draftQuestion = '';
+  let filterUnansweredOnly = false;
+  let activeShortLink = '';
+  let activeLinkLabel = '';
+  let showQrCode = false;
+  let selectedTtlHours = '24'; // '24' | '168' | '0'
+
+  let channel = null;
   if (typeof BroadcastChannel !== 'undefined') {
     try {
-      channel = new BroadcastChannel('studioboard_classroom');
+      channel = new BroadcastChannel(CLASSROOM_CHANNEL_NAME);
       channel.onmessage = (ev) => {
         const msg = ev.data;
-        if (!msg) return;
+        if (!msg || typeof msg !== 'object') return;
+        // Only use BroadcastChannel when not connected to a live WebSocket room
+        if (app.collab?.status === 'live') return;
         if (msg.type === 'pointer' && msg.pointer) {
-          pointers.push({ ...msg.pointer, time: Date.now() });
-          app.classroomPointers = pointers;
-          startPulseLoop();
-          render();
+          app.studentPointers.push({ ...msg.pointer, createdAt: Date.now() });
+          app.requestRender();
         } else if (msg.type === 'question' && msg.question) {
           const page = app.getPage();
           if (!page.elements.some((e) => e.id === msg.question.id)) {
             page.elements.push(msg.question);
             app.commitChange();
+            app.updateUI();
             app.requestRender();
-            render();
           }
         }
       };
@@ -152,65 +222,82 @@ export function initClassroomUI(app) {
     }
   }
 
-  let pulseTimer = null;
-  function startPulseLoop() {
-    if (pulseTimer) return;
-    pulseTimer = setInterval(() => {
-      const now = Date.now();
-      const active = pointers.filter((p) => now - p.time <= 12000);
-      pointers.length = 0;
-      pointers.push(...active);
-      app.classroomPointers = pointers;
-      app.requestRender();
-      if (pointers.length === 0) {
-        clearInterval(pulseTimer);
-        pulseTimer = null;
-      }
-    }, 60);
-  }
-
   function setStudentName(name) {
-    studentName = (name || '').trim() || 'Student';
+    studentName = (name || '').trim();
     try {
-      localStorage.setItem(STUDENT_NAME_KEY, studentName);
+      localStorage.setItem(STUDENT_NAME_STORAGE_KEY, studentName);
     } catch {
       // Ignore storage errors
     }
-    app.toolbarUI?.update();
-    render();
+    app.collab?.sendCursorUpdate(null, Array.from(app.selectedIds || []));
   }
 
-  function recordPointer(ping, broadcast = true) {
-    pointers.push(ping);
-    app.classroomPointers = pointers;
-    startPulseLoop();
-    if (broadcast && channel) {
-      channel.postMessage({ type: 'pointer', pointer: ping });
+  function recordPointer(ptr) {
+    app.studentPointers.push(ptr);
+    app.requestRender();
+    if (app.collab?.status === 'live') {
+      app.collab.broadcastPointerPing(ptr);
+    } else if (channel) {
+      try {
+        channel.postMessage({ type: 'pointer', pointer: ptr });
+      } catch {
+        // Ignore
+      }
     }
-    const targetDesc = ping.targetElementName ? `component "${ping.targetElementName}"` : `(${Math.round(ping.x)}, ${Math.round(ping.y)})`;
-    app.dialogs?.showToast(`👆 ${ping.authorName} pointed to ${targetDesc}`);
-    render();
   }
 
-  function createQuestionAt(world, questionText) {
+  function createQuestionAt(x, y, text, targetEl = null, authorOverride = null) {
     const page = app.getPage();
-    const qEl = attachQuestionToBoard(page, world, {
-      authorName: studentName,
-      questionText,
-    });
-    draftQuestion = '';
-    app.selectedIds = new Set([qEl.id]);
-    app.commitChange();
-    if (channel) {
-      channel.postMessage({ type: 'question', question: qEl });
+    const author = (authorOverride || studentName || '').trim();
+    if (!author) {
+      app.dialogs.showToast('Please set your display name before asking a question.');
+      return null;
     }
-    app.dialogs?.showToast(
-      `❓ ${studentName} attached a question${qEl.targetElementName ? ` to ${qEl.targetElementName}` : ''}`
-    );
+    const qx = targetEl ? Math.round(targetEl.x + Math.max(0, targetEl.w - 30)) : Math.round(x);
+    const qy = targetEl ? Math.round(targetEl.y - 36) : Math.round(y);
+    const offsetX = targetEl ? qx - targetEl.x : 0;
+    const offsetY = targetEl ? qy - targetEl.y : 0;
+    const anchorRx = targetEl && targetEl.w > 0 ? Math.max(0, Math.min(1, offsetX / targetEl.w)) : 0.85;
+    const anchorRy = targetEl && targetEl.h > 0 ? Math.max(0, Math.min(1, (y - targetEl.y) / targetEl.h)) : 0;
+
+    const qEl = createElement('question', {
+      x: qx,
+      y: qy,
+      w: 220,
+      h: 78,
+      text: text.trim(),
+      authorName: author,
+      targetElementId: targetEl?.id || null,
+      targetElementName: targetEl ? targetEl.text || targetEl.name || targetEl.type : '',
+      offsetX,
+      offsetY,
+      anchorRx,
+      anchorRy,
+      anchorDeleted: false,
+      resolved: false,
+      reply: '',
+    });
+
+    page.elements.push(qEl);
+    draftQuestion = '';
+    if (app.collab?.status === 'live') {
+      app.collab.broadcastQuestionAdded(qEl);
+    } else {
+      app.commitChange();
+      if (channel) {
+        try {
+          channel.postMessage({ type: 'question', question: qEl });
+        } catch {
+          // Ignore
+        }
+      }
+    }
     if (!app.toolLock) app.setTool('select');
+    app.selectedIds = new Set([qEl.id]);
     app.updateUI();
     app.requestRender();
     render();
+    app.dialogs.showToast('❓ Question pinned to component!');
     return qEl;
   }
 
@@ -219,90 +306,206 @@ export function initClassroomUI(app) {
     const qEl = page.elements.find((e) => e.id === qId);
     if (!qEl) return;
     const target = qEl.targetElementId
-      ? page.elements.find((e) => e.id === qEl.targetElementId) || qEl
+      ? page.elements.find((e) => e.id === qEl.targetElementId)
       : qEl;
-    const cx = target.x + (target.w || 120) / 2;
-    const cy = target.y + (target.h || 80) / 2;
-    page.camera.zoom = Math.max(1, page.camera.zoom);
-    page.camera.x = app.renderer.width / 2 - cx * page.camera.zoom;
-    page.camera.y = app.renderer.height / 2 - cy * page.camera.zoom;
-    app.selectedIds = new Set([qEl.id, ...(qEl.targetElementId ? [qEl.targetElementId] : [])]);
-    recordPointer(
-      {
-        id: uid('ptr'),
-        authorName: studentName,
-        color: '#2563eb',
-        x: cx,
-        y: cy,
-        targetElementId: qEl.targetElementId || qEl.id,
-        targetElementName: qEl.targetElementName || qEl.text,
-        time: Date.now(),
-      },
-      false
-    );
+    const focusEl = target || qEl;
+    const cx = focusEl.x + (focusEl.w || 160) / 2;
+    const cy = focusEl.y + (focusEl.h || 80) / 2;
+    page.camera.x = Math.round(window.innerWidth / 2 - cx * page.camera.zoom);
+    page.camera.y = Math.round(window.innerHeight / 2 - cy * page.camera.zoom);
+    app.selectedIds = new Set([qEl.id]);
+    recordPointer({
+      id: uid('ptr'),
+      x: cx,
+      y: cy,
+      authorName: qEl.authorName || 'Student',
+      targetElementId: focusEl.id,
+      targetLabel: qEl.targetElementName || 'Question',
+      createdAt: Date.now(),
+    });
     app.updateUI();
     app.requestRender();
   }
 
+  async function copyVerifiedLink(url, label) {
+    activeShortLink = url;
+    activeLinkLabel = label;
+    try {
+      await navigator.clipboard.writeText(url);
+      app.dialogs.showToast(`🔗 Copied ${label} (${url.length} chars)`);
+    } catch {
+      app.dialogs.showToast(`Created ${label}: ${url}`);
+    }
+    render();
+  }
+
+  function getTtlMs() {
+    const hrs = Number(selectedTtlHours);
+    return hrs > 0 ? hrs * 3600 * 1000 : null;
+  }
+
   function render() {
-    if (!panel) return;
+    if (panel.classList.contains('wb-hidden')) return;
     const page = app.getPage();
-    const questions = page.elements.filter((e) => e.type === 'question' && !e.hidden);
-    const { hash } = buildClassroomShareHash(app.scene, roomCode);
-    const shareUrl = `${window.location.origin}${window.location.pathname}${hash}`;
+    const allQuestions = page.elements.filter((e) => e.type === 'question' && !e.hidden);
+    const unansweredCount = allQuestions.filter((q) => !q.resolved && !q.reply).length;
+    const visibleQuestions = filterUnansweredOnly
+      ? allQuestions.filter((q) => !q.resolved)
+      : allQuestions;
+
+    const collab = app.collab;
+    const isLive = collab?.status === 'live';
+    const isSnapshot = collab?.status === 'snapshot';
+    const participants = collab ? Array.from(collab.participants.values()) : [];
 
     panel.innerHTML = `
       <div class="wb-panel-header">
-        <strong>🎓 Live Classroom & Student Q&A (${questions.length})</strong>
+        <strong>🎓 Live Classroom & Short Share (${allQuestions.length})</strong>
         <button type="button" class="wb-icon-btn" id="btn-close-classroom" aria-label="Close Classroom Panel">✕</button>
       </div>
       <div class="wb-panel-body">
         <div class="wb-prop-section">
-          <div class="wb-prop-title">1. Shareable Classroom Link</div>
-          <div class="wb-classroom-share-box">
-            <input type="text" id="wb-classroom-link-input" class="wb-input" readonly value="${escapeXml(shareUrl)}" aria-label="Shareable Classroom Link"/>
-            <button type="button" class="wb-btn wb-sm wb-primary" id="btn-copy-classroom-link">🔗 Copy Student Link</button>
+          <div class="wb-prop-title">Connection & Access Status</div>
+          <div class="wb-status-card ${isLive ? 'wb-status-live' : isSnapshot ? 'wb-status-ro' : 'wb-status-offline'}">
+            <div><strong>${escapeXml(collab?.statusMessage || 'Local board')}</strong></div>
+            ${
+              !collab?.backendAvailable && !isLive
+                ? `<div class="wb-muted" style="font-size:11px;margin-top:4px;">Short links and cross-device live collaboration require a configured collaboration server.</div>`
+                : ''
+            }
+            ${
+              collab?.expiresAt
+                ? `<div class="wb-muted" style="font-size:11px;">Expires: ${new Date(collab.expiresAt).toLocaleString()}</div>`
+                : ''
+            }
           </div>
-        </div>
-
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">2. Join with Your Name</div>
-          <div class="wb-classroom-join-row">
-            <input type="text" id="wb-student-name-input" class="wb-input" placeholder="Enter your name..." value="${escapeXml(studentName)}" aria-label="Participant Name"/>
-            <button type="button" class="wb-btn wb-sm" id="btn-save-student-name">Join</button>
-          </div>
-          <div class="wb-btn-group" style="margin-top:6px;">
-            <button type="button" class="wb-btn wb-sm ${app.activeTool === 'pointer' ? 'active' : ''}" id="btn-tool-pointer" title="Click any component on the board to point/ping with your name">👆 Point at Component</button>
-            <button type="button" class="wb-btn wb-sm ${app.activeTool === 'question' ? 'active' : ''}" id="btn-tool-question" title="Click any component or location to attach a question pin">❓ Pin Question on Board</button>
-          </div>
-        </div>
-
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">3. Quick Question Pin</div>
-          <input type="text" id="wb-quick-question-input" class="wb-input" placeholder="Type question, then click board or 'Pin to Selected'..." value="${escapeXml(draftQuestion)}" aria-label="Question Text"/>
-          <button type="button" class="wb-btn wb-sm" id="btn-pin-question-now" style="margin-top:4px;">📌 Pin Question to Selected / Center</button>
-        </div>
-
-        <div class="wb-prop-section">
-          <div class="wb-prop-title">Board Questions (${questions.length})</div>
           ${
-            questions.length === 0
-              ? `<p class="wb-muted">No student questions yet. Choose "Pin Question on Board" and click any component!</p>`
+            isLive
+              ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+                  ${participants
+                    .map(
+                      (p) =>
+                        `<span class="wb-participant-chip" style="border-color:${escapeXml(p.color || '#2563eb')}"><i style="background:${escapeXml(p.color || '#2563eb')}"></i>${escapeXml(p.name || 'User')} (${escapeXml(p.role)})</span>`
+                    )
+                    .join('')}
+                </div>
+                ${
+                  collab.role !== 'teacher'
+                    ? `<div class="wb-prop-row" style="margin-top:6px;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+                          <input type="checkbox" id="chk-follow-teacher" ${collab.followingTeacher ? 'checked' : ''}/>
+                          Follow Teacher Camera
+                        </label>
+                        ${
+                          collab.followingTeacher
+                            ? `<button type="button" class="wb-btn wb-sm wb-danger" id="btn-stop-following">Stop Following</button>`
+                            : ''
+                        }
+                      </div>`
+                    : ''
+                }`
+              : ''
+          }
+        </div>
+
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Short Sharing Links (Backend Stored)</div>
+          <label class="wb-prop-row">
+            <span>Link Expiration</span>
+            <select id="cls-link-ttl" aria-label="Share Link Expiration">
+              <option value="24" ${selectedTtlHours === '24' ? 'selected' : ''}>24 hours</option>
+              <option value="168" ${selectedTtlHours === '168' ? 'selected' : ''}>7 days</option>
+              <option value="0" ${selectedTtlHours === '0' ? 'selected' : ''}>Never expire</option>
+            </select>
+          </label>
+          <div class="wb-btn-group" style="flex-direction:column;gap:6px;">
+            <button type="button" class="wb-btn wb-sm wb-primary" id="btn-cls-live-student">
+              🎓 ${isLive ? 'Copy Student Join Link (Viewer / Q&A)' : 'Start Live Room & Copy Student Link'}
+            </button>
+            ${
+              !isLive || collab.role === 'teacher'
+                ? `<button type="button" class="wb-btn wb-sm" id="btn-cls-live-editor">
+                    ✏️ ${isLive && collab.editorToken ? 'Copy Authorized Editor Invite Link' : 'Start Live Room & Copy Editor Invite'}
+                  </button>`
+                : ''
+            }
+            <button type="button" class="wb-btn wb-sm" id="btn-cls-short-snapshot">
+              📸 Create Read-Only Short Snapshot (#/b/…)
+            </button>
+          </div>
+          ${
+            activeShortLink
+              ? `<div class="wb-short-link-box" style="margin-top:8px;padding:8px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-muted);">
+                  <div style="font-size:11px;font-weight:600;margin-bottom:4px;">${escapeXml(activeLinkLabel)} (${activeShortLink.length} chars)</div>
+                  <div style="display:flex;gap:4px;">
+                    <input type="text" id="cls-short-url-output" class="wb-input" readonly value="${escapeXml(activeShortLink)}" style="font-size:11px;"/>
+                    <button type="button" class="wb-btn wb-sm" id="btn-toggle-qr">${showQrCode ? 'Hide QR' : 'QR'}</button>
+                  </div>
+                  ${showQrCode ? `<div style="display:flex;justify-content:center;padding-top:8px;">${renderUrlQrSvg(activeShortLink, 128)}</div>` : ''}
+                </div>`
+              : ''
+          }
+          <details style="margin-top:6px;font-size:11px;">
+            <summary class="wb-muted" style="cursor:pointer;">Offline Fallback (Embedded #scene=… URL)</summary>
+            <div style="padding-top:6px;display:flex;flex-direction:column;gap:4px;">
+              <span class="wb-muted">Embeds full board in URL hash for serverless static use (can be long):</span>
+              <button type="button" class="wb-btn wb-sm" id="btn-cls-copy-fallback-link">Copy Offline Fallback URL</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Your Classroom Identity (Required to Point/Ask)</div>
+          <label class="wb-prop-row">
+            <span>Display Name</span>
+            <input type="text" id="cls-student-name" class="wb-input" style="width:148px" value="${escapeXml(studentName)}" placeholder="Enter your name..." aria-label="Participant Name"/>
+          </label>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+            <textarea id="cls-question-draft" class="wb-input" rows="2" placeholder="Type a question and click a component on canvas...">${escapeXml(draftQuestion)}</textarea>
+            <div class="wb-btn-group">
+              <button type="button" class="wb-btn wb-sm ${app.activeTool === 'pointer' ? 'active wb-primary' : ''}" id="btn-cls-point-tool">📍 Point (W)</button>
+              <button type="button" class="wb-btn wb-sm ${app.activeTool === 'question' ? 'active wb-primary' : ''}" id="btn-cls-ask-tool">❓ Pin Question (Q)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="wb-prop-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="wb-prop-title" style="margin:0;">Questions (${visibleQuestions.length}/${allQuestions.length})</div>
+            <button type="button" class="wb-btn wb-sm ${filterUnansweredOnly ? 'active wb-primary' : ''}" id="btn-filter-unanswered">
+              ${filterUnansweredOnly ? `Unanswered (${unansweredCount})` : 'Filter Unanswered'}
+            </button>
+          </div>
+          ${
+            visibleQuestions.length === 0
+              ? `<p class="wb-muted">No matching questions on this page.</p>`
               : `<div class="wb-question-list">
-                  ${questions
+                  ${visibleQuestions
                     .map(
                       (q) => `
                     <div class="wb-question-card ${q.resolved ? 'resolved' : ''}">
-                      <div class="wb-question-head">
-                        <strong>${escapeXml(q.authorName || 'Student')}</strong>
-                        ${q.targetElementName ? `<span class="wb-question-target">on ${escapeXml(q.targetElementName)}</span>` : ''}
+                      <div class="wb-question-meta">
+                        <strong>👤 ${escapeXml(q.authorName || 'Student')}</strong>
+                        <span class="wb-question-badge">${q.resolved ? '✓ Resolved' : '● Open'}</span>
                       </div>
+                      ${
+                        q.anchorDeleted
+                          ? `<div class="wb-question-target" style="color:#d97706;">⚠ Original component removed${q.targetElementName ? `: ${escapeXml(q.targetElementName)}` : ''}</div>`
+                          : q.targetElementName
+                            ? `<div class="wb-question-target">🔗 Attached to: <em>${escapeXml(q.targetElementName)}</em></div>`
+                            : ''
+                      }
                       <div class="wb-question-body">${escapeXml(q.text)}</div>
-                      ${q.reply ? `<div class="wb-question-reply">↳ Teacher: ${escapeXml(q.reply)}</div>` : ''}
-                      <div class="wb-btn-group" style="margin-top:4px;">
-                        <button type="button" class="wb-btn wb-sm" data-q-focus="${escapeXml(q.id)}">🎯 Locate</button>
-                        <button type="button" class="wb-btn wb-sm" data-q-reply="${escapeXml(q.id)}">💬 Reply</button>
-                        <button type="button" class="wb-btn wb-sm" data-q-resolve="${escapeXml(q.id)}">${q.resolved ? '↩ Reopen' : '✓ Resolve'}</button>
+                      ${q.reply ? `<div class="wb-question-reply"><strong>Reply:</strong> ${escapeXml(q.reply)}</div>` : ''}
+                      <div class="wb-btn-group" style="margin-top:6px;">
+                        <button type="button" class="wb-btn wb-sm" data-focus-q="${escapeXml(q.id)}">🎯 Locate</button>
+                        <button type="button" class="wb-btn wb-sm" data-reply-q="${escapeXml(q.id)}">💬 Reply</button>
+                        <button type="button" class="wb-btn wb-sm" data-resolve-q="${escapeXml(q.id)}">${q.resolved ? '↺ Reopen' : '✓ Resolve'}</button>
+                        ${
+                          collab?.canEditBoard() !== false
+                            ? `<button type="button" class="wb-btn wb-sm wb-danger" data-del-q="${escapeXml(q.id)}" aria-label="Delete Question">🗑</button>`
+                            : ''
+                        }
                       </div>
                     </div>
                   `
@@ -318,102 +521,164 @@ export function initClassroomUI(app) {
       panel.classList.add('wb-hidden');
     });
 
-    panel.querySelector('#btn-copy-classroom-link')?.addEventListener('click', async () => {
-      const { hash: newHash } = buildClassroomShareHash(app.scene, roomCode);
-      window.history.replaceState(null, '', newHash);
-      const url = `${window.location.origin}${window.location.pathname}${newHash}`;
-      const inp = panel.querySelector('#wb-classroom-link-input');
-      if (inp) inp.value = url;
+    panel.querySelector('#cls-link-ttl')?.addEventListener('change', (e) => {
+      selectedTtlHours = e.target.value;
+    });
+
+    panel.querySelector('#chk-follow-teacher')?.addEventListener('change', (e) => {
+      app.collab?.setFollowTeacher(e.target.checked);
+    });
+
+    panel.querySelector('#btn-stop-following')?.addEventListener('click', () => {
+      app.collab?.setFollowTeacher(false);
+    });
+
+    panel.querySelector('#btn-cls-live-student')?.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(url);
-        app.dialogs?.showToast('Shareable Classroom Link copied to clipboard!');
-      } catch {
-        inp?.select();
-        app.dialogs?.showToast('Classroom URL updated in address bar.');
+        if (app.collab?.status === 'live' && app.collab.roomId) {
+          const url = app.collab.buildShortUrl(`#/r/${app.collab.roomId}`);
+          await copyVerifiedLink(url, 'Student Live Join Link (Viewer / Q&A)');
+        } else {
+          const created = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtlMs() });
+          await copyVerifiedLink(created.viewerUrl, 'Student Live Join Link (Viewer / Q&A)');
+        }
+      } catch (err) {
+        app.dialogs.showToast(err.message);
       }
     });
 
-    panel.querySelector('#btn-save-student-name')?.addEventListener('click', () => {
-      const val = panel.querySelector('#wb-student-name-input')?.value;
-      setStudentName(val);
-      app.dialogs?.showToast(`Joined classroom as "${studentName}"`);
+    panel.querySelector('#btn-cls-live-editor')?.addEventListener('click', async () => {
+      try {
+        if (app.collab?.status === 'live' && app.collab.roomId && app.collab.editorToken) {
+          const url = app.collab.buildShortUrl(`#/r/${app.collab.roomId}?invite=${app.collab.editorToken}`);
+          await copyVerifiedLink(url, 'Authorized Editor Invite Link');
+        } else {
+          const created = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtlMs() });
+          await copyVerifiedLink(created.editorUrl, 'Authorized Editor Invite Link');
+        }
+      } catch (err) {
+        app.dialogs.showToast(err.message);
+      }
     });
 
-    panel.querySelector('#wb-student-name-input')?.addEventListener('change', (e) => {
+    panel.querySelector('#btn-cls-short-snapshot')?.addEventListener('click', async () => {
+      try {
+        const snap = await app.collab.createShortSnapshot(getTtlMs());
+        await copyVerifiedLink(snap.url, 'Read-Only Short Snapshot Link');
+      } catch (err) {
+        app.dialogs.showToast(err.message);
+      }
+    });
+
+    panel.querySelector('#btn-toggle-qr')?.addEventListener('click', () => {
+      showQrCode = !showQrCode;
+      render();
+    });
+
+    panel.querySelector('#btn-cls-copy-fallback-link')?.addEventListener('click', async () => {
+      try {
+        const hash = encodeClassroomShareHash(app.scene, app.collab?.roomId || 'DEVOPS-101');
+        const url = `${window.location.origin}${window.location.pathname}${hash}`;
+        await navigator.clipboard.writeText(url);
+        app.dialogs.showToast(`Copied Offline Fallback URL (${url.length} chars)`);
+      } catch (err) {
+        app.dialogs.showToast(err.message || 'Could not generate fallback URL.');
+      }
+    });
+
+    panel.querySelector('#cls-student-name')?.addEventListener('input', (e) => {
       setStudentName(e.target.value);
     });
 
-    panel.querySelector('#wb-quick-question-input')?.addEventListener('input', (e) => {
+    panel.querySelector('#cls-question-draft')?.addEventListener('input', (e) => {
       draftQuestion = e.target.value;
     });
 
-    panel.querySelector('#btn-tool-pointer')?.addEventListener('click', () => {
+    panel.querySelector('#btn-cls-point-tool')?.addEventListener('click', () => {
       app.setTool('pointer');
-      app.dialogs?.showToast(`Click any component on the board to point as ${studentName}`);
+      render();
     });
 
-    panel.querySelector('#btn-tool-question')?.addEventListener('click', () => {
+    panel.querySelector('#btn-cls-ask-tool')?.addEventListener('click', () => {
       app.setTool('question');
-      app.dialogs?.showToast(`Click any component or location on the board to attach a question`);
+      render();
     });
 
-    panel.querySelector('#btn-pin-question-now')?.addEventListener('click', () => {
-      const txt = panel.querySelector('#wb-quick-question-input')?.value?.trim() || 'Question about this component';
-      const selected = page.elements.find((e) => app.selectedIds.has(e.id));
-      const world = selected
-        ? { x: selected.x + selected.w / 2, y: selected.y + selected.h / 2 }
-        : app.getViewportCenterWorld();
-      createQuestionAt(world, txt);
+    panel.querySelector('#btn-filter-unanswered')?.addEventListener('click', () => {
+      filterUnansweredOnly = !filterUnansweredOnly;
+      render();
     });
 
-    panel.querySelectorAll('[data-q-focus]').forEach((b) => {
-      b.addEventListener('click', () => focusQuestion(b.dataset.qFocus));
+    panel.querySelectorAll('[data-focus-q]').forEach((b) => {
+      b.addEventListener('click', () => focusQuestion(b.dataset.focusQ));
     });
 
-    panel.querySelectorAll('[data-q-resolve]').forEach((b) => {
+    panel.querySelectorAll('[data-reply-q]').forEach((b) => {
       b.addEventListener('click', () => {
-        const q = page.elements.find((e) => e.id === b.dataset.qResolve);
-        if (q) {
-          q.resolved = !q.resolved;
-          app.commitChange();
-          app.requestRender();
-          render();
-        }
-      });
-    });
-
-    panel.querySelectorAll('[data-q-reply]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const q = page.elements.find((e) => e.id === b.dataset.qReply);
-        if (!q) return;
+        const qEl = page.elements.find((e) => e.id === b.dataset.replyQ);
+        if (!qEl) return;
         app.dialogs.openPromptModal({
-          title: 'Reply to Student Question',
-          label: `Reply to ${q.authorName}:`,
-          defaultValue: q.reply || '',
+          title: 'Reply to Question',
+          label: `Question from ${qEl.authorName}: "${qEl.text}"`,
+          defaultValue: qEl.reply || '',
           confirmLabel: 'Save Reply',
           onConfirm: (val) => {
-            q.reply = (val || '').trim();
-            q.resolved = Boolean(q.reply);
-            app.commitChange();
+            qEl.reply = (val || '').trim();
+            if (app.collab?.status === 'live') {
+              app.collab.broadcastQuestionUpdate(qEl.id, { reply: qEl.reply });
+            } else {
+              app.commitChange();
+            }
             app.requestRender();
             render();
           },
         });
       });
     });
+
+    panel.querySelectorAll('[data-resolve-q]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const qEl = page.elements.find((e) => e.id === b.dataset.resolveQ);
+        if (!qEl) return;
+        qEl.resolved = !qEl.resolved;
+        if (app.collab?.status === 'live') {
+          app.collab.broadcastQuestionUpdate(qEl.id, { resolved: qEl.resolved });
+        } else {
+          app.commitChange();
+        }
+        app.updateUI();
+        app.requestRender();
+        render();
+      });
+    });
+
+    panel.querySelectorAll('[data-del-q]').forEach((b) => {
+      b.addEventListener('click', () => {
+        if (app.collab && !app.collab.canEditBoard()) {
+          app.dialogs.showToast('Viewers cannot delete board questions.');
+          return;
+        }
+        const delId = b.dataset.delQ;
+        page.elements = page.elements.filter((e) => e.id !== delId);
+        app.selectedIds.delete(delId);
+        app.commitChange([delId]);
+        app.updateUI();
+        app.requestRender();
+        render();
+      });
+    });
   }
 
-  render();
+  function toggle() {
+    panel.classList.toggle('wb-hidden');
+    if (!panel.classList.contains('wb-hidden')) render();
+  }
 
   return {
     update: render,
-    toggle() {
-      if (!panel) return;
-      panel.classList.toggle('wb-hidden');
-      if (!panel.classList.contains('wb-hidden')) render();
-    },
-    open() {
-      if (!panel) return;
+    toggle,
+    openJoinBanner(room) {
+      if (room && app.collab) app.collab.roomId = room;
       panel.classList.remove('wb-hidden');
       render();
     },

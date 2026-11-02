@@ -107,3 +107,49 @@ export function toggleImageBackgroundLock(app, imgEl) {
   app.updateUI();
   app.requestRender();
 }
+
+export async function handleImageFiles(app, fileList, worldPos = null) {
+  if (!fileList || !fileList.length) return [];
+  const inserted = [];
+  for (const file of Array.from(fileList)) {
+    if (file && file.type && file.type.startsWith('image/')) {
+      const el = await insertImageFile(app, file, worldPos);
+      if (el) inserted.push(el);
+    }
+  }
+  return inserted;
+}
+
+export function setupImagePasteAndDrop(app) {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('drop', (e) => {
+    if (e.dataTransfer?.files?.length) {
+      const hasImage = Array.from(e.dataTransfer.files).some((f) => f.type?.startsWith('image/'));
+      if (hasImage) {
+        e.preventDefault();
+        const pt = app.screenToWorld(e.clientX, e.clientY);
+        handleImageFiles(app, e.dataTransfer.files, pt);
+      }
+    }
+  });
+  window.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type?.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          insertImageFile(app, file);
+          return;
+        }
+      }
+    }
+  });
+}
+

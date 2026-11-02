@@ -3,21 +3,46 @@ import { createElement, autoGrowShapeForText } from './model.js';
 import { getSelectionBounds } from './geometry.js';
 import { bindConnectorEndpoint } from './bindings.js';
 
-export function computeNonOverlappingOrigin(page, viewportCenter = { x: 400, y: 260 }) {
-  const visible = (page?.elements || []).filter((e) => !e.hidden);
+export function computeNonOverlappingOrigin(
+  pageOrElements,
+  viewportCenter = { x: 400, y: 260 },
+  fallbackY = 260
+) {
+  const rawElements = Array.isArray(pageOrElements)
+    ? pageOrElements
+    : Array.isArray(pageOrElements?.elements)
+      ? pageOrElements.elements
+      : [];
+  const visible = rawElements.filter(
+    (e) => e && !e.hidden && Number.isFinite(e.x) && Number.isFinite(e.y)
+  );
+
+  const vcX =
+    typeof viewportCenter === 'number' && Number.isFinite(viewportCenter)
+      ? viewportCenter
+      : Number.isFinite(viewportCenter?.x)
+        ? viewportCenter.x
+        : 400;
+  const vcY =
+    typeof viewportCenter === 'number' && Number.isFinite(fallbackY)
+      ? fallbackY
+      : Number.isFinite(viewportCenter?.y)
+        ? viewportCenter.y
+        : 260;
+
   if (visible.length === 0) {
     return {
-      x: Math.round(viewportCenter.x - 180),
-      y: Math.round(viewportCenter.y - 140),
+      x: Math.round(vcX - 160),
+      y: Math.round(vcY - 110),
     };
   }
-  const bounds = getSelectionBounds(visible);
-  if (!bounds) {
-    return { x: 120, y: 100 };
+  const b = getSelectionBounds(visible);
+  if (!b || !Number.isFinite(b.maxX) || !Number.isFinite(b.minY)) {
+    return { x: 140, y: 120 };
   }
   return {
-    x: Math.round(bounds.maxX + 96),
-    y: Math.round(bounds.minY),
+    x: Math.round(b.maxX + 96),
+    y: Math.round(b.minY),
   };
 }
 

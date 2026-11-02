@@ -1,5 +1,7 @@
 // render/themes.js
 
+export const THEME_ORDER = ['light', 'dark'];
+
 export const THEMES = {
   light: {
     name: 'light',

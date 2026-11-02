@@ -45,6 +45,22 @@ export class SelectTool {
     this.didMutate = false;
   }
 
+  isActive() {
+    return Boolean(this.mode);
+  }
+
+  cancel() {
+    this.mode = null;
+    this.activeHandle = null;
+    this.targetElement = null;
+    this.movingElements = [];
+    this.didMutate = false;
+    this.app.marqueeBox = null;
+    this.app.smartGuides = [];
+    this.app.connectorPreview = null;
+    this.app.requestRender();
+  }
+
   onPointerDown(world, ev) {
     const page = this.app.getPage();
     const zoom = page.camera.zoom;
@@ -178,12 +194,12 @@ export class SelectTool {
         this.didMutate = false;
       }
 
-      // Gather all moving elements (including container children if moving a frame)
+      // Gather all moving elements (including container children if moving a frame or boundary container)
       const moveIdSet = new Set(this.app.selectedIds);
       for (const id of Array.from(moveIdSet)) {
         const el = page.elements.find((e) => e.id === id);
-        if (el && el.type === 'frame') {
-          for (const child of getContainerChildren(page, el.id)) {
+        if (el && (el.type === 'frame' || el.isContainer || el.isBoundary)) {
+          for (const child of getContainerChildren(page, el.id, { forDrag: true })) {
             if (!child.locked) moveIdSet.add(child.id);
           }
         }
@@ -338,11 +354,20 @@ export class SelectTool {
       const conn = this.targetElement;
       const hid = this.activeHandle.id;
       if (hid === 'start' || hid === 'end') {
-        const portHit = findHoverPort(page, world.x, world.y, 18 / page.camera.zoom, conn.id);
+        const portHit = findHoverPort(page, world.x, world.y, 20 / page.camera.zoom, conn.id);
         this.app.hoveredPort = portHit;
         this.app.hoveredElement = portHit ? portHit.element : null;
+        this.app.connectorPreview = {
+          startPort: hid === 'start' ? portHit : null,
+          endPort: hid === 'end' ? portHit : null,
+        };
         if (portHit) {
-          bindConnectorEndpoint(conn, hid, portHit.element, portHit.port);
+          bindConnectorEndpoint(
+            conn,
+            hid,
+            portHit.element,
+            portHit.isExplicitPort ? portHit.port : 'auto'
+          );
         } else {
           unbindConnectorEndpoint(conn, hid);
           if (hid === 'start') {
@@ -354,6 +379,7 @@ export class SelectTool {
           }
         }
       } else if (hid === 'mid') {
+        conn.manualRoute = true;
         if (conn.routing === 'curved') {
           conn.controlPoint = { x: world.x, y: world.y };
         } else {
@@ -418,6 +444,7 @@ export class SelectTool {
     this.didMutate = false;
     this.app.marqueeBox = null;
     this.app.smartGuides = [];
+    this.app.connectorPreview = null;
     this.app.updateUI();
     this.app.requestRender();
   }

@@ -46,6 +46,10 @@ export class HistoryManager {
     return true;
   }
 
+  record(page) {
+    return this.commit(page);
+  }
+
   canUndo(page) {
     const state = this._ensurePage(page);
     return Boolean(state && state.undoStack.length > 0);

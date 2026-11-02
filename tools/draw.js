@@ -210,3 +210,7 @@ export class DrawTool {
     }
   }
 }
+
+export const ShapeTool = DrawTool;
+export const EraserTool = DrawTool;
+

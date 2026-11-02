@@ -1,7 +1,11 @@
 // render/shapes.js
 import { FONT_MAP, resolveThemeColor } from './themes.js';
 import { getStencilById } from '../stencils/index.js';
-import { getConnectorPoints, getPointAlongConnector } from '../scene/routing.js';
+import {
+  getConnectorPoints,
+  getPointAlongConnector,
+  getConnectorTangentFromPoint,
+} from '../scene/routing.js';
 
 export function getDashArray(strokeStyle, strokeWidth = 2) {
   if (strokeStyle === 'dashed') return [strokeWidth * 4, strokeWidth * 2.5];
@@ -117,15 +121,24 @@ export function wrapTextLines(ctx, text, maxWidth) {
 
 export function drawElementText(ctx, el, themeName = 'light', padding = 12) {
   if (!el.text || el.type === 'frame' || el.type === 'code' || el.type === 'table') return;
-  const isCard = el.type === 'stencil' && Boolean(getStencilById(el.stencilId)?.isCard);
-  const fontSize = isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
+  const stencil = el.type === 'stencil' ? getStencilById(el.stencilId) : null;
+  const isBoundary = Boolean(el.isBoundary || stencil?.isBoundary);
+  const isCard = el.type === 'stencil' && Boolean(stencil?.isCard) && !isBoundary;
+  const fontSize = isBoundary ? 13 : isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
   const fontStack = FONT_MAP[el.fontFamily || 'sans'] || FONT_MAP.sans;
   const color = resolveThemeColor(el.textColor || el.stroke || '#1e293b', themeName, 'text');
 
   ctx.save();
-  ctx.font = `${isCard ? '600 ' : ''}${fontSize}px ${fontStack}`;
+  ctx.font = `${isCard || isBoundary ? '600 ' : ''}${fontSize}px ${fontStack}`;
   ctx.fillStyle = color;
   ctx.textBaseline = 'middle';
+
+  if (isBoundary) {
+    ctx.textAlign = 'left';
+    ctx.fillText(String(el.text).split(String.fromCharCode(10))[0], el.x + 38, el.y + 18);
+    ctx.restore();
+    return;
+  }
 
   const maxW =
     el.type === 'diamond'
@@ -399,16 +412,16 @@ export function drawConnectorElement(ctx, el, page, themeTokens) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Arrowheads
+  // Arrowheads calculated from non-zero segment or curve tangent
   if (el.startArrow && el.startArrow !== 'none') {
     const p0 = pts[0];
-    const p1 = pts[1];
-    drawArrowhead(ctx, el.startArrow, p0.x, p0.y, p1.x, p1.y, sw, stroke);
+    const pFrom = getConnectorTangentFromPoint(el, 'start', page);
+    drawArrowhead(ctx, el.startArrow, p0.x, p0.y, pFrom.x, pFrom.y, sw, stroke);
   }
   if (el.endArrow && el.endArrow !== 'none') {
     const pLast = pts[pts.length - 1];
-    const pPrev = pts[pts.length - 2];
-    drawArrowhead(ctx, el.endArrow, pLast.x, pLast.y, pPrev.x, pPrev.y, sw, stroke);
+    const pFrom = getConnectorTangentFromPoint(el, 'end', page);
+    drawArrowhead(ctx, el.endArrow, pLast.x, pLast.y, pFrom.x, pFrom.y, sw, stroke);
   }
 
   // Connector label

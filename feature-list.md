@@ -1,6 +1,6 @@
 # Feature Checklist — Classroom Whiteboard + Diagramming Studio
 
-> All 35 P0, P1, and P2 features have been implemented and verified via automated unit tests (`npm test`) and headless Chromium end-to-end verification (`vite build` + CDP E2E suite).
+> All P0, P1, P2, and StudioBoard Reliability, DevOps Architecture & Live Teaching Upgrade features have been implemented and verified via automated unit & integration tests (`npm test` — 28 tests across 13 suites) and production builds (`npm run build`).
 
 ## P0 – Core (must ship)
 - [x] **1. Drawing:** freehand pen (pressure-free smoothing); rectangle, rounded rect, ellipse, diamond, line, arrow; text with font, size, colour, alignment. — *Verified (unit + browser E2E)*
@@ -42,3 +42,11 @@
 - [x] **33. Print / PDF:** print-friendly CSS (one page per whiteboard page, fit to paper). — *Verified (unit + browser E2E)*
 - [x] **34. Accessibility:** keyboard-reachable toolbar, visible focus rings, ARIA labels, reduced-motion respect, and high-contrast-safe colours. — *Verified (unit + browser E2E)*
 - [x] **35. Share by URL (no server):** optional compressed scene in the URL hash for small diagrams, with a size warning. — *Verified (unit + browser E2E)*
+
+## P3 – StudioBoard Reliability, DevOps Architecture & Live Teaching Upgrade
+- [x] **36. Coordinate Math, Geometry Validation & Batch Insertion:** `screenToWorldPoint`, `getUsableViewportCenterWorld`, `isValidElementGeometry`, `validateElementsBatch`, EC2+S3 Connected Flow fix, single-step batch undo, canvas placement preview, and separate `Zoom to Selection` vs `Fit Board`. — *Verified (`tests/collab.test.js`)*
+- [x] **37. Spotlight & Teaching Mode Exit Hierarchy:** Floating `"Spotlight on · Esc to exit"` pill with Close, Radius, Dimming, and Magnifier controls; non-destructive pointer tracking; explicit `Escape` hierarchy; customizable Teaching Focus tool bar. — *Verified (`main.js`, `ui/toolbar.js`)*
+- [x] **38. Enhanced Connectors & Architecture Auto-Layout:** Plain / One-way / Two-way direction presets, Auto boundary face selection + explicit/custom perimeter ports, source/target attachment previews, tangent arrowheads, protocol label chips (`HTTPS`, `TCP 443`, `DNS`, `gRPC`, `replication`), Reset Route, and Sugiyama DAG auto-layout (`scene/layout.js`). — *Verified (`tests/collab.test.js`)*
+- [x] **39. DevOps Icon Provenance, Aspect-Ratio Preservation & Boundary Containers:** Provenance manifest (`stencils/manifest.js`), 1:1 uniform SVG scaling (`stencils/card.js`), 11 Architecture Boundary containers (`stencils/concepts.js`), 11 OS/Networking Teaching Concepts, abbreviation search aliases (`EC2`, `AKS`, `GKE`, `LB`, `SG`, `PVC`, `DNS`), Favorites, Recent items, and virtualized library list. — *Verified (`tests/collab.test.js`)*
+- [x] **40. Short Sharing Links & Real-Time WebSocket Classroom Collaboration:** Short snapshot links (`#/b/{id}`), live classroom room links (`#/r/{roomId}`), editor invites (`#/r/{roomId}?invite={token}`), QR code modal (`ui/qr.js`), server-enforced `teacher`/`editor`/`viewer` roles (`server/collab-server.js`), named board-coordinate cursors, Follow Teacher mode, and anchored Question Pins that survive anchor deletion (`handleAnchorDeletion`). — *Verified (`tests/collab.test.js`)*
+- [x] **41. Performance Benchmarks:** Validated 100, 1,000, and 5,000 board objects well within frame/processing budgets. — *Verified (`tests/collab.test.js`)*

@@ -1,290 +1,419 @@
-// ui/library-panel.js
-import { ALL_STENCILS, getAllCategories, getStencilsByCategory } from '../stencils/index.js';
+// ui/library-panel.js — Fast Searchable DevOps Icon Library with Favorites, Recents, Virtualization & Batch Preview
+import {
+  ALL_STENCILS,
+  getAllCategories,
+  getStencilsByCategory,
+  getStencilById,
+  ICON_PACK_SOURCES,
+} from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
 
+export const FAVORITE_STENCILS_KEY = 'studioboard_fav_stencils_v1';
+export const RECENT_STENCILS_KEY = 'studioboard_recent_stencils_v1';
+
+function loadJsonList(key, fallback = []) {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : fallback;
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveJsonList(key, list) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export function initLibraryPanel(app) {
   const panel = document.getElementById('wb-library-panel');
-  if (!panel) return { update() {} };
+  if (!panel) return { update() {}, recordRecent() {} };
 
+  let activeTab = 'stencils'; // 'stencils' | 'packs' | 'user' | 'templates'
+  let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
   let searchQuery = '';
-  let categoryFilter = 'all';
-  let activeTab = 'stencils'; // 'stencils' | 'reusable' | 'templates'
+  let previewDensity = 'comfortable'; // 'comfortable' | 'compact'
   let multiSelectMode = false;
-  const selectedStencilIds = new Set();
-  const collapsedCategories = new Set();
-  const builtInPacks = buildDevOpsDiagramPacks();
+  let previewLayoutMode = 'flow'; // 'grid' | 'row' | 'column' | 'flow'
+  let visibleLimit = 64;
+  const selectedStencils = new Set();
+  const favorites = new Set(loadJsonList(FAVORITE_STENCILS_KEY, ['aws-ec2', 'aws-s3', 'k8s-pod', 'k8s-svc']));
+  let recentIds = loadJsonList(RECENT_STENCILS_KEY, ['aws-ec2', 'aws-s3', 'aws-alb', 'k8s-pod']);
+
+  function recordRecent(stencilId) {
+    if (!stencilId) return;
+    recentIds = [stencilId, ...recentIds.filter((id) => id !== stencilId)].slice(0, 14);
+    saveJsonList(RECENT_STENCILS_KEY, recentIds);
+  }
+
+  function toggleFavorite(stencilId) {
+    if (favorites.has(stencilId)) favorites.delete(stencilId);
+    else favorites.add(stencilId);
+    saveJsonList(FAVORITE_STENCILS_KEY, Array.from(favorites));
+  }
+
+  function syncPlacementPreview() {
+    if (multiSelectMode && selectedStencils.size > 0 && app.previewBatchInsertion) {
+      app.previewBatchInsertion(Array.from(selectedStencils), previewLayoutMode);
+    } else if (app.clearPlacementPreview) {
+      app.clearPlacementPreview();
+    }
+  }
 
   function render() {
     panel.innerHTML = `
       <div class="wb-panel-header">
-        <strong>DevOps Library, Packs & Templates</strong>
-        <button type="button" class="wb-icon-btn" id="btn-close-lib" aria-label="Close Library Panel" title="Close Library Panel">✕</button>
+        <strong>DevOps & Cloud Library (${ALL_STENCILS.length})</strong>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <button type="button" class="wb-btn wb-sm" id="btn-lib-density" title="Toggle Compact vs Comfortable icon preview size">${previewDensity === 'compact' ? '⊞ Compact' : '⊟ Comfort'}</button>
+          <button type="button" class="wb-icon-btn" id="btn-close-library" aria-label="Close Library">✕</button>
+        </div>
       </div>
-      <div class="wb-tabs-row">
-        <button type="button" class="wb-tab-btn ${activeTab === 'stencils' ? 'active' : ''}" data-lib-tab="stencils">Icons (${ALL_STENCILS.length})</button>
-        <button type="button" class="wb-tab-btn ${activeTab === 'reusable' ? 'active' : ''}" data-lib-tab="reusable">Packs (${app.userLibrary.length + builtInPacks.length})</button>
-        <button type="button" class="wb-tab-btn ${activeTab === 'templates' ? 'active' : ''}" data-lib-tab="templates">Templates</button>
+      <div class="wb-tabs" role="tablist">
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'stencils' ? 'active' : ''}" data-tab="stencils">Icons (${ALL_STENCILS.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'packs' ? 'active' : ''}" data-tab="packs">Diagram Packs</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'user' ? 'active' : ''}" data-tab="user">My Library (${app.userLibrary.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'templates' ? 'active' : ''}" data-tab="templates">Templates</button>
       </div>
-      <div class="wb-panel-body" id="wb-lib-content"></div>
+      <div class="wb-panel-body" id="wb-library-content"></div>
     `;
 
-    const content = panel.querySelector('#wb-lib-content');
-    if (activeTab === 'stencils') {
-      renderStencilsTab(content);
-    } else if (activeTab === 'reusable') {
-      renderReusableTab(content);
-    } else {
-      renderTemplatesTab(content);
-    }
-
-    panel.querySelector('#btn-close-lib')?.addEventListener('click', () => {
+    panel.querySelector('#btn-close-library')?.addEventListener('click', () => {
+      app.clearPlacementPreview?.();
       panel.classList.add('wb-hidden');
     });
 
-    panel.querySelectorAll('[data-lib-tab]').forEach((b) => {
+    panel.querySelector('#btn-lib-density')?.addEventListener('click', () => {
+      previewDensity = previewDensity === 'comfortable' ? 'compact' : 'comfortable';
+      render();
+    });
+
+    panel.querySelectorAll('[data-tab]').forEach((b) => {
       b.addEventListener('click', () => {
-        activeTab = b.dataset.libTab;
+        activeTab = b.dataset.tab;
         render();
       });
     });
+
+    const content = panel.querySelector('#wb-library-content');
+    if (activeTab === 'stencils') renderStencilsTab(content);
+    else if (activeTab === 'packs') renderDiagramPacksTab(content);
+    else if (activeTab === 'user') renderUserLibraryTab(content);
+    else renderTemplatesTab(content);
   }
 
   function renderStencilsTab(content) {
     const categories = getAllCategories();
-    const groups = getStencilsByCategory(searchQuery, categoryFilter);
-    const selCount = selectedStencilIds.size;
-
     content.innerHTML = `
-      <div class="wb-lib-search-row">
-        <input
-          type="search"
-          id="wb-stencil-search"
-          class="wb-input"
-          placeholder="Search ${ALL_STENCILS.length}+ icons (aws, aks, gke, docker, terraform, kafka...)"
-          value="${escapeXml(searchQuery)}"
-          aria-label="Search Stencils"
-        />
+      <div class="wb-lib-controls">
+        <div class="wb-lib-search-row">
+          <input type="search" id="lib-search" class="wb-input" placeholder="Search EC2, AKS, GKE, LB, SG, PVC, DNS, Kafka..." value="${escapeXml(searchQuery)}" aria-label="Search Stencils"/>
+          <button type="button" class="wb-btn wb-sm ${multiSelectMode ? 'active wb-primary' : ''}" id="btn-lib-multiselect" title="Select multiple icons to insert together as Grid, Row, Column, or Connected Flow">
+            ☑ Multi-Select ${selectedStencils.size > 0 ? `(${selectedStencils.size})` : ''}
+          </button>
+        </div>
+        <div class="wb-cat-pills" role="group" aria-label="Icon Categories">
+          <button type="button" class="wb-cat-pill ${activeCategory === 'all' ? 'active' : ''}" data-cat="all">All</button>
+          <button type="button" class="wb-cat-pill ${activeCategory === 'favorites' ? 'active' : ''}" data-cat="favorites">★ Favorites (${favorites.size})</button>
+          <button type="button" class="wb-cat-pill ${activeCategory === 'recent' ? 'active' : ''}" data-cat="recent">🕒 Recent (${recentIds.length})</button>
+          ${categories
+            .map(
+              (c) =>
+                `<button type="button" class="wb-cat-pill ${activeCategory === c ? 'active' : ''}" data-cat="${escapeXml(c)}">${escapeXml(c)}</button>`
+            )
+            .join('')}
+        </div>
+        <div id="wb-lib-multiselect-bar" class="wb-lib-multiselect-bar ${multiSelectMode || selectedStencils.size > 0 ? '' : 'wb-hidden'}"></div>
       </div>
-      <div class="wb-lib-toolbar-row">
-        <button
-          type="button"
-          class="wb-btn wb-sm ${multiSelectMode ? 'active' : ''}"
-          id="btn-stencil-multiselect-mode"
-          aria-pressed="${multiSelectMode}"
-          title="Toggle Multi-Select Mode to pick multiple DevOps icons and insert them together"
-        >
-          ☑ Multi-Select ${selCount > 0 ? `(${selCount})` : ''}
-        </button>
-        <span class="wb-muted" style="font-size:10px;">Drag icon or click to place</span>
-      </div>
-      ${
-        selCount > 0
-          ? `<div class="wb-multiselect-tray" role="region" aria-label="Selected Icons Tray">
-              <div class="wb-multiselect-tray-head">
-                <strong>${selCount} icon${selCount > 1 ? 's' : ''} selected</strong>
-                <button type="button" class="wb-icon-btn" id="btn-clear-stencil-sel" title="Clear Selection">Clear ✕</button>
-              </div>
-              <div class="wb-btn-group">
-                <button type="button" class="wb-btn wb-sm wb-primary" id="btn-insert-stencils-grid" title="Insert selected icons arranged in a clean grid">+ Grid (${selCount})</button>
-                <button type="button" class="wb-btn wb-sm" id="btn-insert-stencils-row" title="Insert selected icons aligned in a horizontal row">→ Row</button>
-                <button type="button" class="wb-btn wb-sm" id="btn-insert-stencils-flow" title="Insert selected icons connected with smart arrows">⛓ Connected Flow</button>
-              </div>
-            </div>`
-          : ''
-      }
-      <div class="wb-cat-chips" role="tablist" aria-label="Filter by DevOps Category">
-        <button type="button" class="wb-cat-chip ${categoryFilter === 'all' ? 'active' : ''}" data-cat-chip="all">All</button>
-        ${categories
-          .map(
-            (cat) => `
-          <button type="button" class="wb-cat-chip ${categoryFilter === cat ? 'active' : ''}" data-cat-chip="${escapeXml(cat)}">${escapeXml(cat)}</button>
-        `
-          )
-          .join('')}
-      </div>
-      <div class="wb-stencil-categories">
-        ${
-          groups.length === 0
-            ? `<div class="wb-muted" style="padding:12px 4px;text-align:center;">No icons match "${escapeXml(searchQuery)}". Try searching for aws, azure, gcp, k8s, linux, docker, git, terraform, prometheus, or postgres.</div>`
-            : groups
-                .map(({ category, items }) => {
-                  const isCollapsed = collapsedCategories.has(category) && !searchQuery && categoryFilter === 'all';
-                  return `
-              <div class="wb-stencil-cat">
-                <button type="button" class="wb-cat-header" data-cat="${escapeXml(category)}" aria-expanded="${!isCollapsed}">
-                  <span>${isCollapsed ? '▸' : '▾'} ${escapeXml(category)} (${items.length})</span>
-                  <span class="wb-cat-select-all" data-cat-add-all="${escapeXml(category)}" title="Select all in ${escapeXml(category)}">+ Select All</span>
-                </button>
-                ${
-                  isCollapsed
-                    ? ''
-                    : `<div class="wb-stencil-grid">
-                        ${items
-                          .map((st) => {
-                            const isSelected = selectedStencilIds.has(st.id);
-                            return `
-                          <div
-                            class="wb-stencil-item ${isSelected ? 'selected' : ''}"
-                            draggable="true"
-                            role="button"
-                            tabindex="0"
-                            data-stencil-id="${escapeXml(st.id)}"
-                            aria-label="Place ${escapeXml(st.name)} stencil"
-                            title="${escapeXml(st.name)} (${escapeXml(st.category)}) — Click to insert, Shift+Click or checkbox to multi-select"
-                          >
-                            <span
-                              class="wb-stencil-check ${isSelected ? 'checked' : ''}"
-                              data-stencil-check="${escapeXml(st.id)}"
-                              title="Select ${escapeXml(st.name)} for bulk insertion"
-                              aria-label="Select ${escapeXml(st.name)}"
-                            >${isSelected ? '✓' : '+'}</span>
-                            <div class="wb-stencil-icon">${st.iconSvg}</div>
-                            <span class="wb-stencil-name">${escapeXml(st.name)}</span>
-                          </div>
-                        `;
-                          })
-                          .join('')}
-                      </div>`
-                }
-              </div>
-            `;
-                })
-                .join('')
-        }
-      </div>
+      <div id="wb-lib-results" class="wb-lib-results wb-density-${previewDensity}" role="listbox" aria-label="Architecture Icons"></div>
     `;
 
-    const searchInput = content.querySelector('#wb-stencil-search');
-    searchInput?.addEventListener('input', (e) => {
-      searchQuery = e.target.value;
-      renderStencilsTab(content);
-      const newInput = content.querySelector('#wb-stencil-search');
-      if (newInput) {
-        newInput.focus();
-        newInput.setSelectionRange(searchQuery.length, searchQuery.length);
+    const searchInput = content.querySelector('#lib-search');
+    const resultsBox = content.querySelector('#wb-lib-results');
+    const multiBar = content.querySelector('#wb-lib-multiselect-bar');
+
+    const updateMultiBar = () => {
+      if (!multiBar) return;
+      if (!multiSelectMode && selectedStencils.size === 0) {
+        multiBar.classList.add('wb-hidden');
+        app.clearPlacementPreview?.();
+        return;
       }
-    });
+      multiBar.classList.remove('wb-hidden');
+      const count = selectedStencils.size;
+      const selectedList = Array.from(selectedStencils)
+        .map((id) => getStencilById(id)?.name || id)
+        .slice(0, 3)
+        .join(' → ');
+      multiBar.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <span class="wb-muted" style="font-size:11px;"><strong>${count}</strong> selected${count ? `: ${escapeXml(selectedList)}${count > 3 ? '…' : ''}` : ' (click icons below)'}</span>
+          ${count > 0 ? `<button type="button" class="wb-btn wb-sm" id="btn-clear-stencils">Clear</button>` : ''}
+        </div>
+        <div class="wb-btn-group" style="flex-wrap:wrap;gap:4px;width:100%;">
+          <button type="button" class="wb-btn wb-sm ${previewLayoutMode === 'grid' ? 'wb-primary' : ''}" id="btn-insert-stencils-grid" ${count === 0 ? 'disabled' : ''} data-preview-mode="grid" title="Insert selected icons as a neat grid">+ Grid</button>
+          <button type="button" class="wb-btn wb-sm ${previewLayoutMode === 'row' ? 'wb-primary' : ''}" id="btn-insert-stencils-row" ${count === 0 ? 'disabled' : ''} data-preview-mode="row" title="Insert selected icons in a horizontal row">→ Row</button>
+          <button type="button" class="wb-btn wb-sm ${previewLayoutMode === 'column' ? 'wb-primary' : ''}" id="btn-insert-stencils-col" ${count === 0 ? 'disabled' : ''} data-preview-mode="column" title="Insert selected icons in a vertical column">↓ Column</button>
+          <button type="button" class="wb-btn wb-sm ${previewLayoutMode === 'flow' ? 'wb-primary' : ''}" id="btn-insert-stencils-flow" ${count === 0 ? 'disabled' : ''} data-preview-mode="flow" title="Insert selected icons connected with smart arrows">⛓ Connected Flow</button>
+        </div>
+        ${count > 0 ? `<div class="wb-muted" style="font-size:10px;width:100%;">✨ Live placement preview shown on canvas · Click a layout button to commit</div>` : ''}
+      `;
 
-    content.querySelector('#btn-stencil-multiselect-mode')?.addEventListener('click', () => {
-      multiSelectMode = !multiSelectMode;
-      renderStencilsTab(content);
-    });
+      const commitBatch = (layoutMode) => {
+        const ids = Array.from(selectedStencils);
+        if (ids.length === 0) return;
+        ids.forEach((id) => recordRecent(id));
+        const inserted = app.placeMultipleStencils(ids, layoutMode);
+        if (inserted) {
+          selectedStencils.clear();
+          app.clearPlacementPreview?.();
+          updateResults();
+          updateMultiBar();
+        }
+      };
 
-    content.querySelector('#btn-clear-stencil-sel')?.addEventListener('click', () => {
-      selectedStencilIds.clear();
-      renderStencilsTab(content);
-    });
+      multiBar.querySelectorAll('[data-preview-mode]').forEach((btn) => {
+        btn.addEventListener('mouseenter', () => {
+          previewLayoutMode = btn.dataset.previewMode;
+          syncPlacementPreview();
+        });
+      });
 
-    const insertSelected = (layoutMode) => {
-      const ids = Array.from(selectedStencilIds);
-      if (ids.length === 0) return;
-      app.placeMultipleStencils(ids, layoutMode);
-      selectedStencilIds.clear();
-      renderStencilsTab(content);
+      multiBar.querySelector('#btn-insert-stencils-grid')?.addEventListener('click', () => commitBatch('grid'));
+      multiBar.querySelector('#btn-insert-stencils-row')?.addEventListener('click', () => commitBatch('row'));
+      multiBar.querySelector('#btn-insert-stencils-col')?.addEventListener('click', () => commitBatch('column'));
+      multiBar.querySelector('#btn-insert-stencils-flow')?.addEventListener('click', () => commitBatch('flow'));
+      multiBar.querySelector('#btn-clear-stencils')?.addEventListener('click', () => {
+        selectedStencils.clear();
+        syncPlacementPreview();
+        updateResults();
+        updateMultiBar();
+      });
     };
 
-    content.querySelector('#btn-insert-stencils-grid')?.addEventListener('click', () => insertSelected('grid'));
-    content.querySelector('#btn-insert-stencils-row')?.addEventListener('click', () => insertSelected('row'));
-    content.querySelector('#btn-insert-stencils-flow')?.addEventListener('click', () => insertSelected('flow'));
+    const renderCardHtml = (s) => {
+      const isSelected = selectedStencils.has(s.id);
+      const isFav = favorites.has(s.id);
+      const iconW = previewDensity === 'compact' ? 38 : 48;
+      const iconH = previewDensity === 'compact' ? 38 : 44;
+      const boxW = previewDensity === 'compact' ? 32 : 40;
+      const boxH = previewDensity === 'compact' ? 32 : 36;
+      return `
+        <div class="wb-stencil-item ${isSelected ? 'selected' : ''}" role="option" tabindex="0" aria-selected="${isSelected}" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) — Click to place, drag onto canvas">
+          <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
+          ${isSelected ? `<span class="wb-stencil-check">✓</span>` : ''}
+          <svg width="${iconW}" height="${iconH}" viewBox="0 0 ${iconW} ${iconH}" preserveAspectRatio="xMidYMid meet">
+            <g color="#1e293b">${s.toSvg(4, 4, boxW, boxH, 'fill="#ffffff" stroke="#334155" stroke-width="1.5"')}</g>
+          </svg>
+          <span>${escapeXml(s.name)}</span>
+        </div>
+      `;
+    };
 
-    content.querySelectorAll('[data-cat-chip]').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        categoryFilter = chip.dataset.catChip;
-        renderStencilsTab(content);
+    const updateResults = () => {
+      let groups = [];
+      if (activeCategory === 'favorites') {
+        const favItems = ALL_STENCILS.filter((s) => favorites.has(s.id));
+        groups = favItems.length ? [{ category: '★ Favorite Icons', items: favItems }] : [];
+      } else if (activeCategory === 'recent') {
+        const recItems = recentIds.map((id) => getStencilById(id)).filter(Boolean);
+        groups = recItems.length ? [{ category: '🕒 Recently Used', items: recItems }] : [];
+      } else {
+        groups = getStencilsByCategory(activeCategory, searchQuery);
+      }
+
+      if (groups.length === 0) {
+        resultsBox.innerHTML = `<p class="wb-muted">No matching icons for "${escapeXml(searchQuery || activeCategory)}".</p>`;
+        return;
+      }
+
+      let renderedCount = 0;
+      let totalCount = groups.reduce((acc, g) => acc + g.items.length, 0);
+      const isWindowed = activeCategory === 'all' && !searchQuery.trim() && totalCount > visibleLimit;
+
+      const htmlParts = [];
+      for (const grp of groups) {
+        const remaining = isWindowed ? Math.max(0, visibleLimit - renderedCount) : grp.items.length;
+        if (remaining <= 0) break;
+        const slice = grp.items.slice(0, remaining);
+        renderedCount += slice.length;
+        htmlParts.push(`
+          <div class="wb-lib-category-section">
+            <div class="wb-lib-category-header">
+              <span>${escapeXml(grp.category)}</span>
+              <span class="wb-lib-category-count">${grp.items.length}</span>
+            </div>
+            <div class="wb-stencil-grid ${previewDensity === 'compact' ? 'wb-grid-compact' : ''}">
+              ${slice.map(renderCardHtml).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (isWindowed && renderedCount < totalCount) {
+        htmlParts.push(`
+          <button type="button" class="wb-btn wb-sm" id="btn-lib-load-more" style="width:100%;margin-top:8px;">
+            Show All ${totalCount} Icons (${totalCount - renderedCount} more)
+          </button>
+        `);
+      }
+
+      const packSummary = Object.values(ICON_PACK_SOURCES)
+        .map((p) => `${p.name.split(' ')[0]} ${p.version}`)
+        .join(' · ');
+      htmlParts.push(`
+        <div class="wb-muted" style="font-size:10px;margin-top:10px;padding-top:6px;border-top:1px solid var(--border-subtle);">
+          <strong>Bundled Manifest:</strong> ${escapeXml(packSummary)} (1:1 aspect ratio preserved)
+        </div>
+      `);
+
+      resultsBox.innerHTML = htmlParts.join('');
+
+      resultsBox.querySelector('#btn-lib-load-more')?.addEventListener('click', () => {
+        visibleLimit = 999;
+        updateResults();
       });
-    });
 
-    content.querySelectorAll('[data-cat]').forEach((b) => {
-      b.addEventListener('click', (ev) => {
-        const addAllBtn = ev.target.closest('[data-cat-add-all]');
-        if (addAllBtn) {
+      resultsBox.querySelectorAll('[data-fav-stencil]').forEach((starBtn) => {
+        starBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
-          const catName = addAllBtn.dataset.catAddAll;
-          const grp = groups.find((g) => g.category === catName);
-          if (grp) {
-            const allAlready = grp.items.every((it) => selectedStencilIds.has(it.id));
-            for (const it of grp.items) {
-              if (allAlready) selectedStencilIds.delete(it.id);
-              else selectedStencilIds.add(it.id);
+          toggleFavorite(starBtn.dataset.favStencil);
+          render();
+        });
+      });
+
+      const cards = Array.from(resultsBox.querySelectorAll('[data-stencil]'));
+      cards.forEach((item, idx) => {
+        const triggerSelectOrPlace = (ev) => {
+          const id = item.dataset.stencil;
+          if (multiSelectMode || ev.shiftKey) {
+            if (selectedStencils.has(id)) selectedStencils.delete(id);
+            else selectedStencils.add(id);
+            multiSelectMode = true;
+            const msBtn = content.querySelector('#btn-lib-multiselect');
+            if (msBtn) {
+              msBtn.classList.add('active', 'wb-primary');
+              msBtn.textContent = `☑ Multi-Select (${selectedStencils.size})`;
             }
-            renderStencilsTab(content);
+            syncPlacementPreview();
+            updateResults();
+            updateMultiBar();
+            return;
           }
-          return;
-        }
-        const cat = b.dataset.cat;
-        if (collapsedCategories.has(cat)) collapsedCategories.delete(cat);
-        else collapsedCategories.add(cat);
-        renderStencilsTab(content);
+          recordRecent(id);
+          app.placeStencil(id);
+        };
+
+        item.addEventListener('click', triggerSelectOrPlace);
+        item.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            triggerSelectOrPlace(ev);
+          } else if (ev.key === ' ') {
+            ev.preventDefault();
+            triggerSelectOrPlace({ shiftKey: true });
+          } else if (ev.key === 'ArrowRight' && cards[idx + 1]) {
+            ev.preventDefault();
+            cards[idx + 1].focus();
+          } else if (ev.key === 'ArrowLeft' && cards[idx - 1]) {
+            ev.preventDefault();
+            cards[idx - 1].focus();
+          } else if (ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            const step = previewDensity === 'compact' ? 4 : 3;
+            if (cards[idx + step]) cards[idx + step].focus();
+          } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            const step = previewDensity === 'compact' ? 4 : 3;
+            if (cards[idx - step]) cards[idx - step].focus();
+          }
+        });
+        item.addEventListener('dragstart', (ev) => {
+          recordRecent(item.dataset.stencil);
+          ev.dataTransfer?.setData('text/plain', `stencil:${item.dataset.stencil}`);
+        });
+      });
+    };
+
+    searchInput?.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      updateResults();
+    });
+
+    content.querySelector('#btn-lib-multiselect')?.addEventListener('click', () => {
+      multiSelectMode = !multiSelectMode;
+      if (!multiSelectMode) {
+        selectedStencils.clear();
+        app.clearPlacementPreview?.();
+      } else {
+        syncPlacementPreview();
+      }
+      render();
+    });
+
+    content.querySelectorAll('[data-cat]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        activeCategory = pill.dataset.cat;
+        content.querySelectorAll('[data-cat]').forEach((p) =>
+          p.classList.toggle('active', p.dataset.cat === activeCategory)
+        );
+        updateResults();
       });
     });
 
-    content.querySelectorAll('[data-stencil-id]').forEach((item) => {
-      const id = item.dataset.stencilId;
-      item.addEventListener('click', (ev) => {
-        const checkBtn = ev.target.closest('[data-stencil-check]');
-        if (checkBtn || ev.shiftKey || multiSelectMode) {
-          ev.stopPropagation();
-          if (selectedStencilIds.has(id)) selectedStencilIds.delete(id);
-          else selectedStencilIds.add(id);
-          renderStencilsTab(content);
-          return;
-        }
-        app.placeStencil(id);
-      });
-      item.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') {
-          ev.preventDefault();
-          app.placeStencil(id);
-        }
-      });
-      item.addEventListener('dragstart', (ev) => {
-        if (selectedStencilIds.has(id) && selectedStencilIds.size > 1) {
-          ev.dataTransfer.setData('text/plain', `stencils:${Array.from(selectedStencilIds).join(',')}`);
-        } else {
-          ev.dataTransfer.setData('text/plain', `stencil:${id}`);
-        }
-      });
-    });
+    updateMultiBar();
+    updateResults();
+    syncPlacementPreview();
   }
 
-  function renderReusableTab(content) {
+  function renderDiagramPacksTab(content) {
+    const packs = buildDevOpsDiagramPacks();
     content.innerHTML = `
-      <div class="wb-btn-group" style="margin-bottom:8px">
-        <button type="button" class="wb-btn wb-sm" id="btn-lib-add-sel" aria-label="Save selected elements to library">➕ Save Selection</button>
-        <button type="button" class="wb-btn wb-sm" id="btn-lib-export" aria-label="Export library JSON">⬇ Export</button>
-        <button type="button" class="wb-btn wb-sm" id="btn-lib-import" aria-label="Import library JSON">📂 Import</button>
-      </div>
-      <div class="wb-prop-subtitle">Built-in DevOps & Networking Packs</div>
-      <div class="wb-reusable-list" style="margin-bottom:10px;">
-        ${builtInPacks
+      <p class="wb-muted">Insert ready-made DevOps architecture diagrams without clearing your board. Use Presentation Mode to step through each flow!</p>
+      <div class="wb-template-list">
+        ${packs
           .map(
-            (pack, idx) => `
-          <div class="wb-reusable-card">
-            <button type="button" class="wb-reusable-insert" data-pack-idx="${idx}" aria-label="Insert ${escapeXml(pack.name)}">
-              <strong>${escapeXml(pack.name)}</strong>
-              <span>${pack.elements.length} connected elements (with Reveal steps)</span>
-            </button>
+            (p) => `
+          <div class="wb-template-card">
+            <div>
+              <strong>${escapeXml(p.name)}</strong>
+              <p class="wb-muted">${escapeXml(p.description)}</p>
+            </div>
+            <button type="button" class="wb-btn wb-sm wb-primary" data-pack-id="${escapeXml(p.id)}">+ Insert Pack</button>
           </div>
         `
           )
           .join('')}
       </div>
-      <div class="wb-prop-subtitle">My Saved Groups (${app.userLibrary.length})</div>
+    `;
+    content.querySelectorAll('[data-pack-id]').forEach((b) => {
+      b.addEventListener('click', () => app.insertDiagramPack(b.dataset.packId));
+    });
+  }
+
+  function renderUserLibraryTab(content) {
+    content.innerHTML = `
+      <div class="wb-lib-actions">
+        <button type="button" class="wb-btn wb-sm" id="btn-save-sel-lib">+ Save Selection</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-export-lib">Export JSON</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-import-lib">Import JSON</button>
+      </div>
       ${
         app.userLibrary.length === 0
-          ? `<p class="wb-muted">Select elements on canvas and click "Save Selection" to store custom diagram groups.</p>`
-          : `<div class="wb-reusable-list">
+          ? `<p class="wb-muted">Select any shapes on canvas and click "+ Save Selection" to create reusable components.</p>`
+          : `<div class="wb-user-lib-list">
               ${app.userLibrary
                 .map(
                   (item, idx) => `
-                <div class="wb-reusable-card">
-                  <button type="button" class="wb-reusable-insert" data-lib-idx="${idx}" aria-label="Insert saved group ${escapeXml(item.name)}">
-                    <strong>${escapeXml(item.name)}</strong>
-                    <span>${item.elements.length} element(s)</span>
-                  </button>
-                  <button type="button" class="wb-icon-btn" data-lib-del="${idx}" aria-label="Delete saved group ${escapeXml(item.name)}" title="Delete saved group">🗑</button>
+                <div class="wb-user-lib-row">
+                  <button type="button" class="wb-btn wb-sm" data-insert-ulib="${idx}">+ ${escapeXml(item.name)} (${item.elements.length})</button>
+                  <button type="button" class="wb-icon-btn" data-del-ulib="${idx}" aria-label="Remove library item">🗑</button>
                 </div>
               `
                 )
@@ -292,57 +421,41 @@ export function initLibraryPanel(app) {
             </div>`
       }
     `;
-
-    content.querySelector('#btn-lib-add-sel')?.addEventListener('click', () => {
-      app.addSelectionToLibrary();
-      render();
+    content.querySelector('#btn-save-sel-lib')?.addEventListener('click', () => app.addSelectionToLibrary());
+    content.querySelector('#btn-export-lib')?.addEventListener('click', () => app.exportUserLibrary());
+    content.querySelector('#btn-import-lib')?.addEventListener('click', () => {
+      document.getElementById('wb-file-import-lib')?.click();
     });
-    content.querySelector('#btn-lib-export')?.addEventListener('click', () => {
-      app.exportUserLibraryFile();
+    content.querySelectorAll('[data-insert-ulib]').forEach((b) => {
+      b.addEventListener('click', () => app.insertUserLibraryItem(Number(b.dataset.insertUlib)));
     });
-    content.querySelector('#btn-lib-import')?.addEventListener('click', () => {
-      app.importUserLibraryFilePicker();
-    });
-    content.querySelectorAll('[data-pack-idx]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const pack = builtInPacks[Number(b.dataset.packIdx)];
-        if (pack) app.insertDiagramPack(pack);
-      });
-    });
-    content.querySelectorAll('[data-lib-idx]').forEach((b) => {
-      b.addEventListener('click', () => {
-        app.insertUserLibraryItem(Number(b.dataset.libIdx));
-      });
-    });
-    content.querySelectorAll('[data-lib-del]').forEach((b) => {
-      b.addEventListener('click', () => {
-        app.deleteUserLibraryItem(Number(b.dataset.libDel));
-        render();
-      });
+    content.querySelectorAll('[data-del-ulib]').forEach((b) => {
+      b.addEventListener('click', () => app.deleteUserLibraryItem(Number(b.dataset.delUlib)));
     });
   }
 
   function renderTemplatesTab(content) {
     content.innerHTML = `
+      <p class="wb-muted">Load a starter classroom or architecture template onto the active page.</p>
       <div class="wb-template-list">
         ${BUILTIN_TEMPLATES.map(
-          (tpl) => `
-          <button type="button" class="wb-template-card" data-tpl-id="${escapeXml(tpl.id)}" aria-label="Apply template ${escapeXml(tpl.name)}">
-            <strong>${escapeXml(tpl.name)}</strong>
-            <span>${escapeXml(tpl.description)}</span>
-          </button>
+          (t) => `
+          <div class="wb-template-card">
+            <div>
+              <strong>${escapeXml(t.name)}</strong>
+              <p class="wb-muted">${escapeXml(t.description)}</p>
+            </div>
+            <button type="button" class="wb-btn wb-sm wb-primary" data-tpl-id="${t.id}">Apply</button>
+          </div>
         `
         ).join('')}
       </div>
     `;
-
     content.querySelectorAll('[data-tpl-id]').forEach((b) => {
-      b.addEventListener('click', () => {
-        app.applyTemplate(b.dataset.tplId);
-      });
+      b.addEventListener('click', () => app.applyTemplate(b.dataset.tplId));
     });
   }
 
   render();
-  return { update: render };
+  return { update: render, recordRecent };
 }

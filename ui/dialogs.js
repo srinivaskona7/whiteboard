@@ -7,6 +7,8 @@ import {
   saveRecoverySnapshot,
   parseSceneJson,
 } from '../scene/storage.js';
+import { renderUrlQrSvg } from './qr.js';
+import { TOOL_REGISTRY } from './registry.js';
 import { SHORTCUT_REFERENCE } from './registry.js';
 
 export function initDialogs(app) {
@@ -208,39 +210,120 @@ export function initDialogs(app) {
     );
   }
 
-  function openShareUrlModal() {
-    const { hash, length, warnLarge } = encodeSceneToHash(app.scene);
-    const fullUrl = `${window.location.origin}${window.location.pathname}${hash}`;
-    openHtml(
-      'Share Scene by URL (No Server)',
-      `
-        <p class="wb-muted">Encodes the scene into the URL hash (<code>#scene=...</code>) for serverless sharing.</p>
-        ${
-          warnLarge
-            ? `<div class="wb-warning-box">⚠️ Size Warning: This URL is ${length.toLocaleString()} characters long. For large boards or embedded images, use <strong>Save (.whiteboard.json)</strong> instead.</div>`
-            : `<p class="wb-success-note">✓ Compact URL (${length.toLocaleString()} chars) ready to share.</p>`
-        }
-        <input type="text" id="share-url-input" class="wb-input" readonly value="${escapeXml(fullUrl)}" aria-label="Shareable URL" />
-        <div class="wb-modal-actions">
-          <button type="button" class="wb-btn wb-primary" id="btn-copy-share-url">Copy Share Link</button>
-        </div>
-      `,
-      (modal) => {
-        modal.querySelector('#btn-copy-share-url')?.addEventListener('click', async () => {
-          const inp = modal.querySelector('#share-url-input');
-          inp.select();
-          try {
-            await navigator.clipboard.writeText(fullUrl);
-            window.history.replaceState(null, '', hash);
-            showToast('Share URL copied to clipboard!', 'success');
-          } catch {
-            showToast('Updated browser URL bar with #scene hash.', 'info');
-            window.history.replaceState(null, '', hash);
+  async function openShareUrlModal() {
+    const healthy = (await app.collab?.checkBackendHealth()) || false;
+    const { hash, length } = encodeSceneToHash(app.scene);
+    const fallbackUrl = `${window.location.origin}${window.location.pathname}${hash}`;
+
+    let generatedShortUrl = '';
+    let generatedLabel = '';
+    let generatedAccess = '';
+    let generatedExpiry = '';
+
+    const renderModal = () => {
+      openHtml(
+        'Share Board & Classroom Links',
+        `
+          ${
+            healthy
+              ? `<p class="wb-success-note">✓ Collaboration backend connected — creates genuinely short links stored on the server.</p>`
+              : `<div class="wb-warning-box">⚠️ No collaboration backend is reachable at <code>${escapeXml(app.collab?.apiBase || window.location.origin)}</code>. Short links and cross-device live rooms are unavailable until the server is started.</div>`
           }
-          close();
-        });
-      }
-    );
+          <div class="wb-prop-row" style="margin-bottom:8px;">
+            <span>Expiration</span>
+            <select id="share-ttl-select" aria-label="Share Link Expiration">
+              <option value="86400000">24 hours</option>
+              <option value="604800000">7 days</option>
+              <option value="0">Never expire</option>
+            </select>
+          </div>
+          <div class="wb-btn-group" style="flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            <button type="button" class="wb-btn wb-primary" id="btn-share-short-snap" ${!healthy ? 'disabled' : ''}>📸 Create Short Read-Only Snapshot (#/b/…)</button>
+            <button type="button" class="wb-btn" id="btn-share-live-student" ${!healthy ? 'disabled' : ''}>🎓 Live Classroom Join Link (#/r/…)</button>
+            <button type="button" class="wb-btn" id="btn-share-live-editor" ${!healthy ? 'disabled' : ''}>✏️ Authorized Editor Invite Link</button>
+          </div>
+          ${
+            generatedShortUrl
+              ? `<div style="padding:10px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-muted);margin-bottom:10px;">
+                  <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${escapeXml(generatedLabel)} · Access: ${escapeXml(generatedAccess)} (${generatedShortUrl.length} chars)</div>
+                  ${generatedExpiry ? `<div class="wb-muted" style="font-size:11px;margin-bottom:6px;">Expires: ${escapeXml(generatedExpiry)}</div>` : ''}
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input type="text" id="short-share-url-input" class="wb-input" readonly value="${escapeXml(generatedShortUrl)}" aria-label="Short Share URL" />
+                  </div>
+                  <div style="display:flex;justify-content:center;padding-top:8px;">
+                    ${renderUrlQrSvg(generatedShortUrl, 132)}
+                  </div>
+                </div>`
+              : ''
+          }
+          <details style="margin-top:8px;">
+            <summary class="wb-muted" style="cursor:pointer;font-size:12px;">Offline Fallback: Embedded Snapshot URL (${length.toLocaleString()} chars)</summary>
+            <div style="padding-top:8px;display:flex;flex-direction:column;gap:6px;">
+              <input type="text" id="share-url-input" class="wb-input" readonly value="${escapeXml(fallbackUrl)}" aria-label="Offline Fallback Shareable URL" />
+              <button type="button" class="wb-btn wb-sm" id="btn-copy-share-url">Copy Offline Fallback Link</button>
+            </div>
+          </details>
+        `,
+        (modal) => {
+          const getTtl = () => {
+            const v = Number(modal.querySelector('#share-ttl-select')?.value || 0);
+            return v > 0 ? v : null;
+          };
+
+          const handleResult = async (url, label, access, expiresAt) => {
+            generatedShortUrl = url;
+            generatedLabel = label;
+            generatedAccess = access;
+            generatedExpiry = expiresAt ? new Date(expiresAt).toLocaleString() : 'Never';
+            try {
+              await navigator.clipboard.writeText(url);
+              showToast(`Copied ${label} (${url.length} chars)!`, 'success');
+            } catch {
+              showToast(`Created ${label}`, 'info');
+            }
+            renderModal();
+          };
+
+          modal.querySelector('#btn-share-short-snap')?.addEventListener('click', async () => {
+            try {
+              const snap = await app.collab.createShortSnapshot(getTtl());
+              await handleResult(snap.url, 'Read-Only Snapshot', 'Viewer (Read-Only)', snap.expiresAt);
+            } catch (err) {
+              showToast(err.message);
+            }
+          });
+
+          modal.querySelector('#btn-share-live-student')?.addEventListener('click', async () => {
+            try {
+              const room = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtl() });
+              await handleResult(room.viewerUrl, 'Live Classroom Room', 'Student (Viewer / Point / Q&A)', room.expiresAt);
+            } catch (err) {
+              showToast(err.message);
+            }
+          });
+
+          modal.querySelector('#btn-share-live-editor')?.addEventListener('click', async () => {
+            try {
+              const room = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtl() });
+              await handleResult(room.editorUrl, 'Authorized Editor Invite', 'Editor (Full Board Edit)', room.expiresAt);
+            } catch (err) {
+              showToast(err.message);
+            }
+          });
+
+          modal.querySelector('#btn-copy-share-url')?.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(fallbackUrl);
+              showToast('Copied Offline Fallback URL.', 'success');
+            } catch {
+              showToast('Could not copy to clipboard.');
+            }
+          });
+        }
+      );
+    };
+
+    renderModal();
   }
 
   function openRevealTimelineModal() {
@@ -394,17 +477,24 @@ export function initDialogs(app) {
     );
   }
 
-  function openPromptModal(title, label, initialValue, onConfirm) {
+  function openPromptModal(titleOrOpts, label, initialValue, onConfirm) {
+    const isObj = titleOrOpts && typeof titleOrOpts === 'object';
+    const modalTitle = isObj ? titleOrOpts.title || 'Prompt' : titleOrOpts;
+    const modalLabel = isObj ? titleOrOpts.label || '' : label;
+    const initVal = isObj ? titleOrOpts.defaultValue ?? titleOrOpts.initialValue ?? '' : initialValue;
+    const confirmText = isObj ? titleOrOpts.confirmLabel || 'Confirm' : 'Confirm';
+    const cb = isObj ? titleOrOpts.onConfirm : onConfirm;
+
     openHtml(
-      title,
+      modalTitle,
       `
         <label class="wb-prop-col">
-          <span>${escapeXml(label)}</span>
-          <input type="text" id="wb-prompt-input" class="wb-input" value="${escapeXml(initialValue || '')}" />
+          <span>${escapeXml(modalLabel)}</span>
+          <input type="text" id="wb-prompt-input" class="wb-input" value="${escapeXml(initVal || '')}" />
         </label>
         <div class="wb-modal-actions">
           <button type="button" class="wb-btn" id="btn-prompt-cancel">Cancel</button>
-          <button type="button" class="wb-btn wb-primary" id="btn-prompt-ok">Confirm</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-prompt-ok">${escapeXml(confirmText)}</button>
         </div>
       `,
       (modal) => {
@@ -414,12 +504,58 @@ export function initDialogs(app) {
         const submit = () => {
           const val = inp.value.trim();
           close();
-          if (val) onConfirm(val);
+          if (cb) cb(val);
         };
         modal.querySelector('#btn-prompt-ok')?.addEventListener('click', submit);
         modal.querySelector('#btn-prompt-cancel')?.addEventListener('click', close);
         inp?.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') submit();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submit();
+          }
+        });
+      }
+    );
+  }
+
+  function openFocusToolsModal() {
+    const currentSet = new Set(
+      app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
+    );
+    openHtml(
+      'Customize Teaching Focus Tools',
+      `
+        <p class="wb-muted">Choose which tools stay visible on the dock while Teaching Focus Mode is active.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;">
+          ${TOOL_REGISTRY.map(
+            (t) => `
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <input type="checkbox" data-focus-tool="${escapeXml(t.id)}" ${currentSet.has(t.id) ? 'checked' : ''} />
+              <span>${escapeXml(t.label)} (${escapeXml(t.shortcut)})</span>
+            </label>
+          `
+          ).join('')}
+        </div>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-btn" id="btn-focus-tools-reset">Reset Default</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-focus-tools-save">Save Focus Tools</button>
+        </div>
+      `,
+      (modal) => {
+        modal.querySelector('#btn-focus-tools-reset')?.addEventListener('click', () => {
+          app.setFocusTools(['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']);
+          close();
+          showToast('Reset Teaching Focus tools to default.', 'info');
+        });
+        modal.querySelector('#btn-focus-tools-save')?.addEventListener('click', () => {
+          const chosen = [];
+          modal.querySelectorAll('[data-focus-tool]').forEach((chk) => {
+            if (chk.checked) chosen.push(chk.dataset.focusTool);
+          });
+          if (chosen.length === 0) chosen.push('select');
+          app.setFocusTools(chosen);
+          close();
+          showToast('Saved custom Teaching Focus toolset.', 'success');
         });
       }
     );
@@ -437,5 +573,6 @@ export function initDialogs(app) {
     openRecoveryModal,
     openHyperlinkModal,
     openPromptModal,
+    openFocusToolsModal,
   };
 }

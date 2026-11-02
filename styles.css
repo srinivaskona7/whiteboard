@@ -203,12 +203,79 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .wb-multiselect-tray-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
 .wb-stencil-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.wb-stencil-grid.wb-grid-compact { grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .wb-stencil-item {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px;
   border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-elevated); cursor: pointer;
 }
+.wb-stencil-item:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
 .wb-stencil-item:hover { border-color: var(--accent-color); background: var(--accent-soft); }
 .wb-stencil-item.selected { border-color: var(--accent-color); background: var(--accent-soft); box-shadow: 0 0 0 1.5px var(--accent-color); }
+.wb-stencil-item span { font-size: 10px; font-weight: 500; text-align: center; line-height: 1.15; }
+.wb-fav-star {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border: none; background: transparent;
+  color: #94a3b8; font-size: 11px; line-height: 1; cursor: pointer; padding: 0;
+}
+.wb-fav-star.active, .wb-fav-star:hover { color: #eab308; }
+.wb-lib-search-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.wb-cat-pills { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: thin; }
+.wb-cat-pill {
+  padding: 3px 8px; font-size: 10px; font-weight: 600; border-radius: 99px;
+  border: 1px solid var(--border-color); background: var(--bg-elevated); cursor: pointer; white-space: nowrap;
+}
+.wb-cat-pill.active { background: var(--accent-color); border-color: var(--accent-color); color: #ffffff; }
+.wb-lib-multiselect-bar {
+  position: sticky; top: 0; z-index: 6; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; margin: 6px 0; background: var(--bg-elevated); border: 1.5px solid var(--accent-color); border-radius: 8px; box-shadow: var(--shadow-lg);
+}
+.wb-lib-category-header {
+  display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; margin-top: 8px;
+  font-size: 11px; font-weight: 700; background: var(--bg-muted); border-radius: 5px;
+}
+.wb-insert-wrap { position: relative; }
+.wb-insert-popover {
+  position: fixed; left: 68px; bottom: 56px; width: 224px; padding: 8px;
+  background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); z-index: 42; display: flex; flex-direction: column; gap: 3px;
+}
+.wb-mode-banner {
+  position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 38;
+  display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; max-width: 94vw;
+}
+.wb-floating-mode-pill {
+  pointer-events: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px;
+  background: var(--bg-elevated); border: 1.5px solid var(--accent-color); border-radius: 999px;
+  box-shadow: var(--shadow-lg); font-size: 12px;
+}
+.wb-spot-slider { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+.wb-spot-slider input[type="range"] { width: 68px; }
+.wb-status-pill {
+  padding: 2px 8px; font-size: 11px; border-radius: 99px; background: var(--bg-muted);
+  border: 1px solid var(--border-color); color: var(--text-secondary); white-space: nowrap;
+}
+.wb-conn-pill { cursor: pointer; font-weight: 600; }
+.wb-conn-pill.wb-conn-live { background: rgba(22, 163, 74, 0.14); border-color: #16a34a; color: #15803d; }
+.wb-conn-pill.wb-conn-offline { background: rgba(217, 119, 6, 0.14); border-color: #d97706; color: #b45309; }
+.wb-status-card { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-muted); font-size: 12px; }
+.wb-status-card.wb-status-live { border-color: #16a34a; background: rgba(22, 163, 74, 0.08); }
+.wb-status-card.wb-status-ro { border-color: #2563eb; background: rgba(37, 99, 235, 0.08); }
+.wb-participant-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; font-size: 11px;
+  border: 1px solid var(--border-color); border-radius: 99px; background: var(--bg-elevated);
+}
+.wb-participant-chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.wb-footer {
+  position: fixed; left: 12px; right: 12px; bottom: 8px; height: 40px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; pointer-events: none; z-index: 20;
+}
+.wb-zoom-controls {
+  pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 9px; box-shadow: var(--shadow-lg);
+}
+.wb-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
 .wb-stencil-check {
   position: absolute; top: 3px; right: 3px; width: 15px; height: 15px; border-radius: 4px;
   border: 1px solid var(--border-color); background: var(--bg-elevated); font-size: 9px; font-weight: 700;

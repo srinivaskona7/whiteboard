@@ -1,5 +1,6 @@
 // scene/storage.js
 import { SCHEMA_VERSION, createScene, createPage, createElement, uid } from './model.js';
+import { isValidElementGeometry } from './geometry.js';
 
 export const STORAGE_KEY = 'classroom_whiteboard_scene_v2';
 export const LIBRARY_STORAGE_KEY = 'classroom_whiteboard_user_library_v1';
@@ -82,7 +83,23 @@ export function migrateSceneData(raw) {
   return data;
 }
 
+export function assertValidSceneGeometry(scene) {
+  if (!scene || !Array.isArray(scene.pages)) {
+    throw new Error('Invalid scene structure.');
+  }
+  for (const page of scene.pages) {
+    for (const el of page.elements || []) {
+      if (!isValidElementGeometry(el)) {
+        throw new Error(
+          `Invalid non-finite geometry on element "${el?.name || el?.type || el?.id || 'unknown'}".`
+        );
+      }
+    }
+  }
+}
+
 export function serializeScene(scene) {
+  assertValidSceneGeometry(scene);
   const payload = {
     version: SCHEMA_VERSION,
     app: 'classroom-whiteboard-studio',
@@ -128,6 +145,18 @@ export function loadSceneFromLocalStorage(preferredTheme = 'light', storage = gl
     return parseSceneJson(rawStr);
   } catch {
     return createScene(preferredTheme);
+  }
+}
+
+export const loadSceneFromStorage = loadSceneFromLocalStorage;
+
+export function saveThemePreference(theme, storage = globalThis.localStorage) {
+  if (!storage || !theme) return false;
+  try {
+    storage.setItem(THEME_STORAGE_KEY, theme);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -239,6 +268,7 @@ export function importLibraryJson(jsonString) {
 
 // URL Hash sharing (base64url UTF-8 encoding with size warning)
 export function encodeSceneToHash(scene) {
+  assertValidSceneGeometry(scene);
   const compact = {
     version: SCHEMA_VERSION,
     theme: scene.theme,
