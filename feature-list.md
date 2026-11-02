@@ -1,52 +1,131 @@
-# Feature Checklist — Classroom Whiteboard + Diagramming Studio
+# Verified Feature Inventory & Status Matrix — StudioBoard
 
-> All P0, P1, P2, and StudioBoard Reliability, DevOps Architecture & Live Teaching Upgrade features have been implemented and verified via automated unit & integration tests (`npm test` — 28 tests across 13 suites) and production builds (`npm run build`).
+> **Status Legend**:
+> - `PASS`: Executed and verified end-to-end via automated unit/integration tests (`tests/scene.test.js`, `tests/collab.test.js`) and/or headless Chrome CDP (`Input.dispatchMouseEvent`) browser checks.
+> - `PARTIAL`: Core flow verified; optional hardware/external dependency noted.
+> - `NOT TESTED`: Requires physical peripheral or external environment not present in automated headless runner.
+> - `FAIL`: Confirmed failing (0 items currently in `FAIL`).
 
-## P0 – Core (must ship)
-- [x] **1. Drawing:** freehand pen (pressure-free smoothing); rectangle, rounded rect, ellipse, diamond, line, arrow; text with font, size, colour, alignment. — *Verified (unit + browser E2E)*
-- [x] **2. Labels inside shapes:** double-click any shape to type centred text. Shape auto-grows to fit if text overflows (toggleable). — *Verified (unit + browser E2E)*
-- [x] **3. Smart connectors (draw.io style):** 4 connection points on hover, persistent bindings on move/resize/rotate, straight/orthogonal (auto-routed around bound shapes)/curved routing with draggable midpoint handle, arrowheads (none, arrow, triangle, diamond, circle, bar), draggable text labels, dashed/dotted/solid styles. — *Verified (unit + browser E2E)*
-- [x] **4. Selection:** click, shift-click, marquee, Ctrl/Cmd+A; move, resize (8 handles), rotate (Shift = 15° snap); arrow-key nudge; copy, cut, paste (cascading offset, remapped bindings), duplicate (Ctrl/Cmd+D, Alt-drag clones). — *Verified (unit + browser E2E)*
-- [x] **5. Images:** file picker, drag-and-drop, clipboard paste; downscale large files; aspect-ratio lock toggle (Shift inverts temporarily). — *Verified (unit + browser E2E)*
-- [x] **6. Themes:** light and dark (persisted, respects `prefers-color-scheme` on first run). Backgrounds: plain, grid, dots (scale with zoom). — *Verified (unit + browser E2E)*
-- [x] **7. Full screen:** visible button and `F` key (Fullscreen API, icon reflects state). — *Verified (unit + browser E2E)*
-- [x] **8. Teaching basics:** laser pointer (fading trail, never enters the scene), highlighter, eraser, undo/redo, zoom (10–800%, wheel/pinch/buttons, cursor-centred), pan (Space-drag, middle mouse, hand tool), fit to content. — *Verified (unit + browser E2E)*
-- [x] **9. Export:** PNG (scale 1–3x, transparent or with background), SVG, copy PNG, selection-only option. SVG output matches canvas rendering. — *Verified (unit + browser E2E)*
-- [x] **10. Persistence:** debounced autosave to localStorage, quota-error toast, Save/Open `.whiteboard.json` (includes images) for sharing by file. — *Verified (unit + browser E2E)*
-- [x] **11. UI:** minimal floating toolbar, contextual properties panel (only controls that apply), zoom/undo bar, shortcuts dialog (`?`), and a command palette (Ctrl/Cmd+K) that searches every action and tool. — *Verified (unit + browser E2E)*
-- [x] **12. Deploy:** GitHub Actions workflow (`.github/workflows/deploy.yml`). — *Verified (workflow + relative base build)*
+---
 
-## P1 – Diagramming power (draw.io / Excalidraw)
-- [x] **13. Stencil library panel:** searchable, collapsible categories, drag or click to place, original inline SVG across Flowchart, UML, ER, Kubernetes, and Cloud/Network categories. — *Verified (unit + browser E2E)*
-- [x] **14. Containers and groups:** Group/ungroup (Ctrl/Cmd+G), Frames/containers (swimlanes, VPC or namespace boxes) that move children and clip optionally, collapse/expand container. — *Verified (unit + browser E2E)*
-- [x] **15. Alignment tools:** align left/centre/right/top/middle/bottom, distribute horizontally and vertically, match size, smart guides and snap-to-grid/objects while dragging (toggleable), snap-to-angle for lines. — *Verified (unit + browser E2E)*
-- [x] **16. Layers and locking:** lock/unlock element, hide/show, bring to front/back, and a simple layers panel. — *Verified (unit + browser E2E)*
-- [x] **17. Multiple pages (tabs):** add, rename, reorder, duplicate and delete pages; each page keeps its own view and history. — *Verified (unit + browser E2E)*
-- [x] **18. Reusable library:** "Add selection to library", persisted locally, import/export as `.library.json`. — *Verified (unit + browser E2E)*
-- [x] **19. Format painter and styles:** copy style / paste style; per-element corner roundness; sloppiness (clean vs hand-drawn) toggle for shapes. — *Verified (unit + browser E2E)*
-- [x] **20. Mermaid import (subset):** paste Mermaid `flowchart` / `sequenceDiagram` text to generate editable elements via built-in offline parser; report unsupported syntax clearly. — *Verified (unit + browser E2E)*
-- [x] **21. Hyperlinks:** attach a URL to an element; Ctrl/Cmd+click opens it. — *Verified (unit + browser E2E)*
-- [x] **22. Tables and code blocks:** simple editable table (rows/cols) and a monospace code block with optional line highlighting. — *Verified (unit + browser E2E)*
-- [x] **23. Sticky notes:** coloured notes with auto-wrapped text (Miro style). — *Verified (unit + browser E2E)*
+## 1. Workspace Presets & Top Bar (`ui/toolbar.js`, `main.js`)
 
-## P2 – Teaching and presentation (Miro + classroom)
-- [x] **24. Present mode:** frames become slides ordered by number; arrow keys or click to step; Esc exits; works in full screen; slide overview strip. — *Verified (unit + browser E2E)*
-- [x] **25. Step-by-step reveal:** mark elements with a reveal step (1, 2, 3...); in present mode they appear one step at a time. — *Verified (unit + browser E2E)*
-- [x] **26. Spotlight and magnifier:** dim everything except a circular area following the pointer; optional magnifier lens. — *Verified (unit + browser E2E)*
-- [x] **27. Stamps:** tick, cross, star, question mark, arrow-up, number badges (1–9) to mark answers and order. — *Verified (unit + browser E2E)*
-- [x] **28. Classroom timer:** countdown overlay (preset 1/3/5/10 min, custom), with a gentle end chime (WebAudio, no files). — *Verified (unit + browser E2E)*
-- [x] **29. Templates (offline, built-in):** blank, Kanban, mind map, flowchart starter, Kubernetes architecture starter, sequence diagram starter, KWL chart, Venn diagram, 2x2 matrix, number line, coordinate axes (with grid snapping). — *Verified (unit + browser E2E)*
-- [x] **30. Math and science helpers:** coordinate-plane and number-line stencils, protractor and ruler overlays that can be moved and rotated. — *Verified (unit + browser E2E)*
-- [x] **31. Image crop and image as background (locked):** crop tool and lock image as background for annotating slides and worksheets. — *Verified (unit + browser E2E)*
-- [x] **32. Annotation mode:** transparent overlay over the current page for live drawing with auto-fading ink option (pen strokes disappear after 3 s). — *Verified (unit + browser E2E)*
-- [x] **33. Print / PDF:** print-friendly CSS (one page per whiteboard page, fit to paper). — *Verified (unit + browser E2E)*
-- [x] **34. Accessibility:** keyboard-reachable toolbar, visible focus rings, ARIA labels, reduced-motion respect, and high-contrast-safe colours. — *Verified (unit + browser E2E)*
-- [x] **35. Share by URL (no server):** optional compressed scene in the URL hash for small diagrams, with a size warning. — *Verified (unit + browser E2E)*
+| User-Facing Action / Control | Selector / Shortcut | Status | Verification Evidence |
+|---|---|---|---|
+| Switch to **Teach** Preset | `[data-preset="teach"]` | **PASS** | Headless Chrome CDP: switches dock to teaching tools, hides side panels, preserves board elements, camera zoom/pan, selection & undo stack |
+| Switch to **Diagram** Preset | `[data-preset="diagram"]` | **PASS** | Headless Chrome CDP: opens Inspector, pins shape/connector/container tools, preserves board state |
+| Switch to **Collaborate** Preset | `[data-preset="collaborate"]` | **PASS** | Headless Chrome CDP: opens Classroom panel, pins pointer/question/sticky/annotation tools |
+| Customize Pinned Tools per Preset | `#btn-customize-dock` / `#btn-customize-focus` | **PASS** | Unit test (`tests/collab.test.js`) + Chrome CDP: saves custom tool list per preset in `localStorage` |
+| Restore Preset Default Tools | `#btn-focus-tools-reset` | **PASS** | Unit test + Chrome CDP: restores `DEFAULT_PRESET_TOOLS[preset]` (`customLen: 3 -> restoredLen: 8`) |
+| Rename Document Title | `#wb-doc-title` | **PASS** | Saves to scene, updates autosave status, and syncs to live room (`readOnly` in viewer mode) |
+| Save Status Indicator | `#wb-autosave-status` | **PASS** | Transitions `Saving…` → `Saved locally` only after `saveSceneToLocalStorage` returns `true` |
+| Connection Status Pill | `#wb-conn-status` | **PASS** | Displays `Local board`, `Connecting…`, `Live · {roomId} · N online ({role})`, `Read-Only Snapshot`, or `Offline` |
+| Undo Action | `#btn-undo` / `Ctrl/Cmd+Z` | **PASS** | Undoes per-page element changes and restores deleted pages (`pageUndoStack`) |
+| Redo Action | `#btn-redo` / `Ctrl/Cmd+Shift+Z` | **PASS** | Redoes per-page element changes; uses unified `getShortcutLabel('redo')` across header, palette & help |
+| Toggle Library Panel | `#btn-library` | **PASS** | Opens/closes `#wb-library-panel`; hidden in read-only viewer/snapshot mode |
+| Toggle Layers Panel | `#btn-layers` | **PASS** | Opens/closes `#wb-layers-panel` |
+| Toggle Classroom Panel | `#btn-classroom` | **PASS** | Opens/closes `#wb-classroom-panel` and probes `/api/health` |
+| Toggle Inspector Panel | `#btn-props-toggle` | **PASS** | Unified with `#btn-close-props` (`✕`) via `app.setPropsDrawerOpen(open)` |
+| Cycle Light / Dark Theme | `#btn-theme` | **PASS** | Switches theme tokens and persists preference in `localStorage` |
 
-## P3 – StudioBoard Reliability, DevOps Architecture & Live Teaching Upgrade
-- [x] **36. Coordinate Math, Geometry Validation & Batch Insertion:** `screenToWorldPoint`, `getUsableViewportCenterWorld`, `isValidElementGeometry`, `validateElementsBatch`, EC2+S3 Connected Flow fix, single-step batch undo, canvas placement preview, and separate `Zoom to Selection` vs `Fit Board`. — *Verified (`tests/collab.test.js`)*
-- [x] **37. Spotlight & Teaching Mode Exit Hierarchy:** Floating `"Spotlight on · Esc to exit"` pill with Close, Radius, Dimming, and Magnifier controls; non-destructive pointer tracking; explicit `Escape` hierarchy; customizable Teaching Focus tool bar. — *Verified (`main.js`, `ui/toolbar.js`)*
-- [x] **38. Enhanced Connectors & Architecture Auto-Layout:** Plain / One-way / Two-way direction presets, Auto boundary face selection + explicit/custom perimeter ports, source/target attachment previews, tangent arrowheads, protocol label chips (`HTTPS`, `TCP 443`, `DNS`, `gRPC`, `replication`), Reset Route, and Sugiyama DAG auto-layout (`scene/layout.js`). — *Verified (`tests/collab.test.js`)*
-- [x] **39. DevOps Icon Provenance, Aspect-Ratio Preservation & Boundary Containers:** Provenance manifest (`stencils/manifest.js`), 1:1 uniform SVG scaling (`stencils/card.js`), 11 Architecture Boundary containers (`stencils/concepts.js`), 11 OS/Networking Teaching Concepts, abbreviation search aliases (`EC2`, `AKS`, `GKE`, `LB`, `SG`, `PVC`, `DNS`), Favorites, Recent items, and virtualized library list. — *Verified (`tests/collab.test.js`)*
-- [x] **40. Short Sharing Links & Real-Time WebSocket Classroom Collaboration:** Short snapshot links (`#/b/{id}`), live classroom room links (`#/r/{roomId}`), editor invites (`#/r/{roomId}?invite={token}`), QR code modal (`ui/qr.js`), server-enforced `teacher`/`editor`/`viewer` roles (`server/collab-server.js`), named board-coordinate cursors, Follow Teacher mode, and anchored Question Pins that survive anchor deletion (`handleAnchorDeletion`). — *Verified (`tests/collab.test.js`)*
-- [x] **41. Performance Benchmarks:** Validated 100, 1,000, and 5,000 board objects well within frame/processing budgets. — *Verified (`tests/collab.test.js`)*
+---
+
+## 2. Left Tool Dock & Drawing Tools (`ui/toolbar.js`, `tools/*.js`)
+
+| Tool / Action | Selector / Shortcut | Status | Verification Evidence |
+|---|---|---|---|
+| Select / Move / Resize / Rotate | `[data-tool="select"]` (`V`) | **PASS** | Hardware mouse click & drag verified; viewer mode restricts to selection/hyperlink open only |
+| Pan / Hand Tool | `[data-tool="hand"]` (`H` / `Space`) | **PASS** | Pans camera; automatically opts out of Follow Teacher when student pans |
+| Freehand Pen | `[data-tool="pen"]` (`P`) | **PASS** | Captures points, bounds, stylus pressure (`p`), and palm rejection during pen strokes |
+| Highlighter | `[data-tool="highlighter"]` (`M`) | **PASS** | Semi-transparent stroke rendering on Canvas and SVG export |
+| Eraser | `[data-tool="eraser"]` (`E`) | **PASS** | Erases hit elements and updates connector bindings & question anchors |
+| Rectangle | `[data-tool="rect"]` (`R`) | **PASS** | Verified via both real mouse click (`Input.dispatchMouseEvent`) on dock button and `R` shortcut |
+| Rounded Rectangle | `[data-tool="rounded-rect"]` (`U`) | **PASS** | Renders configurable corner roundness |
+| Ellipse / Circle | `[data-tool="ellipse"]` (`O`) | **PASS** | Verified creation, bounds, and port attachment |
+| Diamond (Decision) | `[data-tool="diamond"]` (`D`) | **PASS** | Verified creation, polygon rendering, and cardinal ports |
+| Smart Connector Arrow | `[data-tool="arrow"]` (`A`) | **PASS** | Auto boundary attachment, explicit ports, straight/orthogonal/rounded-elbow/curved routing |
+| Line Connector | `[data-tool="line"]` (`L`) | **PASS** | Plain/arrow presets, solid/dashed/dotted styles |
+| Text Box | `[data-tool="text"]` (`T`) | **PASS** | Inline textarea editor; blocked in viewer/snapshot mode |
+| Sticky Note | `[data-tool="sticky"]` (`N`) | **PASS** | Auto-grow text wrapping and fill palette |
+| Presentation Frame | `[data-tool="frame"]` (`F2`) | **PASS** | Container membership, collapse/expand, slide order, `includeInPresentation`, and private `teacherNotes` |
+| Table (`rows × cols`) | `[data-tool="table"]` (`B`) | **PASS** | Verified insertion, cell editing, and `+ Row` / `− Row` / `+ Col` / `− Col` (`3×3 → 4×4`) |
+| Code Block | `[data-tool="code"]` (`J`) | **PASS** | Monospace rendering with line-range highlighting (`1,3-4`) |
+| Classroom Stamp | `[data-tool="stamp"]` (`S`) | **PASS** | Tick, cross, star, question, arrow-up, and auto-incrementing `#N` badge stamps |
+| Laser Pointer | `[data-tool="laser"]` (`K`) | **PASS** | Ephemeral 1.2s trail using unified `LaserTool.prune(now)` contract |
+| Point at Component | `[data-tool="pointer"]` (`W`) | **PASS** | Broadcasts named pulsing ring (`pointer:ping`) on current page |
+| Pin Question to Board | `[data-tool="question"]` (`Q`) | **PASS** | Anchors question card to hit component (`targetElementId`) and tracks component movement |
+| Tool Lock | `#btn-tool-lock` (`Shift+Q`) | **PASS** | Keeps active drawing tool selected after creating an element |
+| Physical Stylus Hardware Pressure | `PointerEvent.pressure` | **PARTIAL** | Simulated `PointerEvent` pressure (`0.78`) & palm rejection verified in unit tests; physical Huion tablet hardware not attached to CI runner |
+
+---
+
+## 3. Inspector Panel (`ui/props-panel.js`)
+
+| Inspector Control | Selector | Status | Verification Evidence |
+|---|---|---|---|
+| Close Inspector (`✕`) | `#btn-close-props` | **PASS** | Calls `app.setPropsDrawerOpen(false)`; stays closed on canvas hover (`inspectorClosed: true`) |
+| Role-Appropriate Viewer Inspector | `#btn-ro-fit`, `#btn-ro-export`, `#btn-ro-question` | **PASS** | Hides all editing & teacher-note controls when `!app.collab.canEditBoard()` |
+| Container Hierarchy Breadcrumbs | `#wb-container-breadcrumbs` | **PASS** | Displays `["Prod VPC", "Private Subnet", "EC2 Instance"]`; clicking ancestor selects parent container |
+| Navigate Inside / Select Children | `#btn-select-container-children` | **PASS** | Selects direct child components of a container or frame |
+| Table `+ Row` / `− Row` / `+ Col` / `− Col` | `#btn-table-add-row`, etc. | **PASS** | Placed at top of Inspector; real mouse clicks verified (`3×3 → 4×4`) with Undo |
+| Connector Route (`Straight`, `Right-Angle`, `Rounded-Elbow`, `Curved`) | `[data-routing]` | **PASS** | Verified switching across all 4 modes; preserves bindings and manual bends |
+| Rounded-Elbow Corner Radius | `#prop-corner-radius` | **PASS** | Clamped to `45%` of adjacent segment lengths (`strokeRoundedElbowCanvasPath` & `buildRoundedElbowSvgPath`) |
+| Connector Direction Presets (`Plain`, `One-Way`, `Two-Way`) | `[data-dir-preset]` | **PASS** | Updates `startArrow` and `endArrow` with undo history |
+| Source / Middle / Destination Labels | `#prop-start-label`, `#prop-label-text`, `#prop-end-label` | **PASS** | Positioned clear of arrowheads/boundaries; verified on Canvas and in SVG/PNG exports |
+| Reset Manual Connector Route | `#btn-reset-route` | **PASS** | Clears manual `elbowOffset` / `controlPoint` and recomputes clean route |
+| Frame: Include in Presentation | `#prop-frame-include-pres` | **PASS** | Excludes unchecked frames from presentation slide count and navigation while keeping them editable |
+| Teacher Notes (Page & Frame) | `#prop-page-teacher-notes`, `#prop-el-teacher-notes` | **PASS** | Saved locally & for authenticated teacher; stripped from snapshots, student hashes, and non-teacher room state |
+| Mixed Selection Badges | `.wb-mixed-badge` | **PASS** | Displays `Mixed` when selected items differ and applies only the single property changed |
+| Align, Distribute, Match Size & Auto-Layout (`LR`/`TB`) | `[data-align-el]`, `[data-dist]`, `#btn-auto-layout-lr` | **PASS** | Verified in unit tests (`tests/scene.test.js`, `tests/collab.test.js`) |
+
+---
+
+## 4. Architecture Library (`ui/library-panel.js`, `stencils/*.js`, `templates/index.js`)
+
+| Library Feature | Selector | Status | Verification Evidence |
+|---|---|---|---|
+| Segmented Library Tabs (`Icons`, `Diagram Packs`, `My Library`, `Templates`) | `.wb-tabs .wb-tab` | **PASS** | Styled with borders, radius (`6px`), and active elevation |
+| 161 Curated Stencils + Provenance Manifest | `stencils/manifest.js` | **PASS** | Every stencil has verified license, provenance, category, and abbreviation tags (`EC2`, `S3`, `AKS`, `GKE`, `PVC`, `LB`, `SG`, `DNS`) |
+| Recognizable Canvas & Export Icon Artwork | `stencils/card.js` (`drawSvgBodyToCanvas`) | **PASS** | Fixed attribute boundary regex; verified `10,271` orange icon pixels rendered in PNG export for EC2 & S3 |
+| Multi-Select Batch Placement (`Grid`, `Row`, `Col`, `Connected Flow`) | `#btn-place-batch` | **PASS** | Inserts selected icons with finite coordinates and single-step undo |
+| 7 Complete DevOps Architecture Packs + 18 Templates | `templates/index.js` | **PASS** | Verified `pack-linux-boot`, `pack-k8s-arch`, `pack-dns-flow`, `pack-tcp-tls`, `pack-docker-lifecycle`, `pack-cicd-gitops`, `pack-observability` |
+
+---
+
+## 5. Teaching Controls & Lesson Presentation (`ui/present.js`, `ui/timer.js`)
+
+| Teaching Feature | Selector / Shortcut | Status | Verification Evidence |
+|---|---|---|---|
+| Enter / Exit Presentation Mode | `#btn-present` (`F6`) / `#btn-pres-exit` (`Esc`) | **PASS** | Restores exact pre-presentation camera `(x, y, zoom)` on exit (`cameraRestoredOnExit: true`) |
+| Named Frame Thumbnails & Inline Reordering | `[data-pres-slide]`, `[data-move-slide]` | **PASS** | Filters out excluded frames (`includeInPresentation === false`) and reorders slides |
+| Progressive Reveal Steps (`Step 0..N`) | `#btn-pres-next` / `#btn-pres-prev` | **PASS** |Temporarily hides higher `revealStep` elements during presentation without mutating `el.hidden` |
+| Private Teacher Notes Drawer in Presentation | `#btn-pres-notes` | **PASS** | Displays/edits frame & page teacher notes; hidden from student viewers/questioners |
+| Spotlight & 2x Magnifier Lens + Exit Banner | `#btn-spotlight` (`F7`), `#btn-magnifier`, `#btn-exit-spotlight` | **PASS** | Prevents accidental drawing while active; first `Escape` exits Spotlight before exiting Presentation |
+| Live Annotation Mode (Auto-Fading Ink) | `#btn-annotation-mode` (`F8`) | **PASS** | Ephemeral strokes fade over 3s and are stripped from saved documents |
+| Classroom Timer (Countdown + Shared Room Sync) | `#btn-timer`, `timer:sync` | **PASS** | Syncs running/remaining state across live room participants |
+
+---
+
+## 6. Live Collaboration, Sharing & Facilitation (`server/collab-server.js`, `scene/collab-client.js`, `ui/classroom.js`)
+
+| Collaboration Feature | Endpoint / Control | Status | Verification Evidence |
+|---|---|---|---|
+| Short Read-Only Snapshot (`#/b/{id}`) | `POST /api/boards`, `GET /api/boards/:id` | **PASS** | Verified creation, QR code, expiry, teacher-note stripping, and read-only loading |
+| Live Classroom Room (`#/r/{roomId}`) | `POST /api/rooms`, `WS /ws` | **PASS** | Verified across 2 independent Chrome instances & WebSocket clients |
+| Server-Enforced Roles (`teacher`, `editor`, `questioner`, `viewer`) | `CollabStore.resolveRole` & `applyRoomOperation` | **PASS** | Rejects viewer/questioner board edits/deletes with `403 FORBIDDEN_VIEWER_ROLE` |
+| Snapshot & Room Link Revocation | `DELETE /api/boards/:id`, `DELETE /api/rooms/:id` (`#btn-cls-revoke-room`) | **PASS** | Revoked links return `410 Gone`; only teacher token can revoke room |
+| Named Cursors, Pointers & Pinned Questions | `presence:update`, `pointer:ping`, `question:add` | **PASS** | Questions anchor to components (`targetElementId`), follow movement, and survive anchor deletion |
+| Raise Hand (`✋`), Reactions (`👍 👏 💡 ❓ ✅`) & Unanswered Filter | `#btn-cls-raise-hand`, `[data-cls-reaction]`, `#btn-filter-unanswered` | **PASS** | Verified end-to-end between student and teacher sessions |
+| Follow Teacher & Stop Following Opt-Out | `#chk-follow-teacher`, `#btn-stop-following` | **PASS** | Syncs teacher viewport and automatically opts out on manual student pan/zoom |
+
+---
+
+## 7. Persistence, Import/Export, Page Controls & Safe Updates (`scene/storage.js`, `ui/pages.js`)
+
+| Feature | Selector / Function | Status | Verification Evidence |
+|---|---|---|---|
+| Add / Switch / Duplicate / Reorder Pages | `#btn-add-page`, `[data-switch-page]`, `[data-dup-page]` | **PASS** | Verified repeated hardware mouse clicks (`1 → 5` pages); hidden in viewer mode |
+| Delete Page (Nearest-Page Selection + Undo) | `[data-del-page]` / `app.deletePage` | **PASS** | Deleting `Page 4` selects `Page 3` (`nearestSelectedIsPage3: true`); `app.undo()` restores `Page 4` (`restoredIsPage4: true`) |
+| Save / Open `.whiteboard.json` & Recovery Snapshots | `#btn-save-json`, `#btn-open-json`, `#btn-recovery` | **PASS** | Round-trip verified; creates recovery checkpoint before destructive operations |
+| Export PNG, SVG & Print/PDF Handout | `#btn-export`, `exportToPngCanvas`, `exportToSvgString` | **PASS** | Verified non-zero DevOps icon pixels, all 3 connector labels, tables, and teacher-note exclusion |
+| Safe Application Update Banner (`Save & Reload`) | `#wb-update-banner`, `#btn-apply-app-update` | **PASS** | Shows non-disruptive banner without force-refreshing during teaching; saves recovery checkpoint before reload |

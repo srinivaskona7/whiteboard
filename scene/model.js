@@ -83,9 +83,14 @@ export function createElement(type, props = {}) {
     teacherNotes: props.teacherNotes ?? '',
     isJunction: Boolean(props.isJunction),
   };
-
   if (isFreehand) {
-    base.points = Array.isArray(props.points) ? props.points.map((p) => ({ x: p.x, y: p.y })) : [];
+    base.points = Array.isArray(props.points)
+      ? props.points.map((p) => ({
+          x: p.x,
+          y: p.y,
+          ...(Number.isFinite(p.p) ? { p: p.p } : {}),
+        }))
+      : [];
     base.fading = Boolean(props.fading);
     base.createdAt = props.createdAt ?? Date.now();
     if (base.points.length > 0 && props.w === undefined && props.h === undefined) {

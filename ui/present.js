@@ -7,6 +7,7 @@ export function initPresentUI(app) {
   if (!overlay) return { enter() {}, exit() {}, stepNext() {}, stepPrev() {}, renderBar() {} };
 
   let showNotesPanel = false;
+  let savedViewBeforePresent = null;
 
   function isTeacherOrLocal() {
     const role = app.collab?.role;
@@ -56,6 +57,11 @@ export function initPresentUI(app) {
   }
 
   function enter() {
+    const page = app.getPage();
+    savedViewBeforePresent = {
+      pageId: page.id,
+      camera: { ...page.camera },
+    };
     const slides = getOrderedSlides();
     const maxStep = getMaxRevealStep();
     app.presentState = {
@@ -80,6 +86,14 @@ export function initPresentUI(app) {
     app.presentState = { active: false, slideIndex: 0, revealStep: 0, maxRevealStep: 0 };
     document.body.classList.remove('wb-presenting');
     overlay.classList.add('wb-hidden');
+    if (savedViewBeforePresent) {
+      const targetPage =
+        app.scene.pages.find((p) => p.id === savedViewBeforePresent.pageId) || app.getPage();
+      if (targetPage && savedViewBeforePresent.camera) {
+        targetPage.camera = { ...savedViewBeforePresent.camera };
+      }
+      savedViewBeforePresent = null;
+    }
     app.updateUI();
     app.requestRender();
   }

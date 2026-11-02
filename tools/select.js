@@ -87,6 +87,35 @@ export class SelectTool {
     }
 
     // 1. Check if clicking a handle of a single selected element
+    const canEdit = this.app.collab ? this.app.collab.canEditBoard() : true;
+    if (!canEdit) {
+      const hit = hitTestScene(page, world.x, world.y, { includeLocked: true });
+      if (hit) {
+        if (
+          hit.link &&
+          (ev.ctrlKey || ev.metaKey || hitTestHyperlinkBadge(hit, world.x, world.y))
+        ) {
+          window.open(hit.link, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        const groupExpanded = expandSelectionWithGroups(page, [hit.id]);
+        if (ev.shiftKey) {
+          for (const id of groupExpanded) {
+            if (this.app.selectedIds.has(id)) this.app.selectedIds.delete(id);
+            else this.app.selectedIds.add(id);
+          }
+        } else {
+          this.app.selectedIds = new Set(groupExpanded);
+        }
+      } else if (!ev.shiftKey) {
+        this.app.selectedIds.clear();
+      }
+      this.mode = null;
+      this.app.updateUI();
+      this.app.requestRender();
+      return;
+    }
+
     if (this.app.selectedIds.size === 1) {
       const onlyId = Array.from(this.app.selectedIds)[0];
       const selEl = page.elements.find((e) => e.id === onlyId);

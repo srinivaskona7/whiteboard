@@ -125,6 +125,9 @@ export class CollabStore {
   getSnapshot(id) {
     const rec = this.boards.get(id);
     if (!rec) return { status: 404, error: 'Snapshot not found.' };
+    if (rec.revoked) {
+      return { status: 410, error: 'Snapshot link has been revoked by the owner.' };
+    }
     if (rec.expiresAt && Date.now() > rec.expiresAt) {
       this.boards.delete(id);
       return { status: 410, error: 'Snapshot link has expired.' };
@@ -136,6 +139,25 @@ export class CollabStore {
         scene: stripSceneTeacherNotes(rec.scene),
       },
     };
+  }
+
+  revokeSnapshot(id) {
+    const rec = this.boards.get(id);
+    if (!rec) return { status: 404, error: 'Snapshot not found.' };
+    rec.revoked = true;
+    this._saveToDisk();
+    return { status: 200, data: { ok: true, id, revoked: true } };
+  }
+
+  revokeRoom(roomId, token = '') {
+    const room = this.rooms.get(roomId);
+    if (!room) return { status: 404, error: 'Classroom room not found.' };
+    if (!token || token !== room.teacherToken) {
+      return { status: 403, error: 'Only the room teacher can revoke this classroom link.' };
+    }
+    room.revoked = true;
+    this._saveToDisk();
+    return { status: 200, data: { ok: true, roomId, revoked: true } };
   }
 
   createRoom(scene, { title = 'Live Classroom', expiresInMs = null, requestedRoomId = null } = {}) {
@@ -198,6 +220,9 @@ export class CollabStore {
   getRoomPublicState(roomId, token = '', roleHint = '') {
     const room = this.rooms.get(roomId);
     if (!room) return { status: 404, error: 'Classroom room not found.' };
+    if (room.revoked) {
+      return { status: 410, error: 'Classroom room link has been revoked by the teacher.' };
+    }
     if (room.expiresAt && Date.now() > room.expiresAt) {
       this.rooms.delete(roomId);
       return { status: 410, error: 'Classroom room has expired.' };
@@ -760,6 +785,12 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
       else sendJson(res, 200, result.data);
       return true;
     }
+    if (boardMatch && req.method === 'DELETE') {
+      const result = store.revokeSnapshot(boardMatch[1]);
+      if (result.status !== 200) sendJson(res, result.status, { error: result.error });
+      else sendJson(res, 200, result.data);
+      return true;
+    }
 
     if (pathname === '/api/rooms' && req.method === 'POST') {
       try {
@@ -783,6 +814,20 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
       const result = store.getRoomPublicState(roomMatch[1], token, roleHint);
       if (result.status !== 200) sendJson(res, result.status, { error: result.error });
       else sendJson(res, 200, result.data);
+      return true;
+    }
+    if (roomMatch && req.method === 'DELETE') {
+      const token = urlObj.searchParams.get('token') || '';
+      const result = store.revokeRoom(roomMatch[1], token);
+      if (result.status !== 200) sendJson(res, result.status, { error: result.error });
+      else {
+        broadcastToRoom(roomMatch[1], {
+          type: 'error',
+          code: 410,
+          error: 'Classroom room has been ended/revoked by the teacher.',
+        });
+        sendJson(res, 200, result.data);
+      }
       return true;
     }
 

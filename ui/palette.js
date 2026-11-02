@@ -14,8 +14,10 @@ export function initCommandPalette(app) {
 
   function buildCommands() {
     const cmds = [];
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
 
     for (const t of TOOL_REGISTRY) {
+      if (!canEdit && app.collab && !app.collab.canUseTool(t.id)) continue;
       cmds.push({
         id: `tool:${t.id}`,
         title: `Tool: ${t.label}`,
@@ -28,6 +30,17 @@ export function initCommandPalette(app) {
     const redoKey = getShortcutLabel('redo');
     const groupKey = getShortcutLabel('group');
     const ungroupKey = getShortcutLabel('ungroup');
+
+    if (!canEdit) {
+      cmds.push(
+        { id: 'act:fit', title: 'View: Fit to Content', shortcut: '1', run: () => app.fitToContent() },
+        { id: 'act:zoom100', title: 'View: Reset Zoom 100%', shortcut: '0', run: () => app.setZoom(1) },
+        { id: 'act:theme', title: 'Theme: Toggle Light / Dark Mode', shortcut: '', run: () => app.toggleTheme() },
+        { id: 'act:export', title: 'File: Export PNG / SVG / Student Handout PDF', shortcut: '', run: () => app.dialogs.openExportModal() },
+        { id: 'act:save', title: 'File: Save .whiteboard.json', shortcut: '', run: () => app.saveWhiteboardFile() }
+      );
+      return cmds;
+    }
 
     const actions = [
       { id: 'act:image', title: 'Insert: Image from File', shortcut: 'I', run: () => app.openImageFilePicker() },

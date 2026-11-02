@@ -78,6 +78,7 @@ export class TextTool {
   onPointerUp() {}
 
   onPointerDown(world) {
+    if (this.app.collab && !this.app.collab.canEditBoard()) return;
     if (this.isOpen()) {
       this.commitAndClose();
       return;
@@ -104,6 +105,7 @@ export class TextTool {
 
   openEditorForElement(el, worldPoint = null) {
     if (!el || el.locked || !this.editorEl) return;
+    if (this.app.collab && !this.app.collab.canEditBoard()) return;
     const page = this.app.getPage();
     const cam = page.camera;
     const rect = this.app.canvas.getBoundingClientRect();

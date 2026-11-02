@@ -8,6 +8,7 @@ export function initPagesBar(app) {
   function render() {
     const pages = app.scene.pages;
     const activeId = app.scene.activePageId;
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
 
     bar.innerHTML = `
       <div class="wb-page-tabs" role="tablist" aria-label="Whiteboard Pages">
@@ -20,24 +21,32 @@ export function initPagesBar(app) {
               class="wb-page-select"
               role="tab"
               aria-selected="${p.id === activeId}"
-              aria-label="Switch to page ${escapeXml(p.name)} (double-click to rename)"
+              aria-label="Switch to page ${escapeXml(p.name)}${canEdit ? ' (double-click to rename)' : ''}"
               data-switch-page="${escapeXml(p.id)}"
-              title="Switch to ${escapeXml(p.name)} (Double-click to rename)"
+              title="Switch to ${escapeXml(p.name)}${canEdit ? ' (Double-click to rename)' : ''}"
             >
               ${escapeXml(p.name)}
             </button>
-            <div class="wb-page-tab-actions">
-              ${idx > 0 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:-1" aria-label="Move page left" title="Move page left">‹</button>` : ''}
-              ${idx < pages.length - 1 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:1" aria-label="Move page right" title="Move page right">›</button>` : ''}
-              <button type="button" class="wb-page-mini" data-dup-page="${escapeXml(p.id)}" aria-label="Duplicate page ${escapeXml(p.name)}" title="Duplicate page">⧉</button>
-              ${pages.length > 1 ? `<button type="button" class="wb-page-mini" data-del-page="${escapeXml(p.id)}" aria-label="Delete page ${escapeXml(p.name)}" title="Delete page">✕</button>` : ''}
-            </div>
+            ${
+              canEdit
+                ? `<div class="wb-page-tab-actions">
+                    ${idx > 0 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:-1" aria-label="Move page left" title="Move page left">‹</button>` : ''}
+                    ${idx < pages.length - 1 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:1" aria-label="Move page right" title="Move page right">›</button>` : ''}
+                    <button type="button" class="wb-page-mini" data-dup-page="${escapeXml(p.id)}" aria-label="Duplicate page ${escapeXml(p.name)}" title="Duplicate page">⧉</button>
+                    ${pages.length > 1 ? `<button type="button" class="wb-page-mini" data-del-page="${escapeXml(p.id)}" aria-label="Delete page ${escapeXml(p.name)}" title="Delete page">✕</button>` : ''}
+                  </div>`
+                : ''
+            }
           </div>
         `
           )
           .join('')}
       </div>
-      <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add new page" title="Add new page">+ Page</button>
+      ${
+        canEdit
+          ? `<button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add new page" title="Add new page">+ Page</button>`
+          : ''
+      }
     `;
 
     bar.querySelectorAll('[data-switch-page]').forEach((b) => {
@@ -45,6 +54,7 @@ export function initPagesBar(app) {
         app.switchPage(b.dataset.switchPage);
       });
       b.addEventListener('dblclick', () => {
+        if (!canEdit) return;
         const pid = b.dataset.switchPage;
         const p = app.scene.pages.find((pg) => pg.id === pid);
         if (!p) return;

@@ -213,6 +213,26 @@ export class WhiteboardApp {
     this.requestRender();
   }
 
+  notifyUpdateAvailable(versionLabel = 'New version') {
+    this.updateAvailable = true;
+    this.updateVersionLabel = versionLabel;
+    this.toolbarUI?.update();
+    this.dialogs?.showToast(
+      'Update available — your board stays safe. Click "Save & Reload" in the banner when ready.',
+      'info'
+    );
+  }
+
+  applyAppUpdate() {
+    saveRecoverySnapshot(this.scene, 'Before App Update Reload');
+    this.flushAutosave?.();
+    this.updateAvailable = false;
+    this.toolbarUI?.update();
+    if (typeof window !== 'undefined' && window.location?.reload) {
+      window.location.reload();
+    }
+  }
+
   getPinnedTools(presetId = this.activePreset) {
     const key = WORKSPACE_PRESETS[presetId] ? presetId : 'diagram';
     const list = this.pinnedToolsByPreset?.[key];
@@ -456,11 +476,12 @@ export class WhiteboardApp {
   }
 
   setTool(toolId) {
-    if (
-      !this.collab.canEditBoard() &&
-      !['select', 'hand', 'laser', 'pointer', 'question'].includes(toolId)
-    ) {
-      this.dialogs.showToast('Read-only / Viewer mode: use Point (W) or Question (Q) to participate.');
+    if (!this.collab.canUseTool(toolId)) {
+      const msg =
+        this.collab.status === 'snapshot'
+          ? 'Read-only snapshot: only Select (V) and Hand (H) navigation are enabled.'
+          : 'Viewer / Questioner mode: use Select (V), Hand (H), Point (W), or Pin Question (Q) to participate.';
+      this.dialogs.showToast(msg, 'info');
       return;
     }
     if (this.textTool.isOpen()) this.textTool.commit();
@@ -498,6 +519,22 @@ export class WhiteboardApp {
       this.collab.broadcastSceneChange();
       this.updateUI();
       this.requestRender();
+      return;
+    }
+    if (Array.isArray(this.pageUndoStack) && this.pageUndoStack.length > 0) {
+      const op = this.pageUndoStack.pop();
+      if (op.type === 'delete-page' && op.page) {
+        const idx = Math.max(0, Math.min(this.scene.pages.length, Number(op.index) || 0));
+        this.scene.pages.splice(idx, 0, op.page);
+        this.history.initPage(op.page);
+        this.scene.activePageId = op.page.id;
+        this.selectedIds.clear();
+        this.scheduleAutosave(this.scene);
+        this.collab.broadcastSceneChange();
+        this.updateUI();
+        this.requestRender();
+        this.dialogs?.showToast(`Restored page "${op.page.name}".`, 'info');
+      }
     }
   }
 
@@ -702,8 +739,21 @@ export class WhiteboardApp {
 
   deletePage(pageId) {
     if (!this.collab.canEditBoard() || this.scene.pages.length <= 1) return;
-    this.scene.pages = this.scene.pages.filter((p) => p.id !== pageId);
-    if (this.scene.activePageId === pageId) this.scene.activePageId = this.scene.pages[0].id;
+    const deletedIdx = this.scene.pages.findIndex((p) => p.id === pageId);
+    if (deletedIdx === -1) return;
+    const targetPage = this.scene.pages[deletedIdx];
+    saveRecoverySnapshot(this.scene, `Before deleting page: ${targetPage.name}`);
+    if (!this.pageUndoStack) this.pageUndoStack = [];
+    this.pageUndoStack.push({
+      type: 'delete-page',
+      page: structuredClone(targetPage),
+      index: deletedIdx,
+    });
+    this.scene.pages.splice(deletedIdx, 1);
+    if (this.scene.activePageId === pageId) {
+      const nearestIdx = Math.min(deletedIdx, this.scene.pages.length - 1);
+      this.scene.activePageId = this.scene.pages[nearestIdx].id;
+    }
     this.selectedIds.clear();
     this.scheduleAutosave(this.scene);
     this.collab.broadcastSceneChange();
@@ -1079,7 +1129,7 @@ export class WhiteboardApp {
 
   insertDiagramPack(packId) {
     if (!this.collab.canEditBoard()) return;
-    const pack = buildDevOpsDiagramPacks().find((p) => p.id === packId);
+    const pack = buildDevOpsDiagramPacks().find((p) => p.id === packId || `tpl-${p.id}` === packId);
     if (!pack) return;
     const page = this.getPage();
     const built = typeof pack.build === 'function' ? pack.build() : cloneElementsWithBindings(pack.elements || [], 0, 0);
@@ -1104,8 +1154,11 @@ export class WhiteboardApp {
 
   applyTemplate(tplId) {
     if (!this.collab.canEditBoard()) return;
-    const tpl = BUILTIN_TEMPLATES.find((t) => t.id === tplId);
-    if (!tpl) return;
+    const tpl = BUILTIN_TEMPLATES.find((t) => t.id === tplId || t.packId === tplId);
+    if (!tpl) {
+      this.insertDiagramPack(tplId);
+      return;
+    }
     saveRecoverySnapshot(this.scene, `Before Template: ${tpl.name}`);
     const page = this.getPage();
     const built = tpl.build();
@@ -1120,6 +1173,10 @@ export class WhiteboardApp {
     this.fitToContent();
     this.updateUI();
     this.dialogs.showToast(`Applied template "${tpl.name}".`);
+  }
+
+  insertTemplate(tplId) {
+    return this.applyTemplate(tplId);
   }
 
   insertMathOverlay(kind = 'ruler') {
@@ -1463,6 +1520,11 @@ export class WhiteboardApp {
     });
 
     document.getElementById('wb-file-open-json')?.addEventListener('change', async (e) => {
+      if (!this.collab.canEditBoard()) {
+        this.dialogs.showToast('Cannot overwrite board in read-only / viewer mode.');
+        e.target.value = '';
+        return;
+      }
       const f = e.target.files?.[0];
       if (!f) return;
       try {
@@ -1483,6 +1545,11 @@ export class WhiteboardApp {
     });
 
     document.getElementById('wb-file-image')?.addEventListener('change', (e) => {
+      if (!this.collab.canEditBoard()) {
+        this.dialogs.showToast('Image insertion is disabled in read-only / viewer mode.');
+        e.target.value = '';
+        return;
+      }
       if (e.target.files?.length) handleImageFiles(this, e.target.files);
       e.target.value = '';
     });

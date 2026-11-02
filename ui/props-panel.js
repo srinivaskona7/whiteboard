@@ -50,6 +50,101 @@ export function initPropsPanel(app) {
     const prevScroll = container.scrollTop;
     container.classList.remove('wb-hidden');
 
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
+    if (!canEdit) {
+      const isSnap = app.collab?.status === 'snapshot';
+      const roleTitle = isSnap
+        ? 'Read-Only Snapshot'
+        : `Live Classroom (${app.collab?.role || 'viewer'})`;
+      const el = selected[0] || null;
+      const hierarchy = el ? getElementContainmentPath(page, el) : [];
+      container.innerHTML = `
+        <div class="wb-panel-header" style="padding:0 0 8px 0;margin-bottom:8px;">
+          <strong>${escapeXml(roleTitle)}</strong>
+          <button type="button" class="wb-icon-btn" id="btn-close-props" aria-label="Close Inspector Panel" title="Close Inspector Panel">✕</button>
+        </div>
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Viewer Navigation & Export</div>
+          <p class="wb-muted" style="margin-bottom:6px;">
+            ${
+              isSnap
+                ? 'This is an immutable read-only board snapshot. You can pan, zoom, inspect components, and export diagrams.'
+                : 'You are connected as a classroom participant. Board editing is locked to the teacher/editors, while pointing and Q&A are enabled.'
+            }
+          </p>
+          <div class="wb-btn-group" style="flex-wrap:wrap;gap:4px;">
+            <button type="button" class="wb-btn wb-sm" id="btn-ro-fit">Fit Board</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-ro-zoom100">100% Zoom</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-ro-export">Export PNG/SVG</button>
+          </div>
+        </div>
+        ${
+          !isSnap
+            ? `<div class="wb-prop-section">
+                <div class="wb-prop-title">Classroom Participation</div>
+                <div class="wb-btn-group" style="flex-wrap:wrap;gap:4px;">
+                  <button type="button" class="wb-btn wb-sm ${app.activeTool === 'pointer' ? 'active' : ''}" id="btn-ro-pointer">🎯 Point (W)</button>
+                  <button type="button" class="wb-btn wb-sm ${app.activeTool === 'question' ? 'active' : ''}" id="btn-ro-question">❓ Pin Question (Q)</button>
+                  <button type="button" class="wb-btn wb-sm ${app.collab?.handRaised ? 'active wb-primary' : ''}" id="btn-ro-hand">✋ ${app.collab?.handRaised ? 'Lower Hand' : 'Raise Hand'}</button>
+                </div>
+              </div>`
+            : ''
+        }
+        ${
+          el
+            ? `<div class="wb-prop-section">
+                <div class="wb-prop-title">Selected Component</div>
+                <div class="wb-prop-row"><span>Name</span><strong>${escapeXml(el.text || el.name || el.type)}</strong></div>
+                <div class="wb-prop-row"><span>Type</span><span>${escapeXml(el.category || el.type)}</span></div>
+                ${
+                  hierarchy.length > 1
+                    ? `<div class="wb-breadcrumbs" id="wb-container-breadcrumbs">
+                        ${hierarchy
+                          .map(
+                            (item, idx) =>
+                              `<button type="button" class="wb-breadcrumb-chip ${idx === hierarchy.length - 1 ? 'active' : ''}" data-breadcrumb-id="${escapeXml(item.id)}">${escapeXml(item.name)}</button>`
+                          )
+                          .join('<span class="wb-breadcrumb-sep">›</span>')}
+                      </div>`
+                    : ''
+                }
+                ${
+                  el.link
+                    ? `<button type="button" class="wb-btn wb-sm wb-primary" id="btn-ro-open-link" style="margin-top:6px;">🔗 Open Attached Link</button>`
+                    : ''
+                }
+              </div>`
+            : ''
+        }
+      `;
+      container.querySelector('#btn-close-props')?.addEventListener('click', () => {
+        app.setPropsDrawerOpen(false);
+      });
+      container.querySelector('#btn-ro-fit')?.addEventListener('click', () => app.fitToContent());
+      container.querySelector('#btn-ro-zoom100')?.addEventListener('click', () => app.resetZoom());
+      container.querySelector('#btn-ro-export')?.addEventListener('click', () => app.dialogs.openExportModal());
+      container.querySelector('#btn-ro-pointer')?.addEventListener('click', () => app.setTool('pointer'));
+      container.querySelector('#btn-ro-question')?.addEventListener('click', () => app.setTool('question'));
+      container.querySelector('#btn-ro-hand')?.addEventListener('click', () => {
+        app.collab?.toggleHandRaised();
+        render();
+      });
+      container.querySelector('#btn-ro-open-link')?.addEventListener('click', () => {
+        if (el?.link) window.open(el.link, '_blank', 'noopener,noreferrer');
+      });
+      container.querySelectorAll('[data-breadcrumb-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.dataset.breadcrumbId;
+          if (targetId && page.elements.some((e) => e.id === targetId)) {
+            app.selectedIds = new Set([targetId]);
+            app.updateUI();
+            app.requestRender();
+          }
+        });
+      });
+      return;
+    }
+
     const sections = [
       `<div class="wb-panel-header" style="padding:0 0 8px 0;margin-bottom:8px;">
         <strong>${selected.length > 0 ? `Inspector (${selected.length})` : 'Canvas & Tool Style'}</strong>

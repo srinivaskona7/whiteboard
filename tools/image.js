@@ -2,6 +2,10 @@
 import { uid, createElement } from '../scene/model.js';
 
 export async function insertImageFile(app, file, worldPos = null) {
+  if (app.collab && !app.collab.canEditBoard()) {
+    app.dialogs?.showToast('Read-only / Viewer mode: image insertion is disabled.');
+    return null;
+  }
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -12,6 +16,10 @@ export async function insertImageFile(app, file, worldPos = null) {
 }
 
 export async function insertImageDataUrl(app, rawDataUrl, worldPos = null) {
+  if (app.collab && !app.collab.canEditBoard()) {
+    app.dialogs?.showToast('Read-only / Viewer mode: image insertion is disabled.');
+    return null;
+  }
   const img = await new Promise((resolve, reject) => {
     const i = new Image();
     i.onload = () => resolve(i);

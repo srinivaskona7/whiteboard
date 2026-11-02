@@ -173,12 +173,19 @@ export function initToolbar(app) {
 
   function renderDock(forceRebuild = false) {
     if (!dock) return;
-    const pinnedIds = app.focusMode
-      ? app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
-      : app.getPinnedTools
-        ? app.getPinnedTools()
-        : PRIMARY_TOOL_IDS;
-    const sig = `${Boolean(app.focusMode)}:${pinnedIds.join(',')}`;
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
+    const collabStatus = app.collab?.status || 'local';
+    const rawPinnedIds = !canEdit
+      ? collabStatus === 'snapshot'
+        ? ['select', 'hand']
+        : ['select', 'hand', 'pointer', 'question']
+      : app.focusMode
+        ? app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
+        : app.getPinnedTools
+          ? app.getPinnedTools()
+          : PRIMARY_TOOL_IDS;
+    const pinnedIds = rawPinnedIds.filter((id) => (app.collab ? app.collab.canUseTool(id) : true));
+    const sig = `${canEdit}:${collabStatus}:${Boolean(app.focusMode)}:${pinnedIds.join(',')}`;
 
     if (!forceRebuild && sig === lastDockSignature && dock.querySelector('.wb-tool-list')) {
       const pinnedSet = new Set(pinnedIds);
@@ -210,7 +217,7 @@ export function initToolbar(app) {
     lastDockSignature = sig;
     const pinnedSet = new Set(pinnedIds);
     const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id));
-    const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id));
+    const advancedTools = canEdit ? TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id)) : [];
 
     dock.innerHTML = `
       <div class="wb-tool-list" role="toolbar" aria-label="Drawing Tools">
@@ -232,62 +239,68 @@ export function initToolbar(app) {
           )
           .join('')}
         ${
-          !app.focusMode
-            ? `<div class="wb-insert-wrap">
-                <button
-                  type="button"
-                  class="wb-tool-btn ${advancedTools.some((t) => t.id === app.activeTool) ? 'active' : ''}"
-                  id="btn-insert-more"
-                  aria-label="Insert More Tools, Shapes, Media & Customize Dock"
-                  title="More Tools, Shapes, Media & Customize Dock (+)"
-                >
-                  <span class="wb-tool-icon">${ICONS.plus || '+'}</span>
-                  <span class="wb-tool-key">+</span>
-                </button>
-                <div class="wb-insert-popover wb-hidden" id="wb-insert-popover" role="menu">
-                  <div class="wb-prop-title" style="margin-bottom:4px;">More Tools & Media</div>
-                  ${advancedTools
-                    .map(
-                      (t) => `
-                    <button type="button" class="wb-menu-item ${app.activeTool === t.id ? 'active' : ''}" data-insert-tool="${t.id}">
-                      ${t.icon} <span>${escapeXml(t.label)}</span> <kbd style="margin-left:auto;font-size:10px;opacity:0.7;">${escapeXml(t.shortcut)}</kbd>
-                    </button>
-                  `
-                    )
-                    .join('')}
-                  <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
-                  <button type="button" class="wb-menu-item" data-insert-math="ruler">📏 Ruler Overlay</button>
-                  <button type="button" class="wb-menu-item" data-insert-math="protractor">📐 Protractor Overlay</button>
-                  <button type="button" class="wb-menu-item" id="btn-insert-mermaid-quick">${ICONS.mermaid} Mermaid Diagram…</button>
-                  <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
-                  <button type="button" class="wb-menu-item" id="btn-popover-customize-tools">${ICONS.sliders} Customize Pinned Tools…</button>
-                </div>
-              </div>`
-            : `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Questions" title="Open Classroom Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>
-               <button type="button" class="wb-tool-btn" id="btn-focus-customize" aria-label="Customize Focus Tools" title="Customize Focus Tools">${ICONS.sliders}</button>`
+          !canEdit
+            ? `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Participation" title="Open Classroom Participation & Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>`
+            : !app.focusMode
+              ? `<div class="wb-insert-wrap">
+                  <button
+                    type="button"
+                    class="wb-tool-btn ${advancedTools.some((t) => t.id === app.activeTool) ? 'active' : ''}"
+                    id="btn-insert-more"
+                    aria-label="Insert More Tools, Shapes, Media & Customize Dock"
+                    title="More Tools, Shapes, Media & Customize Dock (+)"
+                  >
+                    <span class="wb-tool-icon">${ICONS.plus || '+'}</span>
+                    <span class="wb-tool-key">+</span>
+                  </button>
+                  <div class="wb-insert-popover wb-hidden" id="wb-insert-popover" role="menu">
+                    <div class="wb-prop-title" style="margin-bottom:4px;">More Tools & Media</div>
+                    ${advancedTools
+                      .map(
+                        (t) => `
+                      <button type="button" class="wb-menu-item ${app.activeTool === t.id ? 'active' : ''}" data-insert-tool="${t.id}">
+                        ${t.icon} <span>${escapeXml(t.label)}</span> <kbd style="margin-left:auto;font-size:10px;opacity:0.7;">${escapeXml(t.shortcut)}</kbd>
+                      </button>
+                    `
+                      )
+                      .join('')}
+                    <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
+                    <button type="button" class="wb-menu-item" data-insert-math="ruler">📏 Ruler Overlay</button>
+                    <button type="button" class="wb-menu-item" data-insert-math="protractor">📐 Protractor Overlay</button>
+                    <button type="button" class="wb-menu-item" id="btn-insert-mermaid-quick">${ICONS.mermaid} Mermaid Diagram…</button>
+                    <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
+                    <button type="button" class="wb-menu-item" id="btn-popover-customize-tools">${ICONS.sliders} Customize Pinned Tools…</button>
+                  </div>
+                </div>`
+              : `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Questions" title="Open Classroom Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>
+                 <button type="button" class="wb-tool-btn" id="btn-focus-customize" aria-label="Customize Focus Tools" title="Customize Focus Tools">${ICONS.sliders}</button>`
         }
       </div>
-      <div class="wb-dock-footer">
-        <button
-          type="button"
-          class="wb-tool-btn"
-          id="btn-customize-dock"
-          aria-label="Customize Pinned Tools"
-          title="Customize Pinned Tools for ${escapeXml(WORKSPACE_PRESETS[app.activePreset]?.label || 'Preset')}"
-        >
-          <span class="wb-tool-icon">${ICONS.sliders}</span>
-        </button>
-        <button
-          type="button"
-          class="wb-tool-btn ${app.toolLock ? 'active' : ''}"
-          id="btn-tool-lock"
-          aria-label="Lock active tool (Shift+Q)"
-          aria-pressed="${app.toolLock}"
-          title="Keep current tool active after drawing (Shift+Q)"
-        >
-          <span class="wb-tool-icon">${ICONS.lock}</span>
-        </button>
-      </div>
+      ${
+        canEdit
+          ? `<div class="wb-dock-footer">
+              <button
+                type="button"
+                class="wb-tool-btn"
+                id="btn-customize-dock"
+                aria-label="Customize Pinned Tools"
+                title="Customize Pinned Tools for ${escapeXml(WORKSPACE_PRESETS[app.activePreset]?.label || 'Preset')}"
+              >
+                <span class="wb-tool-icon">${ICONS.sliders}</span>
+              </button>
+              <button
+                type="button"
+                class="wb-tool-btn ${app.toolLock ? 'active' : ''}"
+                id="btn-tool-lock"
+                aria-label="Lock active tool (Shift+Q)"
+                aria-pressed="${app.toolLock}"
+                title="Keep current tool active after drawing (Shift+Q)"
+              >
+                <span class="wb-tool-icon">${ICONS.lock}</span>
+              </button>
+            </div>`
+          : ''
+      }
     `;
 
     dock.querySelectorAll('[data-tool]').forEach((btn) => {
@@ -409,9 +422,19 @@ export function initToolbar(app) {
 
     if (app.collab?.followingTeacher) {
       pills.push(`
-        <div class="wb-floating-mode-pill">
+        <div class="wb-floating-mode-pill wb-follow-pill">
           <span>👁 Following Teacher Camera</span>
           <button type="button" class="wb-btn wb-sm wb-danger" id="btn-banner-stop-follow">Stop Following</button>
+        </div>
+      `);
+    }
+
+    if (app.updateAvailable) {
+      pills.push(`
+        <div class="wb-floating-mode-pill" id="wb-update-banner" role="status">
+          <span>🔄 Update available (${escapeXml(app.updateVersionLabel || 'latest')}) · Current board is saved</span>
+          <button type="button" class="wb-btn wb-sm wb-primary" id="btn-apply-app-update">Save & Reload</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-dismiss-app-update">Later</button>
         </div>
       `);
     }
@@ -463,6 +486,13 @@ export function initToolbar(app) {
     });
     modeBanner.querySelector('#btn-banner-stop-follow')?.addEventListener('click', () => {
       app.collab?.setFollowTeacher(false);
+    });
+    modeBanner.querySelector('#btn-apply-app-update')?.addEventListener('click', () => {
+      app.applyAppUpdate?.();
+    });
+    modeBanner.querySelector('#btn-dismiss-app-update')?.addEventListener('click', () => {
+      app.updateAvailable = false;
+      renderModeBanner();
     });
   }
 
@@ -534,12 +564,28 @@ export function initToolbar(app) {
         return Boolean(el && !el.classList.contains('wb-hidden'));
       };
 
-      if (undoBtn) undoBtn.disabled = !app.history.canUndo(page.id);
-      if (redoBtn) redoBtn.disabled = !app.history.canRedo(page.id);
+      const canEdit = app.collab ? app.collab.canEditBoard() : true;
+      const hasPageUndo = Array.isArray(app.pageUndoStack) && app.pageUndoStack.length > 0;
+      if (undoBtn) {
+        undoBtn.disabled = !canEdit || (!app.history.canUndo(page.id) && !hasPageUndo);
+        undoBtn.classList.toggle('wb-hidden', !canEdit);
+      }
+      if (redoBtn) {
+        redoBtn.disabled = !canEdit || !app.history.canRedo(page.id);
+        redoBtn.classList.toggle('wb-hidden', !canEdit);
+      }
       if (libBtn) {
         const open = isPanelOpen('wb-library-panel');
         libBtn.classList.toggle('active', open);
         libBtn.setAttribute('aria-pressed', String(open));
+        libBtn.classList.toggle('wb-hidden', !canEdit);
+      }
+      topBar?.querySelector('#btn-mermaid')?.classList.toggle('wb-hidden', !canEdit);
+      topBar?.querySelector('#btn-auto-layout-board')?.classList.toggle('wb-hidden', !canEdit);
+      topBar?.querySelector('#btn-open-json')?.classList.toggle('wb-hidden', !canEdit);
+      topBar?.querySelector('#btn-recovery')?.classList.toggle('wb-hidden', !canEdit);
+      if (titleInput) {
+        titleInput.readOnly = !canEdit;
       }
       if (layersBtn) {
         const open = isPanelOpen('wb-layers-panel');

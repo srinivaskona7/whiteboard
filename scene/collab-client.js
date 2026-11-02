@@ -170,6 +170,18 @@ export class CollabClient {
     return true;
   }
 
+  canUseTool(toolId) {
+    if (this.canEditBoard()) return true;
+    if (this.status === 'snapshot') {
+      return toolId === 'select' || toolId === 'hand';
+    }
+    return ['select', 'hand', 'pointer', 'question'].includes(toolId);
+  }
+
+  isRestrictedViewer() {
+    return !this.canEditBoard();
+  }
+
   async createShortSnapshot(expiresInMs = null) {
     assertValidSceneGeometry(this.app.scene);
     const healthy = await this.checkBackendHealth();
@@ -442,6 +454,28 @@ export class CollabClient {
     }
     this.app.updateUI?.();
     this.app.requestRender?.();
+  }
+
+  async revokeActiveRoom() {
+    if (!this.roomId || !this.teacherToken) return false;
+    const res = await fetch(
+      this.getEndpoint(
+        `/api/rooms/${encodeURIComponent(this.roomId)}?token=${encodeURIComponent(this.teacherToken)}`
+      ),
+      { method: 'DELETE' }
+    );
+    if (!res.ok) return false;
+    this.leaveRoom();
+    this.app.dialogs?.showToast('Classroom room link revoked and session ended.', 'info');
+    return true;
+  }
+
+  async revokeSnapshot(boardId) {
+    if (!boardId) return false;
+    const res = await fetch(this.getEndpoint(`/api/boards/${encodeURIComponent(boardId)}`), {
+      method: 'DELETE',
+    });
+    return res.ok;
   }
 
   _updateLiveStatusText() {

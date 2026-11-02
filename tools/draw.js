@@ -8,12 +8,17 @@ export class DrawTool {
   constructor(app) {
     this.app = app;
     this.activeElement = null;
+    this.activePointerType = null;
     this.startWorld = { x: 0, y: 0 };
     this.isErasing = false;
     this.erasedAny = false;
   }
 
   onPointerDown(world, ev = {}) {
+    if (this.activeElement && this.activePointerType === 'pen' && ev?.pointerType === 'touch') {
+      return; // Palm rejection while stylus pen is active
+    }
+    this.activePointerType = ev?.pointerType || 'mouse';
     const tool = this.app.activeTool;
     const page = this.app.getPage();
     const style = this.app.currentStyle;
@@ -27,13 +32,14 @@ export class DrawTool {
 
     if (tool === 'pen' || tool === 'highlighter') {
       const isFading = Boolean(this.app.annotationMode || this.app.fadingInk);
+      const pressure = Number.isFinite(ev?.pressure) && ev.pressure > 0 ? ev.pressure : 0.5;
       const el = createElement(tool, {
         x: world.x,
         y: world.y,
         stroke: tool === 'highlighter' ? '#facc15' : style.stroke,
         strokeWidth: tool === 'highlighter' ? 20 : style.strokeWidth,
         opacity: tool === 'highlighter' ? 0.42 : style.opacity,
-        points: [{ x: world.x, y: world.y }],
+        points: [{ x: world.x, y: world.y, p: pressure }],
         fading: isFading,
         createdAt: Date.now(),
       });

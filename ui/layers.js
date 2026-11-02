@@ -8,6 +8,7 @@ export function initLayersPanel(app) {
   function render() {
     const page = app.getPage();
     const elements = [...page.elements].reverse();
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
 
     panel.innerHTML = `
       <div class="wb-panel-header">
@@ -30,16 +31,20 @@ export function initLayersPanel(app) {
                         <button type="button" class="wb-layer-select" data-sel-layer="${escapeXml(el.id)}" aria-label="Select layer ${escapeXml(label)}" title="Select ${escapeXml(label)}">
                           ${escapeXml(label)}
                         </button>
-                        <div class="wb-layer-actions">
-                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:front" aria-label="Move layer up" title="Move layer up (Bring to front)">⇡</button>
-                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:back" aria-label="Move layer down" title="Move layer down (Send to back)">⇣</button>
-                          <button type="button" class="wb-icon-btn" data-lock-layer="${escapeXml(el.id)}" aria-label="${lockLabel}" title="${lockLabel}">
-                            ${el.locked ? '🔒' : '🔓'}
-                          </button>
-                          <button type="button" class="wb-icon-btn" data-hide-layer="${escapeXml(el.id)}" aria-label="${hideLabel}" title="${hideLabel}">
-                            ${el.hidden ? '🙈' : '👁'}
-                          </button>
-                        </div>
+                        ${
+                          canEdit
+                            ? `<div class="wb-layer-actions">
+                                <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:front" aria-label="Move layer up" title="Move layer up (Bring to front)">⇡</button>
+                                <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:back" aria-label="Move layer down" title="Move layer down (Send to back)">⇣</button>
+                                <button type="button" class="wb-icon-btn" data-lock-layer="${escapeXml(el.id)}" aria-label="${lockLabel}" title="${lockLabel}">
+                                  ${el.locked ? '🔒' : '🔓'}
+                                </button>
+                                <button type="button" class="wb-icon-btn" data-hide-layer="${escapeXml(el.id)}" aria-label="${hideLabel}" title="${hideLabel}">
+                                  ${el.hidden ? '🙈' : '👁'}
+                                </button>
+                              </div>`
+                            : ''
+                        }
                       </div>
                     `;
                   })

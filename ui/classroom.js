@@ -415,9 +415,10 @@ export function initClassroomUI(app) {
                             : ''
                         }
                       </div>`
-                    : `<div class="wb-btn-group" style="margin-top:6px;">
+                    : `<div class="wb-btn-group" style="margin-top:6px;flex-wrap:wrap;">
                         <button type="button" class="wb-btn wb-sm" id="btn-cls-broadcast-view" title="Broadcast current page and camera viewport to students following you">📡 Broadcast My View</button>
                         <button type="button" class="wb-btn wb-sm" id="btn-cls-shared-timer" title="Open Shared Classroom Timer">⏱ Shared Timer</button>
+                        <button type="button" class="wb-btn wb-sm wb-danger" id="btn-cls-revoke-room" title="Revoke room links and end live classroom session">⛔ Revoke Room</button>
                       </div>`
                 }`
               : ''
@@ -597,6 +598,11 @@ export function initClassroomUI(app) {
 
     panel.querySelector('#btn-cls-shared-timer')?.addEventListener('click', () => {
       app.timerUI?.toggle();
+    });
+
+    panel.querySelector('#btn-cls-revoke-room')?.addEventListener('click', async () => {
+      await app.collab?.revokeActiveRoom();
+      render();
     });
 
     panel.querySelector('#btn-cls-raise-hand')?.addEventListener('click', () => {

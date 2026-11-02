@@ -27,8 +27,10 @@ import {
   getConnectorTangentFromPoint,
   getConnectorLabelPosition,
   buildRoundedElbowSvgPath,
+  deduplicateCollinear,
   resetConnectorRoute,
 } from '../scene/routing.js';
+import { DrawTool } from '../tools/draw.js';
 import { bindConnectorEndpoint, updateConnectorBindings } from '../scene/bindings.js';
 import { computeNonOverlappingOrigin } from '../scene/mermaid.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from '../scene/layout.js';
@@ -879,6 +881,73 @@ describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Brea
     // Verify unified shortcut helper
     assert.ok(getShortcutLabel('undo').includes('Z'));
     assert.ok(getShortcutLabel('redo').includes('Z'));
+
+    // Verify collinear segment deduplication removes zero-length and redundant bends
+    const rawPts = [
+      { x: 10, y: 10 },
+      { x: 10, y: 10.2 },
+      { x: 10, y: 80 },
+      { x: 10, y: 140 },
+      { x: 120, y: 140 },
+    ];
+    const deduped = deduplicateCollinear(rawPts);
+    assert.equal(deduped.length, 3);
+    assert.deepEqual(deduped[1], { x: 10, y: 140 });
+
+    // Verify DrawTool stylus pressure capture & palm rejection during pen stroke
+    const drawPage = createPage('Stylus');
+    const drawTool = new DrawTool({
+      activeTool: 'pen',
+      currentStyle: { stroke: '#1e293b', strokeWidth: 3, opacity: 1 },
+      scene: { settings: { snapToGrid: false } },
+      getPage: () => drawPage,
+      requestRender: () => {},
+    });
+    drawTool.onPointerDown({ x: 50, y: 60 }, { pointerType: 'pen', pressure: 0.78 });
+    assert.equal(drawPage.elements.length, 1);
+    assert.equal(drawPage.elements[0].points[0].p, 0.78);
+    // Simulate accidental palm touch while pen stroke is active
+    drawTool.onPointerDown({ x: 200, y: 200 }, { pointerType: 'touch', pressure: 0.5 });
+    assert.equal(drawPage.elements.length, 1, 'Palm touch during active pen stroke must be rejected');
+  });
+
+  test('revokes snapshot and classroom room links with 410 Gone and enforces teacher token for room revocation', async () => {
+    const srv = createStandaloneCollabServer({ port: 0 });
+    try {
+      const scene = createScene('light');
+      const snapRes = await srv.request('/api/boards', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Revocable Snapshot', scene }),
+      });
+      const snap = await snapRes.json();
+      const delSnap = await srv.request(`/api/boards/${snap.id}`, { method: 'DELETE' });
+      assert.equal(delSnap.status, 200);
+      const getRevokedSnap = await srv.request(`/api/boards/${snap.id}`);
+      assert.equal(getRevokedSnap.status, 410);
+
+      const roomRes = await srv.request('/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Revocable Room', scene }),
+      });
+      const room = await roomRes.json();
+
+      // Viewer cannot revoke room
+      const forbiddenRevoke = await srv.request(`/api/rooms/${room.roomId}?token=wrong`, {
+        method: 'DELETE',
+      });
+      assert.equal(forbiddenRevoke.status, 403);
+
+      // Teacher can revoke room
+      const okRevoke = await srv.request(
+        `/api/rooms/${room.roomId}?token=${encodeURIComponent(room.teacherToken)}`,
+        { method: 'DELETE' }
+      );
+      assert.equal(okRevoke.status, 200);
+      const getRevokedRoom = await srv.request(`/api/rooms/${room.roomId}`);
+      assert.equal(getRevokedRoom.status, 410);
+    } finally {
+      await srv.stop();
+    }
   });
 });
 
