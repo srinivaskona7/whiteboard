@@ -5,7 +5,9 @@ import { wrapShapeTextLines } from '../scene/model.js';
 import {
   getConnectorPoints,
   getPointAlongConnector,
+  getConnectorLabelPosition,
   getConnectorTangentFromPoint,
+  buildRoundedElbowSvgPath,
 } from '../scene/routing.js';
 import { getStencilById } from '../stencils/index.js';
 import { parseHighlightSet } from './shapes.js';
@@ -84,16 +86,21 @@ function renderSvgTextBlock(el, themeName, padding = 12) {
     .join('');
 }
 
-export function exportToSvgString(scene, page, options = {}) {
+export function exportToSvgString(scene, page = null, options = {}) {
+  const resolvedPage =
+    page && Array.isArray(page.elements)
+      ? page
+      : scene?.pages?.find((p) => p.id === scene.activePageId) || scene?.pages?.[0];
+  const resolvedOpts = page && !Array.isArray(page.elements) ? page : options;
   const {
     selectionOnly = false,
     selectedIds = new Set(),
     transparent = false,
-  } = options;
+  } = resolvedOpts;
 
   const elements = selectionOnly
-    ? page.elements.filter((e) => selectedIds.has(e.id) && !e.hidden)
-    : page.elements.filter((e) => !e.hidden);
+    ? resolvedPage.elements.filter((e) => selectedIds.has(e.id) && !e.hidden)
+    : resolvedPage.elements.filter((e) => !e.hidden);
 
   const bounds = getSelectionBounds(elements) || { x: 0, y: 0, w: 800, h: 600 };
   const pad = 32;
@@ -114,7 +121,7 @@ export function exportToSvgString(scene, page, options = {}) {
   }
 
   for (const el of elements) {
-    parts.push(elementToSvg(el, page, scene, theme));
+    parts.push(elementToSvg(el, resolvedPage, scene, theme));
   }
 
   parts.push(`</svg>`);
@@ -161,6 +168,8 @@ function elementToSvg(el, page, scene, theme) {
       let d;
       if (el.routing === 'curved' && pts.length === 3) {
         d = `M ${pts[0].x} ${pts[0].y} Q ${pts[1].x} ${pts[1].y} ${pts[2].x} ${pts[2].y}`;
+      } else if (el.routing === 'rounded-elbow' && pts.length >= 3) {
+        d = buildRoundedElbowSvgPath(pts, Number(el.cornerRadius) || 14);
       } else {
         d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
       }
@@ -174,13 +183,18 @@ function elementToSvg(el, page, scene, theme) {
         const pFrom = getConnectorTangentFromPoint(el, 'end', page);
         inner += renderSvgArrowhead(el.endArrow, last.x, last.y, pFrom.x, pFrom.y, sw, stroke);
       }
-      if (el.text) {
-        const lp = getPointAlongConnector(el, el.labelT ?? 0.5, page);
-        const fontSize = el.fontSize || 15;
-        const bw = Math.max(36, el.text.length * fontSize * 0.6 + 14);
+      const labelSpecs = [
+        el.startLabel ? { text: String(el.startLabel), role: 'start', sizeScale: 0.86 } : null,
+        el.text ? { text: String(el.text), role: 'middle', sizeScale: 1 } : null,
+        el.endLabel ? { text: String(el.endLabel), role: 'end', sizeScale: 0.86 } : null,
+      ].filter(Boolean);
+      for (const spec of labelSpecs) {
+        const lp = getConnectorLabelPosition(el, spec.role, page);
+        const fontSize = Math.max(11, Math.round((el.fontSize || 15) * spec.sizeScale));
+        const bw = Math.max(28, spec.text.length * fontSize * 0.6 + 14);
         const bh = fontSize + 10;
         inner += `<rect x="${lp.x - bw / 2}" y="${lp.y - bh / 2}" width="${bw}" height="${bh}" rx="5" fill="${theme.connectorLabelBg}"/>`;
-        inner += `<text x="${lp.x}" y="${lp.y}" font-family="${escapeXml(FONT_MAP[el.fontFamily || 'sans'])}" font-size="${fontSize}" fill="${stroke}" text-anchor="middle" dominant-baseline="central">${escapeXml(el.text)}</text>`;
+        inner += `<text x="${lp.x}" y="${lp.y}" font-family="${escapeXml(FONT_MAP[el.fontFamily || 'sans'])}" font-size="${fontSize}" fill="${stroke}" text-anchor="middle" dominant-baseline="central">${escapeXml(spec.text)}</text>`;
       }
     }
   } else if (el.type === 'rect' || el.type === 'rounded-rect') {

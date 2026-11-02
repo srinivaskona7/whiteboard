@@ -1,5 +1,6 @@
-// ui/toolbar.js — Top Bar, Compact Primary Toolset, Insert Menu, Spotlight Banner & Zoom Controls
+// ui/toolbar.js — Top Bar, Workspace Presets, Compact Primary Toolset, Insert Menu, Spotlight Banner & Zoom Controls
 import { TOOL_REGISTRY, ICONS } from './registry.js';
+import { WORKSPACE_PRESETS } from '../scene/storage.js';
 import { escapeXml } from '../render/svg-export.js';
 
 export const PRIMARY_TOOL_IDS = [
@@ -27,6 +28,7 @@ export function initToolbar(app) {
 
   function renderTopBar() {
     if (!topBar) return;
+    const preset = app.activePreset || 'diagram';
     topBar.innerHTML = `
       <div class="wb-top-left">
         <button type="button" class="wb-brand-btn" id="btn-brand-home" title="StudioBoard — Reset View">
@@ -39,13 +41,32 @@ export function initToolbar(app) {
       </div>
 
       <div class="wb-top-center">
+        <div class="wb-preset-selector" id="wb-preset-selector" role="group" aria-label="Workspace Preset">
+          <span class="wb-preset-label wb-hide-md">Preset:</span>
+          ${Object.values(WORKSPACE_PRESETS)
+            .map(
+              (p) => `
+            <button
+              type="button"
+              class="wb-preset-btn ${preset === p.id ? 'active' : ''}"
+              data-preset="${p.id}"
+              aria-pressed="${preset === p.id}"
+              title="${escapeXml(p.description)}"
+            >${escapeXml(p.label)}</button>
+          `
+            )
+            .join('')}
+        </div>
+        <span class="wb-sep"></span>
         <button type="button" class="wb-btn" id="btn-undo" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl/Cmd+Z)">${ICONS.undo}</button>
         <button type="button" class="wb-btn" id="btn-redo" aria-label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)">${ICONS.redo}</button>
         <span class="wb-sep"></span>
         <button type="button" class="wb-btn" id="btn-library" aria-label="Toggle Stencil & Template Library" title="DevOps & Cloud Icon Library">${ICONS.library} <span class="wb-hide-sm">Library</span></button>
         <button type="button" class="wb-btn" id="btn-layers" aria-label="Toggle Layers Panel" title="Layers & Z-Order">${ICONS.layers} <span class="wb-hide-sm">Layers</span></button>
         <button type="button" class="wb-btn" id="btn-classroom" aria-label="Toggle Live Classroom & Questions" title="Live Classroom Share, Pointers & Student Questions">${ICONS.classroom} <span class="wb-hide-sm" id="wb-classroom-label">Classroom</span></button>
-        <button type="button" class="wb-btn" id="btn-props-toggle" aria-label="Toggle Inspector Panel" title="Toggle Style & Properties Inspector (I)">${ICONS.sliders} <span class="wb-hide-sm">Inspector</span></button>
+        <button type="button" class="wb-btn" id="btn-props-toggle" aria-label="Toggle Inspector Panel" title="Toggle Style & Properties Inspector">${ICONS.sliders} <span class="wb-hide-sm">Inspector</span></button>
+        <button type="button" class="wb-btn ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-present" title="Enter Lesson Presentation Mode (F6)">${ICONS.present} <span class="wb-hide-sm">Present</span></button>
+        <button type="button" class="wb-btn ${preset === 'diagram' ? 'wb-hidden' : ''}" id="btn-quick-timer" title="Toggle Class Countdown / Stopwatch">${ICONS.timer} <span class="wb-hide-sm">Timer</span></button>
 
         <div class="wb-dropdown">
           <button type="button" class="wb-btn" id="btn-teaching-menu" aria-haspopup="true" title="Teaching & Classroom Tools">${ICONS.teaching} <span class="wb-hide-sm">Teaching ▾</span></button>
@@ -57,14 +78,14 @@ export function initToolbar(app) {
             <button type="button" class="wb-menu-item" id="btn-annotation-mode">${ICONS.annotation} Live Annotation Mode (F8)</button>
             <button type="button" class="wb-menu-item" id="btn-timer">${ICONS.timer} Countdown / Stopwatch</button>
             <button type="button" class="wb-menu-item" id="btn-focus-mode">${ICONS.focus} Teaching Focus Mode (F10)</button>
-            <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Focus Tools…</button>
+            <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Pinned Tools…</button>
           </div>
         </div>
       </div>
 
       <div class="wb-top-right">
         <button type="button" class="wb-btn" id="btn-palette" aria-label="Command Palette (Ctrl+K)" title="Command Palette (Ctrl/Cmd+K)">${ICONS.search} <span class="wb-hide-md">⌘K</span></button>
-        <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Light / Dark / Chalkboard / Blueprint Theme">${ICONS.theme}</button>
+        <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Light / Dark Theme">${ICONS.theme}</button>
 
         <div class="wb-dropdown">
           <button type="button" class="wb-btn wb-primary" id="btn-board-menu" aria-haspopup="true" title="Board File, Share & Export Actions">${ICONS.menu} <span class="wb-hide-sm">Board ▾</span></button>
@@ -99,6 +120,12 @@ export function initToolbar(app) {
       document.querySelectorAll('.wb-dropdown-menu').forEach((m) => m.classList.add('wb-hidden'));
     });
 
+    topBar.querySelectorAll('[data-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        app.setWorkspacePreset(btn.dataset.preset);
+      });
+    });
+
     topBar.querySelector('#btn-brand-home')?.addEventListener('click', () => app.resetZoom());
     const titleInput = topBar.querySelector('#wb-doc-title');
     if (titleInput) {
@@ -117,6 +144,8 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-layers')?.addEventListener('click', () => app.togglePanel('wb-layers-panel'));
     topBar.querySelector('#btn-classroom')?.addEventListener('click', () => app.classroomUI.toggle());
     topBar.querySelector('#btn-props-toggle')?.addEventListener('click', () => app.togglePropsDrawer());
+    topBar.querySelector('#btn-quick-present')?.addEventListener('click', () => app.presentUI.enter());
+    topBar.querySelector('#btn-quick-timer')?.addEventListener('click', () => app.timerUI.toggle());
     topBar.querySelector('#btn-timer')?.addEventListener('click', () => app.timerUI.toggle());
     topBar.querySelector('#btn-present')?.addEventListener('click', () => app.presentUI.enter());
     topBar.querySelector('#btn-reveal-timeline')?.addEventListener('click', () => app.dialogs.openRevealTimelineModal());
@@ -137,16 +166,18 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-shortcuts')?.addEventListener('click', () => app.dialogs.openShortcutsModal());
   }
 
+  let lastRenderedPreset = null;
+
   function renderDock() {
     if (!dock) return;
-    const focusSet = new Set(
-      app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
-    );
-    const visibleTools = app.focusMode
-      ? TOOL_REGISTRY.filter((t) => focusSet.has(t.id))
-      : PRIMARY_TOOLS;
-
-    const advancedTools = TOOL_REGISTRY.filter((t) => !PRIMARY_TOOL_IDS.includes(t.id));
+    const pinnedIds = app.focusMode
+      ? app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
+      : app.getPinnedTools
+        ? app.getPinnedTools()
+        : PRIMARY_TOOL_IDS;
+    const pinnedSet = new Set(pinnedIds);
+    const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id));
+    const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id));
 
     dock.innerHTML = `
       <div class="wb-tool-list" role="toolbar" aria-label="Drawing Tools">
@@ -174,14 +205,14 @@ export function initToolbar(app) {
                   type="button"
                   class="wb-tool-btn ${advancedTools.some((t) => t.id === app.activeTool) ? 'active' : ''}"
                   id="btn-insert-more"
-                  aria-label="Insert Advanced Shapes, Images, Tables, Code, Stamps & Math"
-                  title="Insert Shapes, Images, Tables, Code, Stamps & Math (+)"
+                  aria-label="Insert More Tools, Shapes, Media & Customize Dock"
+                  title="More Tools, Shapes, Media & Customize Dock (+)"
                 >
                   <span class="wb-tool-icon">${ICONS.plus || '+'}</span>
                   <span class="wb-tool-key">+</span>
                 </button>
                 <div class="wb-insert-popover wb-hidden" id="wb-insert-popover" role="menu">
-                  <div class="wb-prop-title" style="margin-bottom:4px;">Insert Shapes & Media</div>
+                  <div class="wb-prop-title" style="margin-bottom:4px;">More Tools & Media</div>
                   ${advancedTools
                     .map(
                       (t) => `
@@ -195,6 +226,8 @@ export function initToolbar(app) {
                   <button type="button" class="wb-menu-item" data-insert-math="ruler">📏 Ruler Overlay</button>
                   <button type="button" class="wb-menu-item" data-insert-math="protractor">📐 Protractor Overlay</button>
                   <button type="button" class="wb-menu-item" id="btn-insert-mermaid-quick">${ICONS.mermaid} Mermaid Diagram…</button>
+                  <hr style="border:none;border-top:1px solid var(--border-subtle);margin:4px 0;"/>
+                  <button type="button" class="wb-menu-item" id="btn-popover-customize-tools">${ICONS.sliders} Customize Pinned Tools…</button>
                 </div>
               </div>`
             : `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Questions" title="Open Classroom Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>
@@ -204,11 +237,20 @@ export function initToolbar(app) {
       <div class="wb-dock-footer">
         <button
           type="button"
+          class="wb-tool-btn"
+          id="btn-customize-dock"
+          aria-label="Customize Pinned Tools"
+          title="Customize Pinned Tools for ${escapeXml(WORKSPACE_PRESETS[app.activePreset]?.label || 'Preset')}"
+        >
+          <span class="wb-tool-icon">${ICONS.sliders}</span>
+        </button>
+        <button
+          type="button"
           class="wb-tool-btn ${app.toolLock ? 'active' : ''}"
           id="btn-tool-lock"
-          aria-label="Lock active tool (Q)"
+          aria-label="Lock active tool (Shift+Q)"
           aria-pressed="${app.toolLock}"
-          title="Keep current tool active after drawing"
+          title="Keep current tool active after drawing (Shift+Q)"
         >
           <span class="wb-tool-icon">${ICONS.lock}</span>
         </button>
@@ -257,8 +299,17 @@ export function initToolbar(app) {
       app.dialogs.openMermaidModal();
     });
 
+    dock.querySelector('#btn-popover-customize-tools')?.addEventListener('click', () => {
+      insertPop?.classList.add('wb-hidden');
+      app.dialogs.openFocusToolsModal(app.activePreset);
+    });
+
+    dock.querySelector('#btn-customize-dock')?.addEventListener('click', () => {
+      app.dialogs.openFocusToolsModal(app.activePreset);
+    });
+
     dock.querySelector('#btn-focus-qa')?.addEventListener('click', () => app.classroomUI.toggle());
-    dock.querySelector('#btn-focus-customize')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
+    dock.querySelector('#btn-focus-customize')?.addEventListener('click', () => app.dialogs.openFocusToolsModal(app.activePreset));
 
     dock.querySelector('#btn-tool-lock')?.addEventListener('click', () => {
       app.toolLock = !app.toolLock;
@@ -414,12 +465,23 @@ export function initToolbar(app) {
 
   return {
     update() {
+      const preset = app.activePreset || 'diagram';
+      topBar?.querySelectorAll('[data-preset]').forEach((btn) => {
+        const isAct = btn.dataset.preset === preset;
+        btn.classList.toggle('active', isAct);
+        btn.setAttribute('aria-pressed', String(isAct));
+      });
+      topBar?.querySelector('#btn-quick-present')?.classList.toggle('wb-hidden', preset === 'diagram');
+      topBar?.querySelector('#btn-quick-timer')?.classList.toggle('wb-hidden', preset === 'diagram');
       renderDock();
       renderModeBanner();
       renderBottomBar();
       const page = app.getPage();
       const undoBtn = topBar?.querySelector('#btn-undo');
       const redoBtn = topBar?.querySelector('#btn-redo');
+      const libBtn = topBar?.querySelector('#btn-library');
+      const layersBtn = topBar?.querySelector('#btn-layers');
+      const clsBtn = topBar?.querySelector('#btn-classroom');
       const spotBtn = topBar?.querySelector('#btn-spotlight');
       const annBtn = topBar?.querySelector('#btn-annotation-mode');
       const propsBtn = topBar?.querySelector('#btn-props-toggle');
@@ -427,11 +489,35 @@ export function initToolbar(app) {
       const titleInput = topBar?.querySelector('#wb-doc-title');
       const connPill = topBar?.querySelector('#wb-conn-status');
 
+      const isPanelOpen = (id) => {
+        const el = document.getElementById(id);
+        return Boolean(el && !el.classList.contains('wb-hidden'));
+      };
+
       if (undoBtn) undoBtn.disabled = !app.history.canUndo(page.id);
       if (redoBtn) redoBtn.disabled = !app.history.canRedo(page.id);
+      if (libBtn) {
+        const open = isPanelOpen('wb-library-panel');
+        libBtn.classList.toggle('active', open);
+        libBtn.setAttribute('aria-pressed', String(open));
+      }
+      if (layersBtn) {
+        const open = isPanelOpen('wb-layers-panel');
+        layersBtn.classList.toggle('active', open);
+        layersBtn.setAttribute('aria-pressed', String(open));
+      }
+      if (clsBtn) {
+        const open = isPanelOpen('wb-classroom-panel');
+        clsBtn.classList.toggle('active', open);
+        clsBtn.setAttribute('aria-pressed', String(open));
+      }
       if (spotBtn) spotBtn.classList.toggle('active', app.spotlight.active && !app.spotlight.magnifier);
       if (annBtn) annBtn.classList.toggle('active', app.annotationMode);
-      if (propsBtn) propsBtn.classList.toggle('active', Boolean(app.propsDrawerOpen));
+      if (propsBtn) {
+        const open = isPanelOpen('wb-props-panel');
+        propsBtn.classList.toggle('active', open);
+        propsBtn.setAttribute('aria-pressed', String(open));
+      }
       if (titleInput && document.activeElement !== titleInput) {
         titleInput.value = app.scene.title || 'StudioBoard Lesson';
       }

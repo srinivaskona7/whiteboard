@@ -287,6 +287,59 @@ export function resetConnectorRoute(connector, page = null) {
   return getConnectorPoints(connector, page);
 }
 
+export function strokeRoundedElbowCanvasPath(ctx, pts, maxRadius = 12) {
+  if (!Array.isArray(pts) || pts.length < 2) return;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1].x, pts[1].y);
+    return;
+  }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const pPrev = pts[i - 1];
+    const pCurr = pts[i];
+    const pNext = pts[i + 1];
+    const d1 = Math.hypot(pCurr.x - pPrev.x, pCurr.y - pPrev.y);
+    const d2 = Math.hypot(pNext.x - pCurr.x, pNext.y - pCurr.y);
+    const r = Math.min(maxRadius, d1 * 0.45, d2 * 0.45);
+    if (r < 2) {
+      ctx.lineTo(pCurr.x, pCurr.y);
+    } else {
+      ctx.arcTo(pCurr.x, pCurr.y, pNext.x, pNext.y, r);
+    }
+  }
+  const last = pts[pts.length - 1];
+  ctx.lineTo(last.x, last.y);
+}
+
+export function buildRoundedElbowSvgPath(pts, maxRadius = 12) {
+  if (!Array.isArray(pts) || pts.length < 2) return '';
+  if (pts.length === 2) {
+    return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  }
+  const cmds = [`M ${pts[0].x} ${pts[0].y}`];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const pPrev = pts[i - 1];
+    const pCurr = pts[i];
+    const pNext = pts[i + 1];
+    const d1 = Math.hypot(pCurr.x - pPrev.x, pCurr.y - pPrev.y);
+    const d2 = Math.hypot(pNext.x - pCurr.x, pNext.y - pCurr.y);
+    const r = Math.min(maxRadius, d1 * 0.45, d2 * 0.45);
+    if (r < 2 || d1 === 0 || d2 === 0) {
+      cmds.push(`L ${pCurr.x} ${pCurr.y}`);
+    } else {
+      const startArcX = pCurr.x - ((pCurr.x - pPrev.x) / d1) * r;
+      const startArcY = pCurr.y - ((pCurr.y - pPrev.y) / d1) * r;
+      const endArcX = pCurr.x + ((pNext.x - pCurr.x) / d2) * r;
+      const endArcY = pCurr.y + ((pNext.y - pCurr.y) / d2) * r;
+      cmds.push(`L ${startArcX} ${startArcY}`);
+      cmds.push(`Q ${pCurr.x} ${pCurr.y} ${endArcX} ${endArcY}`);
+    }
+  }
+  const last = pts[pts.length - 1];
+  cmds.push(`L ${last.x} ${last.y}`);
+  return cmds.join(' ');
+}
+
 export function getConnectorPoints(connector, page = null) {
   const start = { x: Number(connector.x) || 0, y: Number(connector.y) || 0 };
   const end = { x: Number(connector.x2) || 0, y: Number(connector.y2) || 0 };
@@ -438,6 +491,57 @@ export function getPointAlongConnector(connector, t = 0.5, page = null) {
     target -= segLengths[i];
   }
   return { x: pts[0].x, y: pts[0].y };
+}
+
+export function getConnectorLabelPosition(connector, role = 'middle', page = null) {
+  const pts = getConnectorPoints(connector, page);
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    total += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+  }
+  if (role === 'start') {
+    const textLen = String(connector.startLabel || '').length;
+    const arrowPad = connector.startArrow && connector.startArrow !== 'none' ? 24 : 14;
+    const clearance = Math.max(36, arrowPad + textLen * 3.8);
+    const t = total > 0 ? Math.max(0.18, Math.min(0.36, clearance / total)) : 0.22;
+    const base = getPointAlongConnector(connector, t, page);
+    if (pts.length >= 2) {
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      const segLen = Math.hypot(dx, dy) || 1;
+      const perpOffset = total < 160 ? 14 : 0;
+      return {
+        x: base.x + (-dy / segLen) * perpOffset,
+        y: base.y + (dx / segLen) * perpOffset,
+        t,
+      };
+    }
+    return { ...base, t };
+  }
+  if (role === 'end') {
+    const textLen = String(connector.endLabel || '').length;
+    const arrowPad = connector.endArrow && connector.endArrow !== 'none' ? 24 : 14;
+    const clearance = Math.max(36, arrowPad + textLen * 3.8);
+    const t = total > 0 ? Math.min(0.82, Math.max(0.64, 1 - clearance / total)) : 0.78;
+    const base = getPointAlongConnector(connector, t, page);
+    if (pts.length >= 2) {
+      const a = pts[pts.length - 2];
+      const b = pts[pts.length - 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const segLen = Math.hypot(dx, dy) || 1;
+      const perpOffset = total < 160 ? -14 : 0;
+      return {
+        x: base.x + (-dy / segLen) * perpOffset,
+        y: base.y + (dx / segLen) * perpOffset,
+        t,
+      };
+    }
+    return { ...base, t };
+  }
+  const midT = Math.max(0.22, Math.min(0.78, Number(connector.labelT ?? 0.5)));
+  const base = getPointAlongConnector(connector, midT, page);
+  return { ...base, t: midT };
 }
 
 export function projectPointOntoConnectorT(connector, px, py, page = null) {

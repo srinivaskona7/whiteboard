@@ -1,5 +1,5 @@
 // tools/draw.js
-import { createElement } from '../scene/model.js';
+import { createElement, handleAnchorDeletion } from '../scene/model.js';
 import { simplifyFreehandPoints, snapPointToGrid, syncFreehandBounds } from '../scene/geometry.js';
 import { hitTestScene } from '../scene/hit.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
@@ -9,22 +9,24 @@ export class DrawTool {
     this.app = app;
     this.activeElement = null;
     this.startWorld = { x: 0, y: 0 };
+    this.isErasing = false;
     this.erasedAny = false;
   }
 
-  onPointerDown(world, ev) {
+  onPointerDown(world, ev = {}) {
     const tool = this.app.activeTool;
     const page = this.app.getPage();
     const style = this.app.currentStyle;
 
     if (tool === 'eraser') {
+      this.isErasing = true;
       this.erasedAny = false;
       this.eraseAt(world);
       return;
     }
 
     if (tool === 'pen' || tool === 'highlighter') {
-      const isFading = Boolean(this.app.annotationMode && this.app.fadingInk);
+      const isFading = Boolean(this.app.annotationMode || this.app.fadingInk);
       const el = createElement(tool, {
         x: world.x,
         y: world.y,
@@ -44,7 +46,7 @@ export class DrawTool {
 
     // Shape creation: 'rect', 'rounded-rect', 'ellipse', 'diamond', 'sticky', 'frame', 'table', 'code'
     const startPt =
-      this.app.scene.settings.snapToGrid && !ev.altKey
+      this.app.scene.settings.snapToGrid && !ev?.altKey
         ? snapPointToGrid(world.x, world.y, this.app.scene.settings.gridSize || 20)
         : world;
     this.startWorld = { ...startPt };
@@ -89,11 +91,13 @@ export class DrawTool {
     this.app.requestRender();
   }
 
-  onPointerMove(world, ev) {
+  onPointerMove(world, ev = {}) {
     const tool = this.app.activeTool;
 
     if (tool === 'eraser') {
-      this.eraseAt(world);
+      if (this.isErasing) {
+        this.eraseAt(world);
+      }
       return;
     }
 
@@ -116,7 +120,7 @@ export class DrawTool {
 
     // Shape drag sizing
     const targetPt =
-      this.app.scene.settings.snapToGrid && !ev.altKey
+      this.app.scene.settings.snapToGrid && !ev?.altKey
         ? snapPointToGrid(world.x, world.y, this.app.scene.settings.gridSize || 20)
         : world;
 
@@ -125,7 +129,7 @@ export class DrawTool {
     let w = Math.abs(targetPt.x - this.startWorld.x);
     let h = Math.abs(targetPt.y - this.startWorld.y);
 
-    if (ev.shiftKey) {
+    if (ev?.shiftKey) {
       const side = Math.max(w, h);
       w = side;
       h = side;
@@ -143,9 +147,9 @@ export class DrawTool {
 
   onPointerUp() {
     const tool = this.app.activeTool;
-    const page = this.app.getPage();
 
     if (tool === 'eraser') {
+      this.isErasing = false;
       if (this.erasedAny) {
         this.app.commitChange();
       }
@@ -163,7 +167,7 @@ export class DrawTool {
       if (!el.fading) {
         this.app.commitChange();
       } else {
-        this.app.scheduleFadingCleanup();
+        this.app.scheduleFadingCleanup?.();
       }
       this.app.requestRender();
       return;
@@ -198,10 +202,24 @@ export class DrawTool {
     this.app.requestRender();
   }
 
+  cancel() {
+    this.isErasing = false;
+    this.erasedAny = false;
+    if (this.activeElement) {
+      const page = this.app.getPage();
+      const targetId = this.activeElement.id;
+      page.elements = page.elements.filter((e) => e.id !== targetId);
+      this.app.selectedIds.delete(targetId);
+      this.activeElement = null;
+      this.app.requestRender();
+    }
+  }
+
   eraseAt(world) {
     const page = this.app.getPage();
     const hit = hitTestScene(page, world.x, world.y, { includeLocked: false, tolerance: 10 });
     if (hit && !hit.locked) {
+      handleAnchorDeletion(page, [hit.id]);
       page.elements = page.elements.filter((e) => e.id !== hit.id);
       this.app.selectedIds.delete(hit.id);
       updateConnectorBindings(page);
@@ -213,4 +231,3 @@ export class DrawTool {
 
 export const ShapeTool = DrawTool;
 export const EraserTool = DrawTool;
-

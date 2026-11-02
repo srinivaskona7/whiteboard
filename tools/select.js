@@ -3,6 +3,7 @@ import {
   expandSelectionWithGroups,
   cloneElementsWithBindings,
   getContainerChildren,
+  syncContainerMemberships,
   toggleFrameCollapse,
   applyStyle,
 } from '../scene/model.js';
@@ -11,6 +12,7 @@ import {
   getSelectionBounds,
   syncFreehandBounds,
   boxesIntersect,
+  boxIntersectsLasso,
   translateElement,
   snapAngle,
   snapPointToGrid,
@@ -56,12 +58,15 @@ export class SelectTool {
     this.movingElements = [];
     this.didMutate = false;
     this.app.marqueeBox = null;
+    this.app.lassoPoints = null;
     this.app.smartGuides = [];
     this.app.connectorPreview = null;
+    this.app.hoveredPort = null;
+    this.app.activeSubInteraction = null;
     this.app.requestRender();
   }
 
-  onPointerDown(world, ev) {
+  onPointerDown(world, ev = {}) {
     const page = this.app.getPage();
     const zoom = page.camera.zoom;
 
@@ -69,12 +74,14 @@ export class SelectTool {
     if (this.app.cropState && this.app.cropState.element) {
       this.mode = 'crop';
       this.startWorld = { ...world };
-      this.app.cropState.rect = {
+      const rect = {
         x: world.x,
         y: world.y,
         w: 10,
         h: 10,
       };
+      this.app.cropState.rect = rect;
+      this.app.cropState.box = rect;
       this.app.requestRender();
       return;
     }
@@ -163,8 +170,10 @@ export class SelectTool {
       }
 
       // Format painter paste if active
-      if (this.app.copiedStyle) {
-        applyStyle(hit, this.app.copiedStyle);
+      const fmtStyle = this.app.formatPainterStyle || this.app.copiedStyle;
+      if (fmtStyle) {
+        applyStyle(hit, fmtStyle);
+        this.app.formatPainterStyle = null;
         this.app.copiedStyle = null;
         this.app.commitChange();
         this.app.updateUI();
@@ -214,14 +223,21 @@ export class SelectTool {
       return;
     }
 
-    // 4. Empty space clicked -> start marquee selection
+    // 4. Empty space clicked -> start lasso or marquee selection
     if (!ev.shiftKey) {
       this.app.selectedIds.clear();
     }
-    this.mode = 'marquee';
     this.startWorld = { ...world };
     this.lastWorld = { ...world };
-    this.app.marqueeBox = { x: world.x, y: world.y, w: 0, h: 0 };
+    if (this.app.activeTool === 'lasso' || (ev.altKey && ev.shiftKey)) {
+      this.mode = 'lasso';
+      this.app.lassoPoints = [{ x: world.x, y: world.y }];
+      this.app.marqueeBox = null;
+    } else {
+      this.mode = 'marquee';
+      this.app.marqueeBox = { x: world.x, y: world.y, w: 0, h: 0 };
+      this.app.lassoPoints = null;
+    }
     this.app.updateUI();
     this.app.requestRender();
   }
@@ -270,7 +286,9 @@ export class SelectTool {
       const ry = Math.max(el.y, Math.min(this.startWorld.y, world.y));
       const rw = Math.min(el.x + el.w - rx, Math.abs(world.x - this.startWorld.x));
       const rh = Math.min(el.y + el.h - ry, Math.abs(world.y - this.startWorld.y));
-      this.app.cropState.rect = { x: rx, y: ry, w: Math.max(16, rw), h: Math.max(16, rh) };
+      const rect = { x: rx, y: ry, w: Math.max(16, rw), h: Math.max(16, rh) };
+      this.app.cropState.rect = rect;
+      this.app.cropState.box = rect;
       this.app.requestRender();
       return;
     }
@@ -400,6 +418,29 @@ export class SelectTool {
       return;
     }
 
+    if (this.mode === 'lasso') {
+      if (!Array.isArray(this.app.lassoPoints)) {
+        this.app.lassoPoints = [{ ...this.startWorld }];
+      }
+      const last = this.app.lassoPoints[this.app.lassoPoints.length - 1];
+      if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= 3) {
+        this.app.lassoPoints.push({ x: world.x, y: world.y });
+      }
+      if (this.app.lassoPoints.length >= 3) {
+        const hitIds = [];
+        for (const el of page.elements) {
+          if (el.hidden || el.locked || el.isBackground) continue;
+          const b = getElementBounds(el);
+          if (boxIntersectsLasso(b, this.app.lassoPoints)) {
+            hitIds.push(el.id);
+          }
+        }
+        this.app.selectedIds = new Set(expandSelectionWithGroups(page, hitIds));
+      }
+      this.app.requestRender();
+      return;
+    }
+
     if (this.mode === 'marquee') {
       const x = Math.min(this.startWorld.x, world.x);
       const y = Math.min(this.startWorld.y, world.y);
@@ -422,8 +463,8 @@ export class SelectTool {
 
   onPointerUp() {
     const page = this.app.getPage();
-    if (this.mode === 'move' && this.didMutate && this.app.scene.settings.snapToGrid) {
-      if (this.movingElements.length === 1) {
+    if (this.mode === 'move' && this.didMutate) {
+      if (this.app.scene.settings.snapToGrid && this.movingElements.length === 1) {
         const el = this.movingElements[0];
         if (el.type !== 'pen' && el.type !== 'highlighter' && el.type !== 'line' && el.type !== 'arrow') {
           const snapped = snapPointToGrid(el.x, el.y, this.app.scene.settings.gridSize || 20);
@@ -431,6 +472,7 @@ export class SelectTool {
           updateConnectorBindings(page, [el.id]);
         }
       }
+      syncContainerMemberships(page, this.movingElements);
     }
 
     if (this.didMutate) {
@@ -443,6 +485,7 @@ export class SelectTool {
     this.movingElements = [];
     this.didMutate = false;
     this.app.marqueeBox = null;
+    this.app.lassoPoints = null;
     this.app.smartGuides = [];
     this.app.connectorPreview = null;
     this.app.updateUI();

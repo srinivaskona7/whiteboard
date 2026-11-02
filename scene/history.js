@@ -7,17 +7,21 @@ export class HistoryManager {
     this.stacks = new Map();
   }
 
-  _ensurePage(page) {
-    if (!page || !page.id) return null;
-    if (!this.stacks.has(page.id)) {
-      const snap = JSON.stringify(page.elements || []);
-      this.stacks.set(page.id, {
+  _ensurePage(pageOrId) {
+    if (!pageOrId) return null;
+    if (typeof pageOrId === 'string') {
+      return this.stacks.get(pageOrId) || null;
+    }
+    if (!pageOrId.id) return null;
+    if (!this.stacks.has(pageOrId.id)) {
+      const snap = JSON.stringify(pageOrId.elements || []);
+      this.stacks.set(pageOrId.id, {
         undoStack: [],
         redoStack: [],
         currentSnapshot: snap,
       });
     }
-    return this.stacks.get(page.id);
+    return this.stacks.get(pageOrId.id);
   }
 
   initPage(page) {

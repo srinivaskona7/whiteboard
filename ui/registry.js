@@ -7,6 +7,7 @@ const svg = (inner) =>
 
 export const ICONS = {
   select: svg('<path d="M4 3l7 17 2.5-6.5L20 11z"/>'),
+  lasso: svg('<path d="M7 22a5 5 0 0 1-2-4"/><path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1"/><circle cx="5" cy="18" r="2"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v4"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3.4 16.8a2 2 0 0 1 2.8-2.8L8 15.8"/>'),
   pen: svg('<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.5 7.5"/>'),
   highlighter: svg('<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>'),
@@ -82,6 +83,7 @@ export const TOOL_REGISTRY = [
   { id: 'question', label: 'Pin Question to Board', shortcut: 'Q', group: 'dock', icon: ICONS.question },
 
   // Secondary Tools under Insert (+) Menu (also directly reachable by keyboard shortcut)
+  { id: 'lasso', label: 'Lasso Select', shortcut: 'Shift+L', group: 'insert', icon: ICONS.lasso },
   { id: 'frame', label: 'Frame / Slide Container', shortcut: 'F2', group: 'insert', icon: ICONS.frame },
   { id: 'table', label: 'Editable Table', shortcut: 'B', group: 'insert', icon: ICONS.table },
   { id: 'code', label: 'Code Block', shortcut: 'J', group: 'insert', icon: ICONS.code },
@@ -89,8 +91,25 @@ export const TOOL_REGISTRY = [
   { id: 'laser', label: 'Laser Pointer', shortcut: 'K', group: 'teaching', icon: ICONS.laser },
 ];
 
+export function isMacPlatform() {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+}
+
+export function formatShortcut(shortcut = '', mac = isMacPlatform()) {
+  if (!shortcut) return '';
+  if (mac) {
+    return shortcut
+      .replace(/Ctrl\/Cmd\s*\+\s*/gi, '⌘')
+      .replace(/Shift\s*\+\s*/gi, '⇧')
+      .replace(/Alt\s*\+\s*/gi, '⌥');
+  }
+  return shortcut.replace(/Ctrl\/Cmd/gi, 'Ctrl');
+}
+
 export const SHORTCUT_REFERENCE = [
   ...TOOL_REGISTRY.map((t) => ({ key: t.shortcut, desc: `${t.label} Tool` })),
+  { key: 'Shift + Q', desc: 'Toggle Keep Active Tool Locked' },
   { key: 'I', desc: 'Insert Image from File' },
   { key: 'Double-Click', desc: 'Edit Shape, Connector, or Table Cell Text' },
   { key: 'Ctrl/Cmd + Z / Y', desc: 'Undo / Redo (Isolated per Page)' },
@@ -109,48 +128,59 @@ export const SHORTCUT_REFERENCE = [
 ];
 
 export function buildDevOpsDiagramPacks() {
-  const makeFlowPack = (name, nodes, edges) => {
-    const groupId = uid('grp');
-    const els = [];
-    const map = new Map();
-    for (const n of nodes) {
-      const el = createElement(n.type || 'rounded-rect', {
-        x: n.x,
-        y: n.y,
-        w: n.w || 156,
-        h: n.h || 74,
-        text: n.text,
-        fill: n.fill || '#eff6ff',
-        stroke: n.stroke || '#1e293b',
-        stencilId: n.stencilId,
-        groupId,
-        revealStep: n.revealStep || 0,
-      });
-      map.set(n.key, el);
-      els.push(el);
-    }
-    for (const [fromKey, toKey, label, fromPort = 'right', toPort = 'left'] of edges) {
-      const a = map.get(fromKey);
-      const b = map.get(toKey);
-      if (!a || !b) continue;
-      const conn = createElement('arrow', {
-        x: a.x + a.w,
-        y: a.y + a.h / 2,
-        x2: b.x,
-        y2: b.y + b.h / 2,
-        text: label || '',
-        routing: 'orthogonal',
-        groupId,
-      });
-      bindConnectorEndpoint(conn, 'start', a, fromPort);
-      bindConnectorEndpoint(conn, 'end', b, toPort);
-      els.push(conn);
-    }
-    return { id: uid('pack'), name, elements: els };
+  const makeFlowPack = (id, name, nodes, edges) => {
+    const build = () => {
+      const groupId = uid('grp');
+      const els = [];
+      const map = new Map();
+      for (const n of nodes) {
+        const el = createElement(n.type || 'rounded-rect', {
+          x: n.x,
+          y: n.y,
+          w: n.w || 156,
+          h: n.h || 74,
+          text: n.text,
+          fill: n.fill || '#eff6ff',
+          stroke: n.stroke || '#1e293b',
+          stencilId: n.stencilId,
+          groupId,
+          revealStep: n.revealStep || 0,
+        });
+        map.set(n.key, el);
+        els.push(el);
+      }
+      for (const [fromKey, toKey, label, fromPort = 'right', toPort = 'left'] of edges) {
+        const a = map.get(fromKey);
+        const b = map.get(toKey);
+        if (!a || !b) continue;
+        const conn = createElement('arrow', {
+          x: a.x + a.w,
+          y: a.y + a.h / 2,
+          x2: b.x,
+          y2: b.y + b.h / 2,
+          text: label || '',
+          routing: 'orthogonal',
+          groupId,
+        });
+        bindConnectorEndpoint(conn, 'start', a, fromPort);
+        bindConnectorEndpoint(conn, 'end', b, toPort);
+        els.push(conn);
+      }
+      return els;
+    };
+    return {
+      id,
+      name,
+      build,
+      get elements() {
+        return build();
+      },
+    };
   };
 
   return [
     makeFlowPack(
+      'pack-linux-boot',
       'Linux Boot Process (BIOS → systemd)',
       [
         { key: 'bios', x: 80, y: 160, text: `1. BIOS / UEFI
@@ -169,6 +199,7 @@ default.target`, fill: '#f3e8ff', revealStep: 4 },
       ]
     ),
     makeFlowPack(
+      'pack-dns-flow',
       'DNS Resolution Flow (Recursive Lookup)',
       [
         { key: 'client', x: 80, y: 180, text: `Client Stub
@@ -190,6 +221,7 @@ Nameserver`, fill: '#dcfce7', revealStep: 4 },
       ]
     ),
     makeFlowPack(
+      'pack-tcp-tls',
       'TCP 3-Way + TLS 1.3 Handshake',
       [
         { key: 'syn', x: 90, y: 150, text: `1. TCP SYN
@@ -205,6 +237,82 @@ Encrypted App Data`, fill: '#f3e8ff', revealStep: 4 },
         ['syn', 'synack', 'RTT 1'],
         ['synack', 'ack', 'Established'],
         ['ack', 'tls', 'TLS 1.3 (1-RTT)'],
+      ]
+    ),
+    makeFlowPack(
+      'pack-docker-lifecycle',
+      'Docker Image & Container Lifecycle',
+      [
+        { key: 'df', type: 'stencil', stencilId: 'cnt-dockerfile', x: 80, y: 150, w: 130, h: 104, text: '1. Dockerfile', revealStep: 1 },
+        { key: 'img', type: 'stencil', stencilId: 'cnt-docker', x: 280, y: 150, w: 130, h: 104, text: '2. OCI Image Layers', revealStep: 2 },
+        { key: 'reg', type: 'stencil', stencilId: 'cnt-registry', x: 480, y: 150, w: 130, h: 104, text: '3. Container Registry', revealStep: 3 },
+        { key: 'rt', type: 'stencil', stencilId: 'cnt-containerd', x: 680, y: 150, w: 130, h: 104, text: '4. containerd Runtime', revealStep: 4 },
+      ],
+      [
+        ['df', 'img', 'docker build'],
+        ['img', 'reg', 'docker push'],
+        ['reg', 'rt', 'pull & run'],
+      ]
+    ),
+    makeFlowPack(
+      'pack-k8s-flow',
+      'Kubernetes Request Flow (Ingress → PVC)',
+      [
+        { key: 'ing', type: 'stencil', stencilId: 'k8s-ingress', x: 80, y: 150, w: 130, h: 104, text: '1. Ingress Controller', revealStep: 1 },
+        { key: 'svc', type: 'stencil', stencilId: 'k8s-svc', x: 280, y: 150, w: 130, h: 104, text: '2. ClusterIP Service', revealStep: 2 },
+        { key: 'pod', type: 'stencil', stencilId: 'k8s-pod', x: 480, y: 150, w: 130, h: 104, text: '3. App Pod', revealStep: 3 },
+        { key: 'pvc', type: 'stencil', stencilId: 'k8s-pvc', x: 680, y: 150, w: 130, h: 104, text: '4. PersistentVolumeClaim', revealStep: 4 },
+      ],
+      [
+        ['ing', 'svc', 'HTTPS / L7'],
+        ['svc', 'pod', 'Endpoints'],
+        ['pod', 'pvc', 'Mount /data'],
+      ]
+    ),
+    makeFlowPack(
+      'pack-cicd-gitops',
+      'CI/CD & GitOps Delivery Pipeline',
+      [
+        { key: 'git', type: 'stencil', stencilId: 'cicd-git', x: 70, y: 150, w: 130, h: 104, text: '1. Git Commit', revealStep: 1 },
+        { key: 'gha', type: 'stencil', stencilId: 'cicd-gha', x: 260, y: 150, w: 130, h: 104, text: '2. GitHub Actions CI', revealStep: 2 },
+        { key: 'reg', type: 'stencil', stencilId: 'cnt-registry', x: 450, y: 150, w: 130, h: 104, text: '3. OCI Registry', revealStep: 3 },
+        { key: 'argo', type: 'stencil', stencilId: 'cicd-argocd', x: 640, y: 150, w: 130, h: 104, text: '4. Argo CD Sync', revealStep: 4 },
+      ],
+      [
+        ['git', 'gha', 'PR / Push'],
+        ['gha', 'reg', 'Signed Image'],
+        ['reg', 'argo', 'Reconcile K8s'],
+      ]
+    ),
+    makeFlowPack(
+      'pack-cloud-network',
+      'Cloud Network Architecture (VPC + ALB + EC2 + RDS)',
+      [
+        { key: 'r53', type: 'stencil', stencilId: 'aws-route53', x: 70, y: 150, w: 130, h: 104, text: '1. Route 53 DNS', revealStep: 1 },
+        { key: 'alb', type: 'stencil', stencilId: 'aws-alb', x: 260, y: 150, w: 130, h: 104, text: '2. Public ALB', revealStep: 2 },
+        { key: 'ec2', type: 'stencil', stencilId: 'aws-ec2', x: 450, y: 150, w: 130, h: 104, text: '3. Private EC2 Tier', revealStep: 3 },
+        { key: 'rds', type: 'stencil', stencilId: 'aws-rds', x: 640, y: 150, w: 130, h: 104, text: '4. Multi-AZ RDS', revealStep: 4 },
+      ],
+      [
+        ['r53', 'alb', 'TLS 443'],
+        ['alb', 'ec2', 'HTTP 8080'],
+        ['ec2', 'rds', 'TCP 5432'],
+      ]
+    ),
+    makeFlowPack(
+      'pack-monitoring-incident',
+      'Monitoring, Observability & Incident Response',
+      [
+        { key: 'otel', type: 'stencil', stencilId: 'obs-otel', x: 70, y: 150, w: 130, h: 104, text: '1. OTel Collector', revealStep: 1 },
+        { key: 'prom', type: 'stencil', stencilId: 'obs-prometheus', x: 260, y: 150, w: 130, h: 104, text: '2. Prometheus TSDB', revealStep: 2 },
+        { key: 'graf', type: 'stencil', stencilId: 'obs-grafana', x: 450, y: 150, w: 130, h: 104, text: '3. Grafana SLO Dash', revealStep: 3 },
+        { key: 'inc', x: 640, y: 165, w: 156, h: 74, text: `4. Pager Alert &
+Incident Runbook`, fill: '#fee2e2', stroke: '#dc2626', revealStep: 4 },
+      ],
+      [
+        ['otel', 'prom', 'Scrape / OTLP'],
+        ['prom', 'graf', 'PromQL'],
+        ['graf', 'inc', 'Alert Firing'],
       ]
     ),
   ];

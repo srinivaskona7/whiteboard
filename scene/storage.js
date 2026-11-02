@@ -6,6 +6,205 @@ export const STORAGE_KEY = 'classroom_whiteboard_scene_v2';
 export const LIBRARY_STORAGE_KEY = 'classroom_whiteboard_user_library_v1';
 export const THEME_STORAGE_KEY = 'classroom_whiteboard_theme_v1';
 export const RECOVERY_STORAGE_KEY = 'classroom_whiteboard_recovery_v1';
+export const WORKSPACE_PREFS_KEY = 'classroom_whiteboard_workspace_prefs_v1';
+
+const TRANSIENT_ELEMENT_KEYS = [
+  'selected',
+  'hovered',
+  'hoveredPort',
+  'laserTrail',
+  'remoteCursor',
+  'marqueeBox',
+  'placementPreview',
+  'connectorPreview',
+  'smartGuides',
+];
+
+export function sanitizeSceneForPersistence(scene, { stripNotes = false } = {}) {
+  if (!scene || typeof scene !== 'object') {
+    throw new Error('Invalid scene object.');
+  }
+  const cleanPages = (scene.pages || []).map((page) => {
+    const cleanElements = (page.elements || [])
+      .filter((el) => el && !el.fading) // Strip ephemeral fading ink strokes
+      .map((el) => {
+        const copy = { ...el };
+        for (const k of TRANSIENT_ELEMENT_KEYS) {
+          delete copy[k];
+        }
+        if (stripNotes) {
+          delete copy.teacherNotes;
+        }
+        return copy;
+      });
+    const outPage = {
+      id: page.id || uid('page'),
+      name: page.name || 'Page 1',
+      elements: cleanElements,
+      camera: {
+        x: Number(page.camera?.x) || 0,
+        y: Number(page.camera?.y) || 0,
+        zoom: Math.max(0.1, Math.min(8, Number(page.camera?.zoom) || 1)),
+      },
+      background: ['plain', 'grid', 'dots'].includes(page.background) ? page.background : 'dots',
+    };
+    if (!stripNotes && page.teacherNotes) {
+      outPage.teacherNotes = String(page.teacherNotes);
+    }
+    return outPage;
+  });
+
+  return {
+    version: SCHEMA_VERSION,
+    title: scene.title || 'StudioBoard Lesson',
+    theme: scene.theme === 'dark' ? 'dark' : 'light',
+    activePageId: scene.activePageId || cleanPages[0]?.id,
+    pages: cleanPages,
+    files: scene.files && typeof scene.files === 'object' ? { ...scene.files } : {},
+    settings: {
+      snapToGrid: scene.settings?.snapToGrid ?? true,
+      snapToObjects: scene.settings?.snapToObjects ?? true,
+      snapToAngle: scene.settings?.snapToAngle ?? true,
+      gridSize: Number(scene.settings?.gridSize) || 20,
+    },
+  };
+}
+
+export function stripTeacherNotes(scene) {
+  return sanitizeSceneForPersistence(scene, { stripNotes: true });
+}
+
+export const DEFAULT_PRESET_TOOLS = {
+  teach: ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'pointer', 'question'],
+  diagram: [
+    'select',
+    'hand',
+    'rect',
+    'rounded-rect',
+    'ellipse',
+    'diamond',
+    'arrow',
+    'line',
+    'text',
+    'frame',
+    'table',
+    'code',
+  ],
+  collaborate: [
+    'select',
+    'hand',
+    'pointer',
+    'question',
+    'sticky',
+    'pen',
+    'highlighter',
+    'laser',
+    'stamp',
+  ],
+};
+
+export const WORKSPACE_PRESETS = {
+  teach: {
+    id: 'teach',
+    label: 'Teach',
+    description:
+      'Minimal interface with maximum canvas space for pen, highlighter, laser, timer, presentation & questions.',
+    defaultTools: DEFAULT_PRESET_TOOLS.teach,
+    defaultInspectorOpen: false,
+    defaultLeftPanel: null,
+  },
+  diagram: {
+    id: 'diagram',
+    label: 'Diagram',
+    description:
+      'Architecture & diagramming workspace with shapes, connectors, libraries, containers, layers & Inspector.',
+    defaultTools: DEFAULT_PRESET_TOOLS.diagram,
+    defaultInspectorOpen: true,
+    defaultLeftPanel: null,
+  },
+  collaborate: {
+    id: 'collaborate',
+    label: 'Collaborate',
+    description:
+      'Live classroom facilitation with participants, named cursors, questions, Follow Teacher & reactions.',
+    defaultTools: DEFAULT_PRESET_TOOLS.collaborate,
+    defaultInspectorOpen: false,
+    defaultLeftPanel: 'wb-classroom-panel',
+  },
+};
+
+export function loadWorkspacePrefs(storage = globalThis.localStorage) {
+  const defaults = {
+    preset: 'diagram',
+    pinnedToolsByPreset: {
+      teach: [...DEFAULT_PRESET_TOOLS.teach],
+      diagram: [...DEFAULT_PRESET_TOOLS.diagram],
+      collaborate: [...DEFAULT_PRESET_TOOLS.collaborate],
+    },
+    leftPanelWidth: 320,
+    rightPanelWidth: 268,
+    minimapOpen: false,
+    inspectorOpen: true,
+  };
+  if (!storage) return defaults;
+  try {
+    const raw = storage.getItem(WORKSPACE_PREFS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    const preset = ['teach', 'diagram', 'collaborate'].includes(parsed.preset)
+      ? parsed.preset
+      : 'diagram';
+    const rawPinned =
+      parsed.pinnedToolsByPreset && typeof parsed.pinnedToolsByPreset === 'object'
+        ? parsed.pinnedToolsByPreset
+        : {};
+    return {
+      preset,
+      pinnedToolsByPreset: {
+        teach:
+          Array.isArray(rawPinned.teach) && rawPinned.teach.length > 0
+            ? rawPinned.teach
+            : [...DEFAULT_PRESET_TOOLS.teach],
+        diagram:
+          Array.isArray(rawPinned.diagram) && rawPinned.diagram.length > 0
+            ? rawPinned.diagram
+            : [...DEFAULT_PRESET_TOOLS.diagram],
+        collaborate:
+          Array.isArray(rawPinned.collaborate) && rawPinned.collaborate.length > 0
+            ? rawPinned.collaborate
+            : [...DEFAULT_PRESET_TOOLS.collaborate],
+      },
+      leftPanelWidth: Math.max(240, Math.min(480, Number(parsed.leftPanelWidth) || 320)),
+      rightPanelWidth: Math.max(220, Math.min(440, Number(parsed.rightPanelWidth) || 268)),
+      minimapOpen: Boolean(parsed.minimapOpen),
+      inspectorOpen: parsed.inspectorOpen !== false,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+export function saveWorkspacePrefs(prefs, storage = globalThis.localStorage) {
+  if (!storage || !prefs) return false;
+  try {
+    const current = loadWorkspacePrefs(storage);
+    const merged = {
+      ...current,
+      ...prefs,
+      pinnedToolsByPreset: {
+        ...current.pinnedToolsByPreset,
+        ...(prefs.pinnedToolsByPreset || {}),
+      },
+    };
+    storage.setItem(WORKSPACE_PREFS_KEY, JSON.stringify(merged));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const loadWorkspacePreferences = loadWorkspacePrefs;
+export const saveWorkspacePreferences = saveWorkspacePrefs;
 
 export function migrateSceneData(raw) {
   if (!raw || typeof raw !== 'object') {
@@ -16,8 +215,8 @@ export function migrateSceneData(raw) {
   const fromVersion = Number(data.version || 1);
 
   // v1 -> v2 migration hook:
-  // v1 stored a flat `elements` array at the root and lacked `pages`, `files`, and `settings`.
-  if (fromVersion < 2) {
+  // v1 stored either a flat `elements` array at the root or v1 `pages` without v2 defaults.
+  if (fromVersion < 2 && !Array.isArray(data.pages)) {
     const migratedPage = createPage(data.title || 'Page 1', data.pageId || uid('page'));
     if (Array.isArray(data.elements)) {
       migratedPage.elements = data.elements.map((el) =>
@@ -61,6 +260,7 @@ export function migrateSceneData(raw) {
         zoom: Math.max(0.1, Math.min(8, Number(p.camera?.zoom) || 1)),
       };
       p.background = ['plain', 'grid', 'dots'].includes(p.background) ? p.background : 'dots';
+      p.teacherNotes = typeof p.teacherNotes === 'string' ? p.teacherNotes : '';
     }
   }
 
@@ -99,17 +299,18 @@ export function assertValidSceneGeometry(scene) {
 }
 
 export function serializeScene(scene) {
-  assertValidSceneGeometry(scene);
+  const clean = sanitizeSceneForPersistence(scene);
+  assertValidSceneGeometry(clean);
   const payload = {
     version: SCHEMA_VERSION,
     app: 'classroom-whiteboard-studio',
-    title: scene.title || 'StudioBoard Lesson',
+    title: clean.title || 'StudioBoard Lesson',
     exportedAt: new Date().toISOString(),
-    theme: scene.theme,
-    activePageId: scene.activePageId,
-    pages: scene.pages,
-    files: scene.files || {},
-    settings: scene.settings,
+    theme: clean.theme,
+    activePageId: clean.activePageId,
+    pages: clean.pages,
+    files: clean.files || {},
+    settings: clean.settings,
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -127,7 +328,7 @@ export function saveSceneToLocalStorage(scene, onQuotaError = null, storage = gl
     storage.setItem(THEME_STORAGE_KEY, scene.theme);
     return true;
   } catch (err) {
-    if (onQuotaError) {
+    if (typeof onQuotaError === 'function') {
       onQuotaError(err);
     }
     return false;
@@ -160,7 +361,21 @@ export function saveThemePreference(theme, storage = globalThis.localStorage) {
   }
 }
 
-export function createDebouncedAutosave(delayMs = 500, onQuotaError = null, onStatusChange = null) {
+export function createDebouncedAutosave(arg1 = 500, arg2 = null, arg3 = null) {
+  let delayMs = 500;
+  let onQuotaError = null;
+  let onStatusChange = null;
+
+  if (typeof arg1 === 'function') {
+    onStatusChange = arg1;
+    delayMs = typeof arg2 === 'number' && Number.isFinite(arg2) ? arg2 : 350;
+    onQuotaError = typeof arg3 === 'function' ? arg3 : null;
+  } else {
+    delayMs = typeof arg1 === 'number' && Number.isFinite(arg1) ? arg1 : 500;
+    onQuotaError = typeof arg2 === 'function' ? arg2 : null;
+    onStatusChange = typeof arg3 === 'function' ? arg3 : null;
+  }
+
   let timer = null;
   let lastSnapshotTime = 0;
   return function scheduleSave(scene) {
@@ -194,23 +409,24 @@ export function loadRecoverySnapshots(storage = globalThis.localStorage) {
 export function saveRecoverySnapshot(scene, label = 'Manual Checkpoint', storage = globalThis.localStorage) {
   if (!storage || !scene) return false;
   try {
+    const clean = sanitizeSceneForPersistence(scene);
     const list = loadRecoverySnapshots(storage);
-    const totalElements = (scene.pages || []).reduce((acc, p) => acc + (p.elements?.length || 0), 0);
+    const totalElements = (clean.pages || []).reduce((acc, p) => acc + (p.elements?.length || 0), 0);
     const snap = {
       id: uid('snap'),
       timestamp: new Date().toISOString(),
       label,
-      title: scene.title || 'StudioBoard Lesson',
-      pageCount: scene.pages?.length || 1,
+      title: clean.title || 'StudioBoard Lesson',
+      pageCount: clean.pages?.length || 1,
       elementCount: totalElements,
       sceneJson: JSON.stringify({
         version: SCHEMA_VERSION,
-        title: scene.title,
-        theme: scene.theme,
-        activePageId: scene.activePageId,
-        pages: scene.pages,
-        files: scene.files || {},
-        settings: scene.settings,
+        title: clean.title,
+        theme: clean.theme,
+        activePageId: clean.activePageId,
+        pages: clean.pages,
+        files: clean.files || {},
+        settings: clean.settings,
       }),
     };
     const next = [snap, ...list].slice(0, 10);
@@ -267,15 +483,18 @@ export function importLibraryJson(jsonString) {
 }
 
 // URL Hash sharing (base64url UTF-8 encoding with size warning)
-export function encodeSceneToHash(scene) {
-  assertValidSceneGeometry(scene);
+// Strips teacherNotes by default so ordinary shared links never leak private instructor notes.
+export function encodeSceneToHash(scene, options = {}) {
+  const stripNotes = options.includeTeacherNotes !== true;
+  const clean = sanitizeSceneForPersistence(scene, { stripNotes });
+  assertValidSceneGeometry(clean);
   const compact = {
     version: SCHEMA_VERSION,
-    theme: scene.theme,
-    activePageId: scene.activePageId,
-    pages: scene.pages,
-    files: scene.files || {},
-    settings: scene.settings,
+    theme: clean.theme,
+    activePageId: clean.activePageId,
+    pages: clean.pages,
+    files: clean.files || {},
+    settings: clean.settings,
   };
   const json = JSON.stringify(compact);
   const bytes = new TextEncoder().encode(json);

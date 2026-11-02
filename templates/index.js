@@ -1,8 +1,89 @@
 // templates/index.js
 import { createElement } from '../scene/model.js';
 import { bindConnectorEndpoint } from '../scene/bindings.js';
+import { buildDevOpsDiagramPacks } from '../ui/registry.js';
+
+const DEVOPS_PACK_TEMPLATES = [
+  {
+    id: 'tpl-linux-boot',
+    packId: 'pack-linux-boot',
+    name: 'Linux Boot Sequence',
+    description: 'Progressive 4-step reveal: BIOS/UEFI → GRUB2 → Kernel + initramfs → systemd (PID 1)',
+    frameTitle: 'Lesson: Linux Boot Process',
+    teacherNotes: 'Step 1: POST & UEFI firmware. Step 2: GRUB2 loads vmlinuz. Step 3: initramfs mounts rootfs. Step 4: systemd starts default.target.',
+  },
+  {
+    id: 'tpl-dns-resolution',
+    packId: 'pack-dns-flow',
+    name: 'DNS Resolution Hierarchy',
+    description: 'Recursive lookup across Stub Resolver, Recursive ISP Resolver, Root (.), TLD (.com), and Authoritative NS',
+    frameTitle: 'Lesson: DNS Recursive Resolution',
+    teacherNotes: 'Highlight caching TTL at the recursive resolver after step 4 completes.',
+  },
+  {
+    id: 'tpl-tcp-tls',
+    packId: 'pack-tcp-tls',
+    name: 'TCP 3-Way + TLS 1.3 Handshake',
+    description: 'Step-by-step packet walkthrough of SYN, SYN-ACK, ACK + ClientHello, and 1-RTT TLS 1.3',
+    frameTitle: 'Lesson: TCP & TLS 1.3 Handshake',
+    teacherNotes: 'Compare TLS 1.2 (2-RTT) vs TLS 1.3 (1-RTT key share in ClientHello).',
+  },
+  {
+    id: 'tpl-docker-lifecycle',
+    packId: 'pack-docker-lifecycle',
+    name: 'Docker Image & Container Lifecycle',
+    description: 'Dockerfile → OCI layered image build → Container Registry → containerd runtime execution',
+    frameTitle: 'Lesson: Container Build & Runtime Lifecycle',
+    teacherNotes: 'Explain copy-on-write (OverlayFS) between read-only image layers and the writable container layer.',
+  },
+  {
+    id: 'tpl-cicd-gitops',
+    packId: 'pack-cicd-gitops',
+    name: 'CI/CD & GitOps Delivery Pipeline',
+    description: 'Git commit → GitHub Actions CI → Signed OCI Registry → Argo CD Kubernetes reconciliation',
+    frameTitle: 'Lesson: CI/CD & Pull-Based GitOps',
+    teacherNotes: 'Contrast push-based CI deployment with pull-based Argo CD drift reconciliation.',
+  },
+  {
+    id: 'tpl-cloud-network',
+    packId: 'pack-cloud-network',
+    name: 'Cloud Network Architecture (VPC HA)',
+    description: 'Route 53 DNS → Public ALB → Private EC2 Compute Tier → Multi-AZ RDS Database',
+    frameTitle: 'Lesson: High-Availability Cloud VPC',
+    teacherNotes: 'Discuss Security Group chaining: ALB SG allows 443 from 0.0.0.0/0; App SG allows 8080 only from ALB SG.',
+  },
+  {
+    id: 'tpl-monitoring-incident',
+    packId: 'pack-monitoring-incident',
+    name: 'Monitoring & Incident Response',
+    description: 'OpenTelemetry Collector → Prometheus TSDB → Grafana SLO Dashboard → On-Call Pager & Runbook',
+    frameTitle: 'Lesson: Observability & Incident Response',
+    teacherNotes: 'Walk through Golden Signals (Latency, Traffic, Errors, Saturation) and error budget burn alerts.',
+  },
+].map((spec) => ({
+  id: spec.id,
+  name: spec.name,
+  description: spec.description,
+  category: 'devops-lesson',
+  build() {
+    const packs = buildDevOpsDiagramPacks();
+    const found = packs.find((p) => p.id === spec.packId);
+    const frame = createElement('frame', {
+      x: 40,
+      y: 60,
+      w: 840,
+      h: 320,
+      text: spec.frameTitle,
+      slideOrder: 1,
+      teacherNotes: spec.teacherNotes,
+    });
+    const inner = found ? found.build() : [];
+    return [frame, ...inner];
+  },
+}));
 
 export const BUILTIN_TEMPLATES = [
+  ...DEVOPS_PACK_TEMPLATES,
   {
     id: 'tpl-blank',
     name: 'Blank Canvas',

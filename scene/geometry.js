@@ -298,6 +298,37 @@ export function boxesIntersect(a, b) {
   return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
 }
 
+export function pointInPolygon(pt, polygon = []) {
+  if (!pt || !Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersect =
+      yi > pt.y !== yj > pt.y &&
+      pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function boxIntersectsLasso(box, polygon = []) {
+  if (!box || !Array.isArray(polygon) || polygon.length < 3) return false;
+  const samplePoints = [
+    { x: box.x + box.w / 2, y: box.y + box.h / 2 },
+    { x: box.x, y: box.y },
+    { x: box.x + box.w, y: box.y },
+    { x: box.x + box.w, y: box.y + box.h },
+    { x: box.x, y: box.y + box.h },
+  ];
+  for (const pt of samplePoints) {
+    if (pointInPolygon(pt, polygon)) return true;
+  }
+  return false;
+}
+
 export function isElementInViewport(el, viewportBounds) {
   const b = getElementBounds(el);
   return boxesIntersect(b, viewportBounds);

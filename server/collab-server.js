@@ -16,6 +16,24 @@ export function generateCapabilityToken() {
   return crypto.randomBytes(18).toString('base64url');
 }
 
+export function stripSceneTeacherNotes(scene) {
+  if (!scene || typeof scene !== 'object') return scene;
+  const clone = structuredClone(scene);
+  if (Array.isArray(clone.pages)) {
+    for (const p of clone.pages) {
+      delete p.teacherNotes;
+      if (Array.isArray(p.elements)) {
+        for (const el of p.elements) {
+          if (el && typeof el === 'object') {
+            delete el.teacherNotes;
+          }
+        }
+      }
+    }
+  }
+  return clone;
+}
+
 export class CollabStore {
   constructor(storagePath = null) {
     this.storagePath = storagePath;
@@ -76,17 +94,18 @@ export class CollabStore {
     return true;
   }
 
-  createSnapshot(scene, { title = 'StudioBoard Snapshot', expiresInMs = null } = {}) {
+  createSnapshot(scene, { title = 'StudioBoard Snapshot', expiresInMs = null, includeTeacherNotes = false } = {}) {
     if (!this.isFiniteScene(scene)) {
       throw new Error('INVALID_SCENE_GEOMETRY');
     }
     let id = generateShortId('b', 6);
     while (this.boards.has(id)) id = generateShortId('b', 6);
     const now = Date.now();
+    const cleanScene = includeTeacherNotes ? structuredClone(scene) : stripSceneTeacherNotes(scene);
     const record = {
       id,
       title: scene.title || title,
-      scene: structuredClone(scene),
+      scene: cleanScene,
       accessLevel: 'viewer',
       createdAt: now,
       expiresAt: expiresInMs && Number.isFinite(expiresInMs) ? now + expiresInMs : null,
@@ -110,7 +129,13 @@ export class CollabStore {
       this.boards.delete(id);
       return { status: 410, error: 'Snapshot link has expired.' };
     }
-    return { status: 200, data: rec };
+    return {
+      status: 200,
+      data: {
+        ...rec,
+        scene: stripSceneTeacherNotes(rec.scene),
+      },
+    };
   }
 
   createRoom(scene, { title = 'Live Classroom', expiresInMs = null, requestedRoomId = null } = {}) {
@@ -125,6 +150,7 @@ export class CollabStore {
     const now = Date.now();
     const teacherToken = generateCapabilityToken();
     const editorToken = generateCapabilityToken();
+    const questionerToken = generateCapabilityToken();
     const room = {
       roomId,
       title: scene.title || title,
@@ -132,10 +158,17 @@ export class CollabStore {
       deletedIds: [],
       teacherToken,
       editorToken,
+      questionerToken,
       createdAt: now,
       updatedAt: now,
       expiresAt: expiresInMs && Number.isFinite(expiresInMs) ? now + expiresInMs : null,
       teacherViewport: null,
+      timerState: {
+        running: false,
+        remainingSec: 300,
+        mode: 'countdown',
+        updatedAt: now,
+      },
     };
     this.rooms.set(roomId, room);
     this._saveToDisk();
@@ -144,42 +177,53 @@ export class CollabStore {
       title: room.title,
       teacherToken,
       editorToken,
+      questionerToken,
       createdAt: now,
       expiresAt: room.expiresAt,
       viewerRoute: `#/r/${roomId}`,
+      questionerRoute: `#/r/${roomId}?role=questioner`,
       editorRoute: `#/r/${roomId}?invite=${editorToken}`,
       teacherRoute: `#/r/${roomId}?teacher=${teacherToken}`,
     };
   }
 
-  resolveRole(room, token = '') {
+  resolveRole(room, token = '', roleHint = '') {
     if (!room) return null;
     if (token && token === room.teacherToken) return 'teacher';
     if (token && token === room.editorToken) return 'editor';
+    if ((token && token === room.questionerToken) || roleHint === 'questioner') return 'questioner';
     return 'viewer'; // Room ID alone NEVER grants editing rights
   }
 
-  getRoomPublicState(roomId, token = '') {
+  getRoomPublicState(roomId, token = '', roleHint = '') {
     const room = this.rooms.get(roomId);
     if (!room) return { status: 404, error: 'Classroom room not found.' };
     if (room.expiresAt && Date.now() > room.expiresAt) {
       this.rooms.delete(roomId);
       return { status: 410, error: 'Classroom room has expired.' };
     }
-    const role = this.resolveRole(room, token);
+    const role = this.resolveRole(room, token, roleHint);
+    const safeScene = role === 'teacher' ? room.scene : stripSceneTeacherNotes(room.scene);
     return {
       status: 200,
       data: {
         roomId: room.roomId,
         title: room.title,
         role,
-        scene: room.scene,
+        scene: safeScene,
         deletedIds: room.deletedIds || [],
         createdAt: room.createdAt,
         updatedAt: room.updatedAt,
         expiresAt: room.expiresAt,
         teacherViewport: room.teacherViewport,
-        ...(role === 'teacher' ? { editorToken: room.editorToken, teacherToken: room.teacherToken } : {}),
+        timerState: room.timerState || null,
+        ...(role === 'teacher'
+          ? {
+              editorToken: room.editorToken,
+              teacherToken: room.teacherToken,
+              questionerToken: room.questionerToken,
+            }
+          : {}),
       },
     };
   }
@@ -197,6 +241,25 @@ export class CollabStore {
 
     // Enforce server-side role permissions:
     // Viewers can ONLY add questions or upvote/point; they CANNOT modify/delete protected board elements!
+    if (op.type === 'reaction:send') {
+      const emoji = String(op.emoji || '👍').slice(0, 8);
+      const authorName = String(op.authorName || 'Participant').slice(0, 40);
+      return {
+        ok: true,
+        broadcast: {
+          type: 'reaction:burst',
+          reaction: {
+            id: generateShortId('rx', 4),
+            emoji,
+            authorName,
+            color: op.color || '#2563eb',
+            createdAt: Date.now(),
+          },
+          senderClientId: op.clientId,
+        },
+      };
+    }
+
     if (op.type === 'question:add') {
       const q = op.question;
       if (!q || q.type !== 'question' || !Number.isFinite(q.x) || !Number.isFinite(q.y)) {
@@ -231,6 +294,23 @@ export class CollabStore {
         ok: false,
         code: 403,
         error: 'FORBIDDEN_VIEWER_ROLE: Viewers cannot modify protected board content.',
+      };
+    }
+
+    if (op.type === 'timer:sync') {
+      room.timerState = {
+        running: Boolean(op.timerState?.running),
+        remainingSec: Math.max(0, Number(op.timerState?.remainingSec) || 0),
+        mode: op.timerState?.mode === 'stopwatch' ? 'stopwatch' : 'countdown',
+        updatedAt: Date.now(),
+      };
+      return {
+        ok: true,
+        broadcast: {
+          type: 'timer:synced',
+          timerState: room.timerState,
+          senderClientId: op.clientId,
+        },
       };
     }
 
@@ -499,11 +579,25 @@ function sendJson(res, status, data) {
 
 export function attachCollabRoutes(httpServer, store = new CollabStore()) {
   const broadcastToRoom = (roomId, msgObj, excludeSocket = null) => {
-    const frame = encodeWsFrame(msgObj);
     for (const [sock, meta] of store.clients.entries()) {
       if (meta.roomId === roomId && sock !== excludeSocket && !sock.destroyed) {
         try {
-          sock.write(frame);
+          let payload = msgObj;
+          if (meta.role !== 'teacher') {
+            if (msgObj.type === 'scene:synced' && msgObj.scene) {
+              payload = { ...msgObj, scene: stripSceneTeacherNotes(msgObj.scene) };
+            } else if (msgObj.type === 'elements:upserted' && Array.isArray(msgObj.elements)) {
+              payload = {
+                ...msgObj,
+                elements: msgObj.elements.map((el) => {
+                  const copy = { ...el };
+                  delete copy.teacherNotes;
+                  return copy;
+                }),
+              };
+            }
+          }
+          sock.write(encodeWsFrame(payload));
         } catch {
           // Ignore broken socket
         }
@@ -524,6 +618,8 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           role: meta.role,
           pageId: meta.pageId,
           cursor: meta.cursor,
+          handRaised: Boolean(meta.handRaised),
+          handRaisedAt: meta.handRaisedAt || null,
           selectionIds: meta.selectionIds || [],
         });
       }
@@ -595,7 +691,8 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
     const roomMatch = /^\/api\/rooms\/([a-zA-Z0-9_-]+)$/.exec(pathname);
     if (roomMatch && req.method === 'GET') {
       const token = urlObj.searchParams.get('token') || '';
-      const result = store.getRoomPublicState(roomMatch[1], token);
+      const roleHint = urlObj.searchParams.get('role') || '';
+      const result = store.getRoomPublicState(roomMatch[1], token, roleHint);
       if (result.status !== 200) sendJson(res, result.status, { error: result.error });
       else sendJson(res, 200, result.data);
       return true;
@@ -611,7 +708,7 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           sendJson(res, 404, { error: 'Room not found.' });
           return true;
         }
-        const role = store.resolveRole(room, body.token || '');
+        const role = store.resolveRole(room, body.token || '', body.roleHint || '');
         const outcome = store.applyRoomOperation(roomId, role, body);
         if (!outcome.ok) {
           sendJson(res, outcome.code || 400, { error: outcome.error });
@@ -643,6 +740,7 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
       }
       const roomId = urlObj.searchParams.get('roomId') || '';
       const token = urlObj.searchParams.get('token') || '';
+      const roleHint = urlObj.searchParams.get('role') || '';
       const clientId = urlObj.searchParams.get('clientId') || generateShortId('c', 4);
       const name = urlObj.searchParams.get('name') || 'Participant';
       const color = urlObj.searchParams.get('color') || '#2563eb';
@@ -655,7 +753,7 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
         return;
       }
 
-      const role = store.resolveRole(room, token);
+      const role = store.resolveRole(room, token, roleHint);
       const accept = crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
       socket.write(
         [
@@ -676,12 +774,14 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
         color,
         pageId: room.scene.activePageId,
         cursor: null,
+        handRaised: false,
+        handRaisedAt: null,
         selectionIds: [],
         lastSeen: Date.now(),
       };
       store.clients.set(socket, sessionMeta);
 
-      // Send initial room state & assigned server role
+      // Send initial room state & assigned server role (stripping teacherNotes for non-teachers)
       socket.write(
         encodeWsFrame({
           type: 'room:welcome',
@@ -689,9 +789,10 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           role,
           clientId,
           sessionId: sessionMeta.sessionId,
-          scene: room.scene,
+          scene: role === 'teacher' ? room.scene : stripSceneTeacherNotes(room.scene),
           deletedIds: room.deletedIds || [],
           teacherViewport: room.teacherViewport,
+          timerState: room.timerState || null,
         })
       );
       broadcastPresence(roomId);
@@ -716,6 +817,10 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
                 if (msg.name) sessionMeta.name = String(msg.name).slice(0, 40);
                 if (msg.color) sessionMeta.color = String(msg.color).slice(0, 20);
                 if (msg.pageId) sessionMeta.pageId = msg.pageId;
+                if (typeof msg.handRaised === 'boolean') {
+                  sessionMeta.handRaised = msg.handRaised;
+                  sessionMeta.handRaisedAt = msg.handRaised ? Date.now() : null;
+                }
                 if (msg.cursor === null || (msg.cursor && Number.isFinite(msg.cursor.x) && Number.isFinite(msg.cursor.y))) {
                   sessionMeta.cursor = msg.cursor;
                 }

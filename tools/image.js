@@ -46,12 +46,15 @@ export async function insertImageDataUrl(app, rawDataUrl, worldPos = null) {
   const dispScale = Math.min(1, 360 / Math.max(natW, natH));
   const w = Math.round(natW * dispScale);
   const h = Math.round(natH * dispScale);
-  const pt = worldPos || app.getViewportCenterWorld();
+  const pos =
+    worldPos ||
+    app.getUsableViewportCenter?.() ||
+    app.getViewportCenterWorld?.() || { x: 400, y: 260 };
   const page = app.getPage();
   const el = createElement('image', {
     fileId,
-    x: Math.round(pt.x - w / 2),
-    y: Math.round(pt.y - h / 2),
+    x: Math.round(pos.x - w / 2),
+    y: Math.round(pos.y - h / 2),
     w,
     h,
     naturalWidth: natW,

@@ -66,16 +66,71 @@ export const ICON_PACK_SOURCES = {
     name: 'Generic Systems & Networking Teaching Concepts',
     upstreamUrl: 'local://stencils/concepts.js',
     version: '2.0.0',
+    generation: 'current',
     license: 'MIT License (First-party educational artwork)',
     attribution: 'StudioBoard Educational Vector Pack',
     usageNotes:
       'Vendor-neutral conceptual diagrams for OS processes, sockets, packets, disks, routers, firewalls, DNS, TLS, and Linux kernel/user space.',
   },
+  legacy: {
+    provider: 'StudioBoard Legacy Primitives',
+    name: 'StudioBoard v1 Legacy Diagram Stencils',
+    upstreamUrl: 'local://stencils/legacy',
+    version: '1.0.0-legacy',
+    generation: 'legacy',
+    license: 'MIT License',
+    attribution: 'StudioBoard Legacy Vector Primitives',
+    usageNotes:
+      'Retained for backward compatibility with v1 documents. Prefer Current Official Cloud, Kubernetes, CNCF, and Devicon packs for new architecture diagrams.',
+  },
 };
+
+const LEGACY_CATEGORIES = new Set(['Cloud', 'Kubernetes', 'Network', 'Flowchart', 'UML', 'ER', 'Classroom & Math']);
+
+export function computeStencilAssetHash(stencil = {}) {
+  const svgSample =
+    typeof stencil.toSvg === 'function'
+      ? stencil.toSvg(0, 0, stencil.defaultW || 130, stencil.defaultH || 104, '')
+      : '';
+  const payload = `${stencil.id || ''}|${stencil.name || ''}|${stencil.category || ''}|${svgSample}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `fnv1a_${(h >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function inferCollectionGroup(stencil = {}) {
+  const id = String(stencil.id || '');
+  const cat = String(stencil.category || '');
+  if (stencil.isBoundary || id.startsWith('bnd-') || cat === 'Architecture Boundaries') {
+    return 'boundaries';
+  }
+  if (id.startsWith('aws-') || id.startsWith('az-') || id.startsWith('gcp-') || cat.includes('Cloud —')) {
+    return 'cloud-icons';
+  }
+  if (id.startsWith('k8s-') || cat.includes('Kubernetes')) {
+    return 'kubernetes-symbols';
+  }
+  if (id.startsWith('concept-') || cat.includes('Teaching Concepts')) {
+    return 'teaching-illustrations';
+  }
+  if (id.startsWith('linux-') || id.startsWith('net-') || cat.includes('Linux') || cat.includes('Networking')) {
+    return 'networking-linux';
+  }
+  if (LEGACY_CATEGORIES.has(cat)) {
+    return 'diagram-primitives';
+  }
+  return 'devops-logos';
+}
 
 export function inferIconPackKey(stencil = {}) {
   const id = String(stencil.id || '');
   const cat = String(stencil.category || '');
+  if (LEGACY_CATEGORIES.has(cat) && !stencil.isCard && !stencil.isBoundary) {
+    return 'legacy';
+  }
   if (id.startsWith('aws-') || cat.includes('AWS')) return 'aws';
   if (id.startsWith('az-') || cat.includes('Azure')) return 'azure';
   if (id.startsWith('gcp-') || cat.includes('GCP')) return 'gcp';
@@ -95,17 +150,36 @@ export function getIconProvenance(stencil) {
   if (!stencil) return ICON_PACK_SOURCES.concepts;
   const key = stencil.packKey || inferIconPackKey(stencil);
   const pack = ICON_PACK_SOURCES[key] || ICON_PACK_SOURCES.devicon;
+  const isLegacy = Boolean(key === 'legacy' || LEGACY_CATEGORIES.has(stencil.category));
+  const defaultWidth = Number(stencil.defaultW) || (stencil.isBoundary ? 380 : stencil.isCard ? 130 : 140);
+  const defaultHeight = Number(stencil.defaultH) || (stencil.isBoundary ? 240 : stencil.isCard ? 104 : 90);
+  const rawTags = String(stencil.tags || '')
+    .split(/\s+/)
+    .filter(Boolean);
+
   return {
     stencilId: stencil.id,
     name: stencil.name,
-    iconKind: stencil.isBoundary ? 'boundary' : stencil.iconKind || 'service',
+    iconKind: stencil.isBoundary ? 'boundary' : stencil.iconKind || (isLegacy ? 'legacy-primitive' : 'service'),
+    collection: inferCollectionGroup(stencil),
     packKey: key,
     provider: pack.provider,
     upstreamSource: pack.upstreamUrl,
     version: pack.version,
+    generation: isLegacy ? 'legacy' : pack.generation || 'current',
+    isLegacy,
     license: pack.license,
     attribution: pack.attribution,
     usageNotes: pack.usageNotes,
+    usageRequirements: pack.usageNotes,
+    tags: rawTags,
+    aliases: stencil.badge ? [String(stencil.badge).toLowerCase()] : [],
+    dimensions: {
+      defaultWidth,
+      defaultHeight,
+      aspectRatio: Number((defaultWidth / defaultHeight).toFixed(3)),
+    },
+    assetHash: computeStencilAssetHash(stencil),
     preservesAspectRatio: true,
   };
 }

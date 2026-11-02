@@ -391,8 +391,8 @@ describe('Stencils, Templates, CanvasRenderer & Full Feature E2E Suite', () => {
     const k8sFiltered = getStencilsByCategory('pod');
     assert.ok(k8sFiltered.some((g) => g.items.some((i) => i.id === 'k8s-pod')));
 
-    // Verify all 11 built-in templates build valid elements
-    assert.equal(BUILTIN_TEMPLATES.length, 11);
+    // Verify all 18 built-in templates (11 general + 7 DevOps packs) build valid elements
+    assert.equal(BUILTIN_TEMPLATES.length, 18);
     for (const tpl of BUILTIN_TEMPLATES) {
       const built = getTemplateById(tpl.id).build();
       assert.ok(Array.isArray(built));

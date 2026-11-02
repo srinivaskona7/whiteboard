@@ -26,16 +26,18 @@ export function parseShareRoute(hashStr = '') {
     };
   }
 
-  // Short live room route: #/r/{roomId}?invite=...&teacher=...
+  // Short live room route: #/r/{roomId}?invite=...&teacher=...&role=questioner
   const roomMatch = /^\/r\/([a-zA-Z0-9_-]+)(?:\?(.*))?$/.exec(raw);
   if (roomMatch) {
     const roomId = roomMatch[1];
     const params = new URLSearchParams(roomMatch[2] || '');
     const token = params.get('teacher') || params.get('invite') || params.get('token') || '';
+    const roleHint = params.get('role') || '';
     return {
       mode: 'room',
       roomId,
       token,
+      roleHint,
     };
   }
 
@@ -56,9 +58,11 @@ export class CollabClient {
     this.statusMessage = 'Local board';
     this.roomId = '';
     this.boardId = '';
-    this.role = 'teacher'; // 'teacher' | 'editor' | 'viewer'
+    this.role = 'teacher'; // 'teacher' | 'editor' | 'questioner' | 'viewer'
+    this.roleHint = '';
     this.teacherToken = '';
     this.editorToken = '';
+    this.questionerToken = '';
     this.activeToken = '';
     this.expiresAt = null;
     this.ws = null;
@@ -67,6 +71,8 @@ export class CollabClient {
     this.participants = new Map(); // clientId -> { ...meta, renderCursor: { x, y } }
     this.followingTeacher = false;
     this.teacherViewport = null;
+    this.handRaised = false;
+    this.recentReactions = [];
     this._lastCursorSentAt = 0;
     this._suppressOutboundSync = false;
   }
@@ -144,7 +150,7 @@ export class CollabClient {
 
   canEditBoard() {
     if (this.status === 'snapshot') return false;
-    if (this.status === 'live' && this.role === 'viewer') return false;
+    if (this.status === 'live' && (this.role === 'viewer' || this.role === 'questioner')) return false;
     return true;
   }
 
@@ -253,7 +259,7 @@ export class CollabClient {
     return true;
   }
 
-  async joinRoomById(roomId, tokenFromUrl = '') {
+  async joinRoomById(roomId, tokenFromUrl = '', roleHint = '') {
     const savedToken =
       tokenFromUrl ||
       (typeof sessionStorage !== 'undefined'
@@ -263,6 +269,7 @@ export class CollabClient {
       typeof sessionStorage !== 'undefined'
         ? sessionStorage.getItem(`studioboard_room_editor_${roomId}`) || ''
         : '';
+    this.roleHint = roleHint || this.roleHint || '';
 
     const healthy = await this.checkBackendHealth();
     if (!healthy) {
@@ -274,7 +281,9 @@ export class CollabClient {
     }
 
     const res = await fetch(
-      this.getEndpoint(`/api/rooms/${encodeURIComponent(roomId)}?token=${encodeURIComponent(savedToken)}`)
+      this.getEndpoint(
+        `/api/rooms/${encodeURIComponent(roomId)}?token=${encodeURIComponent(savedToken)}&role=${encodeURIComponent(this.roleHint)}`
+      )
     );
     const data = await res.json();
     if (!res.ok) {
@@ -290,6 +299,7 @@ export class CollabClient {
     this.activeToken = savedToken;
     this.teacherToken = data.teacherToken || (this.role === 'teacher' ? savedToken : '');
     this.editorToken = data.editorToken || savedEditor;
+    this.questionerToken = data.questionerToken || '';
     this.expiresAt = data.expiresAt;
     if (savedToken) {
       try {
@@ -300,8 +310,11 @@ export class CollabClient {
     }
 
     this._applyRemoteScene(data.scene, data.deletedIds || []);
-    if (data.teacherViewport && this.role === 'viewer') {
+    if (data.teacherViewport && (this.role === 'viewer' || this.role === 'questioner')) {
       this.teacherViewport = data.teacherViewport;
+    }
+    if (data.timerState) {
+      this.app.timerUI?.applyRemoteTimerState?.(data.timerState);
     }
 
     // Keep URL clean so secret tokens are not left exposed in the address bar
@@ -309,15 +322,16 @@ export class CollabClient {
       window.history.replaceState(null, '', `#/r/${roomId}`);
     }
 
-    await this.connectToRoom(roomId, savedToken);
+    await this.connectToRoom(roomId, savedToken, this.roleHint);
     return true;
   }
 
-  connectToRoom(roomId, token = '') {
+  connectToRoom(roomId, token = '', roleHint = this.roleHint) {
     if (typeof WebSocket === 'undefined') return Promise.resolve(false);
     this.disconnect();
     this.roomId = roomId;
     this.activeToken = token;
+    this.roleHint = roleHint || '';
     this.status = 'connecting';
     this.statusMessage = `Connecting to ${roomId}…`;
     this.app.updateUI?.();
@@ -326,6 +340,7 @@ export class CollabClient {
     const qs = new URLSearchParams({
       roomId,
       token: token || '',
+      role: this.roleHint || '',
       clientId: this.clientId,
       name,
       color: this.color,
@@ -416,7 +431,13 @@ export class CollabClient {
   _updateLiveStatusText() {
     const count = Math.max(1, this.participants.size);
     const roleLabel =
-      this.role === 'teacher' ? 'Teacher' : this.role === 'editor' ? 'Editor' : 'Viewer / Q&A';
+      this.role === 'teacher'
+        ? 'Teacher'
+        : this.role === 'editor'
+          ? 'Editor'
+          : this.role === 'questioner'
+            ? 'Questioner'
+            : 'Viewer / Q&A';
     this.statusMessage = `Live · ${this.roomId} · ${count} online (${roleLabel})`;
   }
 
@@ -430,6 +451,9 @@ export class CollabClient {
       if (msg.teacherViewport) {
         this.teacherViewport = msg.teacherViewport;
         if (this.followingTeacher) this._applyTeacherCamera(msg.teacherViewport);
+      }
+      if (msg.timerState) {
+        this.app.timerUI?.applyRemoteTimerState?.(msg.timerState);
       }
       this._updateLiveStatusText();
       this.app.updateUI?.();
@@ -524,6 +548,19 @@ export class CollabClient {
       if (this.followingTeacher && msg.senderClientId !== this.clientId) {
         this._applyTeacherCamera(this.teacherViewport);
       }
+      return;
+    }
+
+    if (msg.type === 'reaction:burst' && msg.reaction) {
+      this.recentReactions.push({ ...msg.reaction, receivedAt: Date.now() });
+      if (this.recentReactions.length > 12) this.recentReactions.shift();
+      this.app.dialogs?.showToast(`${msg.reaction.emoji} ${msg.reaction.authorName}`, 'info');
+      this.app.classroomUI?.update();
+      return;
+    }
+
+    if (msg.type === 'timer:synced' && msg.timerState) {
+      this.app.timerUI?.applyRemoteTimerState?.(msg.timerState);
       return;
     }
 
@@ -641,6 +678,56 @@ export class CollabClient {
     }
   }
 
+  toggleHandRaised(nextState = !this.handRaised) {
+    this.handRaised = Boolean(nextState);
+    if (this.status === 'live' && this.ws && this.ws.readyState === 1) {
+      const name = this.app.classroomUI?.getStudentName() || (this.role === 'teacher' ? 'Teacher' : 'Student');
+      this.ws.send(
+        JSON.stringify({
+          type: 'presence:update',
+          name,
+          color: this.color,
+          pageId: this.app.getPage().id,
+          handRaised: this.handRaised,
+        })
+      );
+    }
+    this.app.classroomUI?.update();
+  }
+
+  sendReaction(emoji = '👍') {
+    const authorName =
+      this.app.classroomUI?.getStudentName() || (this.role === 'teacher' ? 'Teacher' : 'Student');
+    const rx = {
+      id: uid('rx'),
+      emoji,
+      authorName,
+      color: this.color,
+      createdAt: Date.now(),
+    };
+    this.recentReactions.push(rx);
+    if (this.recentReactions.length > 12) this.recentReactions.shift();
+    if (this.status === 'live' && this.roomId) {
+      this._sendWsOrRest({
+        type: 'reaction:send',
+        emoji,
+        authorName,
+        color: this.color,
+      });
+    }
+    this.app.dialogs?.showToast(`${emoji} ${authorName}`, 'info');
+    this.app.classroomUI?.update();
+  }
+
+  broadcastTimerState(timerState) {
+    if (this.status !== 'live' || !this.roomId) return;
+    if (this.role !== 'teacher' && this.role !== 'editor') return;
+    this._sendWsOrRest({
+      type: 'timer:sync',
+      timerState,
+    });
+  }
+
   sendCursorUpdate(worldPt, selectionIds = []) {
     if (this.status !== 'live' || !this.ws || this.ws.readyState !== 1) return;
     const now = Date.now();
@@ -653,6 +740,7 @@ export class CollabClient {
         name,
         color: this.color,
         pageId: this.app.getPage().id,
+        handRaised: this.handRaised,
         cursor:
           worldPt && Number.isFinite(worldPt.x) && Number.isFinite(worldPt.y)
             ? { x: Math.round(worldPt.x), y: Math.round(worldPt.y) }

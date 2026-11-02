@@ -55,9 +55,27 @@ export class TextTool {
     this.editorEl = ta;
   }
 
+  get editingEl() {
+    return this.editingElement;
+  }
+
   isOpen() {
     return Boolean(this.editingElement);
   }
+
+  commit() {
+    return this.commitAndClose();
+  }
+
+  cancel() {
+    if (this.isOpen()) {
+      this.commitAndClose();
+    }
+  }
+
+  onPointerMove() {}
+
+  onPointerUp() {}
 
   onPointerDown(world) {
     if (this.isOpen()) {

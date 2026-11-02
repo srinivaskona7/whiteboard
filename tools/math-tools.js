@@ -3,7 +3,9 @@ import { createElement } from '../scene/model.js';
 
 export function insertMathHelper(app, kind = 'ruler') {
   const page = app.getPage();
-  const centerWorld = app.getViewportCenterWorld();
+  const centerWorld =
+    app.getUsableViewportCenter?.() ||
+    app.getViewportCenterWorld?.() || { x: 400, y: 260 };
 
   if (kind === 'axes' || kind === 'number-line') {
     const stencilId = kind === 'axes' ? 'math-axes' : 'math-number-line';

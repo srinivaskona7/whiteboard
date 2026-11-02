@@ -9,6 +9,9 @@ import {
   getConnectorDirectionPreset,
   applyConnectorDirectionPreset,
   getContainerChildren,
+  getContainerHierarchy,
+  syncContainerMemberships,
+  isFrameIncludedInPresentation,
   handleAnchorDeletion,
 } from '../scene/model.js';
 import {
@@ -22,13 +25,27 @@ import {
 import {
   getConnectorPoints,
   getConnectorTangentFromPoint,
+  getConnectorLabelPosition,
+  buildRoundedElbowSvgPath,
   resetConnectorRoute,
 } from '../scene/routing.js';
 import { bindConnectorEndpoint, updateConnectorBindings } from '../scene/bindings.js';
 import { computeNonOverlappingOrigin } from '../scene/mermaid.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from '../scene/layout.js';
 import { HistoryManager } from '../scene/history.js';
-import { serializeScene, encodeSceneToHash } from '../scene/storage.js';
+import {
+  serializeScene,
+  parseSceneJson,
+  encodeSceneToHash,
+  decodeSceneFromHash,
+  stripTeacherNotes,
+  DEFAULT_PRESET_TOOLS,
+  WORKSPACE_PRESETS,
+  loadWorkspacePrefs,
+  saveWorkspacePrefs,
+} from '../scene/storage.js';
+import { exportToSvgString } from '../render/svg-export.js';
+import { LaserTool } from '../tools/laser.js';
 import {
   ALL_STENCILS,
   getStencilById,
@@ -415,3 +432,406 @@ describe('5. Performance Benchmarks: 100, 1,000, and 5,000 Objects', () => {
     }
   });
 });
+
+describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Breadcrumbs, Teacher Notes & Facilitation', () => {
+  test('persists Teach, Diagram, and Collaborate workspace presets and custom pinned tools separately from document content', () => {
+    const store = new Map();
+    const mockStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+    };
+
+    assert.ok(WORKSPACE_PRESETS.teach && WORKSPACE_PRESETS.diagram && WORKSPACE_PRESETS.collaborate);
+    const initial = loadWorkspacePrefs(mockStorage);
+    assert.equal(initial.preset, 'diagram');
+    assert.deepEqual(initial.pinnedToolsByPreset.teach, DEFAULT_PRESET_TOOLS.teach);
+
+    saveWorkspacePrefs(
+      {
+        preset: 'teach',
+        pinnedToolsByPreset: {
+          teach: ['select', 'pen', 'laser', 'question'],
+        },
+      },
+      mockStorage
+    );
+    const updated = loadWorkspacePrefs(mockStorage);
+    assert.equal(updated.preset, 'teach');
+    assert.deepEqual(updated.pinnedToolsByPreset.teach, ['select', 'pen', 'laser', 'question']);
+    assert.deepEqual(updated.pinnedToolsByPreset.diagram, DEFAULT_PRESET_TOOLS.diagram);
+  });
+
+  test('routes rounded-elbow connectors with clamped corner radius and exports source, middle, and destination labels', () => {
+    const scene = createScene('light');
+    const page = scene.pages[0];
+    const nodeA = createElement('stencil', { stencilId: 'aws-ec2', x: 80, y: 80, w: 156, h: 114, text: 'EC2' });
+    const nodeB = createElement('stencil', { stencilId: 'aws-rds', x: 420, y: 280, w: 156, h: 114, text: 'RDS' });
+    const conn = createElement('arrow', {
+      x: 236,
+      y: 137,
+      x2: 420,
+      y2: 337,
+      routing: 'rounded-elbow',
+      cornerRadius: 18,
+      startLabel: 'app:out',
+      text: 'TLS 1.3',
+      endLabel: ':5432',
+    });
+    bindConnectorEndpoint(conn, 'start', nodeA, 'auto');
+    bindConnectorEndpoint(conn, 'end', nodeB, 'auto');
+    page.elements.push(nodeA, nodeB, conn);
+    updateConnectorBindings(page);
+
+    const pts = getConnectorPoints(conn, page);
+    assert.ok(pts.length >= 3, 'Rounded-elbow route should produce orthogonal elbow bends');
+    const svgPath = buildRoundedElbowSvgPath(pts, conn.cornerRadius);
+    assert.ok(svgPath.includes('Q '), 'Rounded-elbow SVG path should include quadratic corner arcs');
+
+    const startPos = getConnectorLabelPosition(conn, 'start', page);
+    const midPos = getConnectorLabelPosition(conn, 'middle', page);
+    const endPos = getConnectorLabelPosition(conn, 'end', page);
+    assert.ok(Math.hypot(startPos.x - pts[0].x, startPos.y - pts[0].y) >= 20, 'Start label should stay clear of start arrowhead/boundary');
+    assert.ok(Math.hypot(endPos.x - pts[pts.length - 1].x, endPos.y - pts[pts.length - 1].y) >= 20, 'End label should stay clear of end arrowhead/boundary');
+    assert.ok(midPos.t > startPos.t && midPos.t < endPos.t);
+
+    const svgStr = exportToSvgString(scene, page);
+    assert.ok(svgStr.includes('app:out'));
+    assert.ok(svgStr.includes('TLS 1.3'));
+    assert.ok(svgStr.includes(':5432'));
+
+    // Round-trip save & reopen preserves cornerRadius and all 3 labels
+    const reopened = parseSceneJson(serializeScene(scene));
+    const savedConn = reopened.pages[0].elements.find((e) => e.id === conn.id);
+    assert.equal(savedConn.routing, 'rounded-elbow');
+    assert.equal(savedConn.cornerRadius, 18);
+    assert.equal(savedConn.startLabel, 'app:out');
+    assert.equal(savedConn.text, 'TLS 1.3');
+    assert.equal(savedConn.endLabel, ':5432');
+  });
+
+  test('computes nested container breadcrumbs, updates membership on move, and excludes hidden/opted-out frames from presentation', () => {
+    const page = createPage('Architecture');
+    const vpc = createElement('stencil', {
+      stencilId: 'bnd-vpc',
+      x: 40,
+      y: 40,
+      w: 600,
+      h: 420,
+      text: 'Production VPC',
+      isBoundary: true,
+      isContainer: true,
+    });
+    const subnet = createElement('stencil', {
+      stencilId: 'bnd-private-subnet',
+      x: 80,
+      y: 90,
+      w: 480,
+      h: 300,
+      text: 'Private Subnet',
+      isBoundary: true,
+      isContainer: true,
+      containerId: vpc.id,
+    });
+    const pod = createElement('stencil', {
+      stencilId: 'k8s-pod',
+      x: 140,
+      y: 150,
+      w: 156,
+      h: 114,
+      text: 'API Pod',
+      containerId: subnet.id,
+    });
+    const slide1 = createElement('frame', { x: 700, y: 40, w: 400, h: 300, text: 'Slide 1', slideOrder: 1, includeInPresentation: true });
+    const slide2 = createElement('frame', { x: 1140, y: 40, w: 400, h: 300, text: 'Draft Scratchpad', slideOrder: 2, includeInPresentation: false });
+    page.elements.push(vpc, subnet, pod, slide1, slide2);
+
+    const crumbs = getContainerHierarchy(page, pod);
+    assert.deepEqual(
+      crumbs.map((c) => c.name),
+      ['Production VPC', 'Private Subnet', 'API Pod']
+    );
+
+    // Move pod outside all containers and sync membership
+    pod.x = 900;
+    pod.y = 500;
+    pod.containerId = null;
+    syncContainerMemberships(page, [pod]);
+    assert.equal(pod.containerId, null);
+
+    // Verify frame presentation inclusion filter
+    assert.equal(isFrameIncludedInPresentation(slide1), true);
+    assert.equal(isFrameIncludedInPresentation(slide2), false);
+  });
+
+  test('persists teacher notes locally but strips them from student share hashes, snapshots, and non-teacher room payloads', async () => {
+    const scene = createScene('light');
+    scene.pages[0].teacherNotes = 'Secret grading rubric: check IAM least privilege';
+    const frame = createElement('frame', {
+      x: 100,
+      y: 100,
+      w: 480,
+      h: 320,
+      text: 'Architecture Exercise',
+      teacherNotes: 'Answer key: S3 bucket needs VPC Endpoint',
+    });
+    scene.pages[0].elements.push(frame);
+
+    // 1. Local serialization preserves teacherNotes
+    const localReloaded = parseSceneJson(serializeScene(scene));
+    assert.equal(localReloaded.pages[0].teacherNotes, 'Secret grading rubric: check IAM least privilege');
+    assert.equal(localReloaded.pages[0].elements[0].teacherNotes, 'Answer key: S3 bucket needs VPC Endpoint');
+
+    // 2. stripTeacherNotes & encodeSceneToHash exclude teacherNotes
+    const stripped = stripTeacherNotes(scene);
+    assert.equal(stripped.pages[0].teacherNotes, undefined);
+    assert.equal(stripped.pages[0].elements[0].teacherNotes, undefined);
+
+    const hashResult = encodeSceneToHash(scene);
+    const fromStudentHash = decodeSceneFromHash(hashResult.hash);
+    assert.ok(!fromStudentHash.pages[0].teacherNotes, 'Student hash must not contain page teacherNotes');
+    assert.ok(!fromStudentHash.pages[0].elements[0].teacherNotes, 'Student hash must not contain frame teacherNotes');
+
+    // 3. Server snapshots & non-teacher room state exclude teacherNotes, while teacher token retains them
+    const srv = createStandaloneCollabServer({ port: 0 });
+    try {
+      const snapRes = await srv.request('/api/boards', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Handout', scene }),
+      });
+      const snapCreated = await snapRes.json();
+      const snapFetch = await (await srv.request(`/api/boards/${snapCreated.id}`)).json();
+      assert.equal(snapFetch.scene.pages[0].teacherNotes, undefined);
+      assert.equal(snapFetch.scene.pages[0].elements[0].teacherNotes, undefined);
+
+      const roomRes = await srv.request('/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'Live Class', scene }),
+      });
+      const roomCreated = await roomRes.json();
+
+      // Student questioner role fetch
+      const studentState = await (await srv.request(`/api/rooms/${roomCreated.roomId}?role=questioner`)).json();
+      assert.equal(studentState.role, 'questioner');
+      assert.equal(studentState.scene.pages[0].teacherNotes, undefined);
+      assert.equal(studentState.scene.pages[0].elements[0].teacherNotes, undefined);
+
+      // Teacher token fetch
+      const teacherState = await (
+        await srv.request(`/api/rooms/${roomCreated.roomId}?token=${roomCreated.teacherToken}`)
+      ).json();
+      assert.equal(teacherState.role, 'teacher');
+      assert.equal(teacherState.scene.pages[0].teacherNotes, 'Secret grading rubric: check IAM least privilege');
+      assert.equal(teacherState.scene.pages[0].elements[0].teacherNotes, 'Answer key: S3 bucket needs VPC Endpoint');
+
+      // Facilitation: questioner can send reaction & reopen question, but cannot delete elements; teacher can sync timer
+      const rxRes = await srv.request(`/api/rooms/${roomCreated.roomId}/ops`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'reaction:send', emoji: '💡', authorName: 'Maya', roleHint: 'questioner' }),
+      });
+      assert.equal(rxRes.status, 200);
+
+      const timerRes = await srv.request(`/api/rooms/${roomCreated.roomId}/ops`, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'timer:sync',
+          token: roomCreated.teacherToken,
+          timerState: { running: true, remainingSec: 180, mode: 'countdown' },
+        }),
+      });
+      assert.equal(timerRes.status, 200);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  test('LaserTool.prune interface is consistent across render loop and pointer events', () => {
+    const laser = new LaserTool({ requestRender() {} }, { lifetimeMs: 1000 });
+    laser.onPointerDown({ x: 10, y: 20 }, 1000);
+    laser.onPointerMove({ x: 30, y: 40 }, 1200);
+    laser.onPointerUp(1250);
+    assert.equal(laser.prune(1500).length, 2);
+    assert.equal(laser.hasActiveTrail(1500), true);
+    assert.equal(laser.prune(2500).length, 0);
+    assert.equal(laser.hasActiveTrail(2500), false);
+  });
+
+  test('synchronizes two independent WebSocket clients across roles, cursors, hand-raise, reactions, questions, timer, and reconnect', async () => {
+    const srv = createStandaloneCollabServer({ port: 0 });
+    const port = await srv.start();
+    if (!port) return; // Skip only if OS sandbox blocks loopback listen
+
+    try {
+      const scene = createScene('light');
+      scene.pages[0].teacherNotes = 'Instructor private note';
+      const ec2 = createElement('stencil', { stencilId: 'aws-ec2', x: 120, y: 120, w: 156, h: 114, text: 'EC2' });
+      scene.pages[0].elements.push(ec2);
+
+      const createRes = await fetch(`http://127.0.0.1:${port}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Live WebSocket Class', scene }),
+      });
+      assert.equal(createRes.status, 201);
+      const room = await createRes.json();
+
+      const connectClient = (queryObj) =>
+        new Promise((resolve, reject) => {
+          const qs = new URLSearchParams(queryObj).toString();
+          const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?${qs}`);
+          const inbox = [];
+          const waiters = [];
+          ws.addEventListener('message', (ev) => {
+            const msg = JSON.parse(String(ev.data));
+            inbox.push(msg);
+            for (let i = waiters.length - 1; i >= 0; i--) {
+              if (waiters[i].pred(msg)) {
+                const w = waiters.splice(i, 1)[0];
+                w.resolve(msg);
+              }
+            }
+          });
+          const waitFor = (pred, timeoutMs = 2000) => {
+            const found = inbox.find(pred);
+            if (found) return Promise.resolve(found);
+            return new Promise((res, rej) => {
+              const t = setTimeout(() => rej(new Error('WebSocket waitFor timeout')), timeoutMs);
+              waiters.push({
+                pred,
+                resolve: (m) => {
+                  clearTimeout(t);
+                  res(m);
+                },
+              });
+            });
+          };
+          ws.addEventListener('open', () => resolve({ ws, inbox, waitFor }));
+          ws.addEventListener('error', reject);
+        });
+
+      const teacher = await connectClient({
+        roomId: room.roomId,
+        token: room.teacherToken,
+        clientId: 'cli_teacher',
+        name: 'Prof. Lin',
+        color: '#2563eb',
+      });
+      const teacherWelcome = await teacher.waitFor((m) => m.type === 'room:welcome');
+      assert.equal(teacherWelcome.role, 'teacher');
+      assert.equal(teacherWelcome.scene.pages[0].teacherNotes, 'Instructor private note');
+
+      const student = await connectClient({
+        roomId: room.roomId,
+        role: 'questioner',
+        clientId: 'cli_student',
+        name: 'Alex',
+        color: '#059669',
+      });
+      const studentWelcome = await student.waitFor((m) => m.type === 'room:welcome');
+      assert.equal(studentWelcome.role, 'questioner');
+      assert.equal(studentWelcome.scene.pages[0].teacherNotes, undefined);
+
+      // Verify both participants appear in presence:list
+      const presenceBoth = await teacher.waitFor(
+        (m) => m.type === 'presence:list' && m.participants.length === 2
+      );
+      assert.equal(presenceBoth.participants.length, 2);
+
+      // Student raises hand & moves cursor
+      student.ws.send(
+        JSON.stringify({
+          type: 'presence:update',
+          name: 'Alex',
+          pageId: scene.pages[0].id,
+          handRaised: true,
+          cursor: { x: 180, y: 160 },
+        })
+      );
+      const presenceHand = await teacher.waitFor(
+        (m) =>
+          m.type === 'presence:list' &&
+          m.participants.some((p) => p.clientId === 'cli_student' && p.handRaised === true && p.cursor?.x === 180)
+      );
+      assert.ok(presenceHand);
+
+      // Student sends reaction
+      student.ws.send(JSON.stringify({ type: 'reaction:send', emoji: '👏', authorName: 'Alex' }));
+      const rxBurst = await teacher.waitFor((m) => m.type === 'reaction:burst');
+      assert.equal(rxBurst.reaction.emoji, '👏');
+
+      // Student asks question, teacher replies & resolves, student reopens
+      const qEl = createElement('question', {
+        x: 200,
+        y: 100,
+        text: 'Why is this in a private subnet?',
+        authorName: 'Alex',
+        targetElementId: ec2.id,
+      });
+      student.ws.send(JSON.stringify({ type: 'question:add', pageId: scene.pages[0].id, question: qEl }));
+      const qAdded = await teacher.waitFor((m) => m.type === 'question:added');
+      assert.equal(qAdded.question.id, qEl.id);
+
+      teacher.ws.send(
+        JSON.stringify({
+          type: 'question:update',
+          pageId: scene.pages[0].id,
+          questionId: qEl.id,
+          reply: 'To prevent direct public internet ingress.',
+          resolved: true,
+        })
+      );
+      const qResolved = await student.waitFor(
+        (m) => m.type === 'question:updated' && m.question.resolved === true
+      );
+      assert.equal(qResolved.question.reply, 'To prevent direct public internet ingress.');
+
+      student.ws.send(
+        JSON.stringify({
+          type: 'question:update',
+          pageId: scene.pages[0].id,
+          questionId: qEl.id,
+          resolved: false,
+        })
+      );
+      const qReopened = await teacher.waitFor(
+        (m) => m.type === 'question:updated' && m.question.resolved === false
+      );
+      assert.equal(qReopened.question.resolved, false);
+
+      // Student attempts forbidden delete over WebSocket
+      student.ws.send(JSON.stringify({ type: 'elements:delete', ids: [ec2.id] }));
+      const errMsg = await student.waitFor((m) => m.type === 'error' && m.code === 403);
+      assert.equal(errMsg.code, 403);
+
+      // Teacher broadcasts camera & shared timer
+      teacher.ws.send(
+        JSON.stringify({
+          type: 'teacher:camera',
+          pageId: scene.pages[0].id,
+          camera: { x: -120, y: -80, zoom: 1.5 },
+        })
+      );
+      const camMsg = await student.waitFor((m) => m.type === 'teacher:camera');
+      assert.equal(camMsg.camera.zoom, 1.5);
+
+      teacher.ws.send(
+        JSON.stringify({
+          type: 'timer:sync',
+          timerState: { running: true, remainingSec: 240, mode: 'countdown' },
+        })
+      );
+      const timerMsg = await student.waitFor((m) => m.type === 'timer:synced');
+      assert.equal(timerMsg.timerState.remainingSec, 240);
+
+      // Disconnect student and verify stale presence cleanup
+      student.ws.close();
+      const presenceAfterLeave = await teacher.waitFor(
+        (m) => m.type === 'presence:list' && m.participants.length === 1
+      );
+      assert.equal(presenceAfterLeave.participants[0].clientId, 'cli_teacher');
+      teacher.ws.close();
+    } finally {
+      await srv.stop();
+    }
+  });
+});
+

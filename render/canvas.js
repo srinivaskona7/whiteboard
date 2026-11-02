@@ -20,11 +20,25 @@ import {
 import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
 
 export class CanvasRenderer {
-  constructor(canvas) {
+  constructor(canvas, minimapCanvas = null) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.minimapCanvas = minimapCanvas;
+    this.minimapCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
     this.imageCache = new Map();
     this.onImageLoad = null;
+    this.onRenderError = null;
+    this._lastErrorTime = 0;
+  }
+
+  _reportRenderError(scope, err) {
+    const now = Date.now();
+    if (now - this._lastErrorTime > 4000) {
+      this._lastErrorTime = now;
+      if (typeof this.onRenderError === 'function') {
+        this.onRenderError(scope, err);
+      }
+    }
   }
 
   getImage(fileId, filesMap) {
@@ -85,12 +99,14 @@ export class CanvasRenderer {
       presentState = null,
       cropState = null,
       editingElementId = null,
+      minimapOpen = false,
     } = appState;
 
     const ctx = this.ctx;
     const dpr = this.dpr || 1;
     const theme = getThemeTokens(scene.theme);
     const cam = page.camera;
+    const now = appState.now || Date.now();
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -104,7 +120,6 @@ export class CanvasRenderer {
     ctx.scale(cam.zoom, cam.zoom);
 
     const vpBounds = this.getViewportWorldBounds(cam);
-    const now = Date.now();
 
     const clippingFrames = new Map();
     for (const el of page.elements) {
@@ -119,7 +134,8 @@ export class CanvasRenderer {
     ];
 
     for (const el of ordered) {
-      if (el.hidden) continue;
+      if (!el || el.hidden) continue;
+      if (!Number.isFinite(el.x) || !Number.isFinite(el.y)) continue;
       if (presentState?.active && el.revealStep > 0 && el.revealStep > presentState.revealStep) {
         continue;
       }
@@ -139,110 +155,187 @@ export class CanvasRenderer {
         }
       }
 
-      if (clipFrame) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(clipFrame.x, clipFrame.y, clipFrame.w, clipFrame.h);
-        ctx.clip();
+      try {
+        if (clipFrame) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(clipFrame.x, clipFrame.y, clipFrame.w, clipFrame.h);
+          ctx.clip();
+        }
+        this.drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState);
+      } catch (err) {
+        this._reportRenderError(`element:${el.id}`, err);
+      } finally {
+        if (clipFrame) ctx.restore();
       }
-      this.drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState);
-      if (clipFrame) ctx.restore();
     }
 
     if (smartGuides && smartGuides.length > 0) {
-      ctx.save();
-      ctx.strokeStyle = theme.guideStroke;
-      ctx.lineWidth = 1.2 / cam.zoom;
-      ctx.setLineDash([5 / cam.zoom, 4 / cam.zoom]);
-      for (const g of smartGuides) {
-        ctx.beginPath();
-        if (g.type === 'vertical') {
-          ctx.moveTo(g.x, g.y1);
-          ctx.lineTo(g.x, g.y2);
-        } else {
-          ctx.moveTo(g.x1, g.y);
-          ctx.lineTo(g.x2, g.y);
+      try {
+        ctx.save();
+        ctx.strokeStyle = theme.guideStroke;
+        ctx.lineWidth = 1.2 / cam.zoom;
+        ctx.setLineDash([5 / cam.zoom, 4 / cam.zoom]);
+        for (const g of smartGuides) {
+          ctx.beginPath();
+          if (g.type === 'vertical') {
+            ctx.moveTo(g.x, g.y1);
+            ctx.lineTo(g.x, g.y2);
+          } else {
+            ctx.moveTo(g.x1, g.y);
+            ctx.lineTo(g.x2, g.y);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
+        ctx.restore();
+      } catch (err) {
+        this._reportRenderError('smartGuides', err);
       }
-      ctx.restore();
     }
 
     if (hoveredElement && !presentState?.active) {
-      this.drawConnectionPorts(ctx, hoveredElement, hoveredPort, cam.zoom, theme);
+      try {
+        this.drawConnectionPorts(ctx, hoveredElement, hoveredPort, cam.zoom, theme);
+      } catch (err) {
+        this._reportRenderError('hoveredPorts', err);
+      }
     }
 
     if (appState.connectorPreview && !presentState?.active) {
-      const { startPort, endPort } = appState.connectorPreview;
-      if (startPort?.element) {
-        this.drawConnectionPorts(ctx, startPort.element, startPort, cam.zoom, theme);
-      }
-      if (endPort?.element && endPort.element !== startPort?.element) {
-        this.drawConnectionPorts(ctx, endPort.element, endPort, cam.zoom, theme);
+      try {
+        const { startPort, endPort } = appState.connectorPreview;
+        if (startPort?.element) {
+          this.drawConnectionPorts(ctx, startPort.element, startPort, cam.zoom, theme);
+        }
+        if (endPort?.element && endPort.element !== startPort?.element) {
+          this.drawConnectionPorts(ctx, endPort.element, endPort, cam.zoom, theme);
+        }
+      } catch (err) {
+        this._reportRenderError('connectorPreview', err);
       }
     }
 
     if (appState.placementPreview?.elements?.length && !presentState?.active) {
-      this.drawPlacementPreview(ctx, appState.placementPreview, page, scene, theme, cam.zoom);
-    }
-
-    if (appState.remoteCursors && appState.remoteCursors.length > 0) {
-      this.drawRemoteCursors(ctx, appState.remoteCursors, page, cam.zoom);
-    }
-
-    if (!presentState?.active && selectedIds.size > 0) {
-      const selectedEls = page.elements.filter((e) => selectedIds.has(e.id) && !e.hidden);
-      if (selectedEls.length === 1) {
-        this.drawSelectionHandles(ctx, selectedEls[0], page, cam.zoom, theme);
-      } else if (selectedEls.length > 1) {
-        const gb = getSelectionBounds(selectedEls);
-        if (gb) {
-          ctx.save();
-          ctx.strokeStyle = theme.selectionStroke;
-          ctx.lineWidth = 1.5 / cam.zoom;
-          ctx.setLineDash([6 / cam.zoom, 4 / cam.zoom]);
-          ctx.strokeRect(gb.x, gb.y, gb.w, gb.h);
-          ctx.setLineDash([]);
-          const hs = 7.5 / cam.zoom;
-          for (const hd of getMultiSelectionHandles(gb)) {
-            ctx.fillStyle = theme.handleFill;
-            ctx.strokeStyle = theme.handleStroke;
-            ctx.fillRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
-            ctx.strokeRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
-          }
-          ctx.restore();
-        }
+      try {
+        this.drawPlacementPreview(ctx, appState.placementPreview, page, scene, theme, cam.zoom);
+      } catch (err) {
+        this._reportRenderError('placementPreview', err);
       }
     }
 
-    if (appState.classroomPointers && appState.classroomPointers.length > 0) {
-      this.drawClassroomPointers(ctx, appState.classroomPointers, page, cam.zoom, now);
+    if (appState.remoteCursors && appState.remoteCursors.length > 0) {
+      try {
+        this.drawRemoteCursors(ctx, appState.remoteCursors, page, cam.zoom);
+      } catch (err) {
+        this._reportRenderError('remoteCursors', err);
+      }
+    }
+
+    if (!presentState?.active && selectedIds.size > 0) {
+      try {
+        const selectedEls = page.elements.filter((e) => selectedIds.has(e.id) && !e.hidden);
+        if (selectedEls.length === 1) {
+          this.drawSelectionHandles(ctx, selectedEls[0], page, cam.zoom, theme);
+        } else if (selectedEls.length > 1) {
+          const gb = getSelectionBounds(selectedEls);
+          if (gb) {
+            ctx.save();
+            ctx.strokeStyle = theme.selectionStroke;
+            ctx.lineWidth = 1.5 / cam.zoom;
+            ctx.setLineDash([6 / cam.zoom, 4 / cam.zoom]);
+            ctx.strokeRect(gb.x, gb.y, gb.w, gb.h);
+            ctx.setLineDash([]);
+            const hs = 7.5 / cam.zoom;
+            for (const hd of getMultiSelectionHandles(gb)) {
+              ctx.fillStyle = theme.handleFill;
+              ctx.strokeStyle = theme.handleStroke;
+              ctx.fillRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
+              ctx.strokeRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
+            }
+            ctx.restore();
+          }
+        }
+      } catch (err) {
+        this._reportRenderError('selectionHandles', err);
+      }
+    }
+
+    const pointers = appState.classroomPointers || appState.studentPointers;
+    if (pointers && pointers.length > 0) {
+      try {
+        this.drawClassroomPointers(ctx, pointers, page, cam.zoom, now);
+      } catch (err) {
+        this._reportRenderError('classroomPointers', err);
+      }
     }
 
     if (cropState && cropState.element) {
-      this.drawCropOverlay(ctx, cropState, cam.zoom);
+      try {
+        this.drawCropOverlay(ctx, cropState, cam.zoom);
+      } catch (err) {
+        this._reportRenderError('cropOverlay', err);
+      }
     }
 
     if (marqueeBox) {
-      ctx.save();
-      ctx.fillStyle = theme.selectionFill;
-      ctx.strokeStyle = theme.selectionStroke;
-      ctx.lineWidth = 1.2 / cam.zoom;
-      ctx.fillRect(marqueeBox.x, marqueeBox.y, marqueeBox.w, marqueeBox.h);
-      ctx.strokeRect(marqueeBox.x, marqueeBox.y, marqueeBox.w, marqueeBox.h);
-      ctx.restore();
+      try {
+        ctx.save();
+        ctx.fillStyle = theme.selectionFill;
+        ctx.strokeStyle = theme.selectionStroke;
+        ctx.lineWidth = 1.2 / cam.zoom;
+        ctx.fillRect(marqueeBox.x, marqueeBox.y, marqueeBox.w, marqueeBox.h);
+        ctx.strokeRect(marqueeBox.x, marqueeBox.y, marqueeBox.w, marqueeBox.h);
+        ctx.restore();
+      } catch (err) {
+        this._reportRenderError('marquee', err);
+      }
     }
 
-    if (laserTrail && laserTrail.length > 1) {
-      this.drawLaserTrail(ctx, laserTrail, cam.zoom, now);
+    if (Array.isArray(appState.lassoPoints) && appState.lassoPoints.length >= 2) {
+      try {
+        ctx.save();
+        ctx.fillStyle = theme.selectionFill;
+        ctx.strokeStyle = theme.selectionStroke;
+        ctx.lineWidth = 1.4 / cam.zoom;
+        ctx.setLineDash([5 / cam.zoom, 4 / cam.zoom]);
+        ctx.beginPath();
+        ctx.moveTo(appState.lassoPoints[0].x, appState.lassoPoints[0].y);
+        for (let i = 1; i < appState.lassoPoints.length; i++) {
+          ctx.lineTo(appState.lassoPoints[i].x, appState.lassoPoints[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      } catch (err) {
+        this._reportRenderError('lasso', err);
+      }
+    }
+
+    if (laserTrail && laserTrail.length > 0) {
+      try {
+        this.drawLaserTrail(ctx, laserTrail, cam.zoom, now);
+      } catch (err) {
+        this._reportRenderError('laserTrail', err);
+      }
     }
 
     ctx.restore();
 
-    if (spotlight && spotlight.active) {
-      this.drawSpotlightAndMagnifier(ctx, spotlight);
+    if (spotlight && (spotlight.active || spotlight.magnifierOnly)) {
+      try {
+        this.drawSpotlightAndMagnifier(ctx, spotlight, page, scene, theme, now, presentState);
+      } catch (err) {
+        this._reportRenderError('spotlight', err);
+      }
     }
     ctx.restore();
+
+    try {
+      this.drawMinimap(page, scene, theme, Boolean(minimapOpen && !presentState?.active));
+    } catch (err) {
+      this._reportRenderError('minimap', err);
+    }
   }
 
   drawBackgroundPattern(ctx, bgType, cam, theme, gridSize = 20) {
@@ -350,7 +443,11 @@ export class CanvasRenderer {
     ctx.font = `600 13px ${FONT_MAP.sans}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const slidePrefix = el.slideOrder ? `#${el.slideOrder} ` : '';
+    const slidePrefix = el.excludeFromPresentation
+      ? '[Optional] '
+      : el.slideOrder
+        ? `#${el.slideOrder} `
+        : '';
     ctx.fillText(`${slidePrefix}${el.text || 'Frame'}`, el.x + 12, el.y + 18);
 
     const bx = el.x + el.w - 28;
@@ -452,7 +549,9 @@ export class CanvasRenderer {
   }
 
   drawCropOverlay(ctx, cropState, zoom) {
-    const { element, rect } = cropState;
+    const element = cropState.element;
+    const rect = cropState.rect || cropState.box;
+    if (!element || !rect) return;
     ctx.save();
     ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
     ctx.fillRect(element.x, element.y, element.w, element.h);
@@ -464,13 +563,15 @@ export class CanvasRenderer {
   }
 
   drawLaserTrail(ctx, trail, zoom, now) {
+    if (!Array.isArray(trail) || trail.length === 0) return;
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (let i = 1; i < trail.length; i++) {
       const p0 = trail[i - 1];
       const p1 = trail[i];
-      const alpha = Math.max(0, 1 - (now - (p1.time || p1.t || now)) / 900);
+      const age = Math.max(0, now - (p1.time ?? p1.t ?? now));
+      const alpha = Math.max(0, 1 - age / 1200);
       if (alpha <= 0) continue;
       ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
       ctx.lineWidth = (6 * alpha) / zoom;
@@ -479,13 +580,23 @@ export class CanvasRenderer {
       ctx.lineTo(p1.x, p1.y);
       ctx.stroke();
     }
+    const tip = trail[trail.length - 1];
+    const tipAge = Math.max(0, now - (tip.time ?? tip.t ?? now));
+    const tipAlpha = Math.max(0, 1 - tipAge / 1200);
+    if (tipAlpha > 0 && Number.isFinite(tip.x) && Number.isFinite(tip.y)) {
+      ctx.fillStyle = `rgba(239, 68, 68, ${tipAlpha})`;
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 4.5 / zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
   drawClassroomPointers(ctx, pointers, page, zoom, now) {
     ctx.save();
     for (const pt of pointers) {
-      if (now - (pt.time || now) > 12000) continue;
+      const ts = pt.createdAt ?? pt.time ?? now;
+      if (now - ts > 12000) continue;
       let px = pt.x;
       let py = pt.y;
       if (pt.targetElementId) {
@@ -508,7 +619,8 @@ export class CanvasRenderer {
       ctx.beginPath();
       ctx.arc(px, py, 5 / zoom, 0, Math.PI * 2);
       ctx.fill();
-      const label = `${pt.authorName || 'Student'}${pt.targetElementName ? ` → ${pt.targetElementName}` : ''}`;
+      const targetName = pt.targetElementName || pt.targetLabel || '';
+      const label = `${pt.authorName || 'Student'}${targetName ? ` → ${targetName}` : ''}`;
       ctx.font = `bold ${Math.round(12 / zoom)}px ${FONT_MAP.sans}`;
       const lw = ctx.measureText(label).width + 14 / zoom;
       const lh = 20 / zoom;
@@ -592,36 +704,47 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  drawSpotlightAndMagnifier(ctx, spotlight) {
-    const { x, y, radius = 130, magnifier = false, dimOpacity = 0.72 } = spotlight;
+  drawSpotlightAndMagnifier(ctx, spotlight, page = null, scene = null, theme = null, now = Date.now(), presentState = null) {
+    const {
+      x,
+      y,
+      radius = 130,
+      magnifier = false,
+      magnifierScale = 2,
+      dimOpacity = 0.72,
+      dimBackground = true,
+    } = spotlight;
     ctx.save();
-    if (magnifier) {
-      const dpr = this.dpr || 1;
+    if (magnifier && page && scene && theme) {
+      const cam = page.camera;
+      const lensZoom = Math.max(1.5, Math.min(4, Number(magnifierScale) || 2));
+      const worldX = (x - cam.x) / cam.zoom;
+      const worldY = (y - cam.y) / cam.zoom;
       ctx.save();
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.clip();
-      const srcR = radius / 2;
-      ctx.drawImage(
-        this.canvas,
-        (x - srcR) * dpr,
-        (y - srcR) * dpr,
-        srcR * 2 * dpr,
-        srcR * 2 * dpr,
-        x - radius,
-        y - radius,
-        radius * 2,
-        radius * 2
-      );
+      ctx.fillStyle = theme.canvasBg;
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      ctx.translate(x, y);
+      ctx.scale(cam.zoom * lensZoom, cam.zoom * lensZoom);
+      ctx.translate(-worldX, -worldY);
+      for (const el of page.elements) {
+        if (!el || el.hidden) continue;
+        if (presentState?.active && el.revealStep > 0 && el.revealStep > presentState.revealStep) continue;
+        this.drawSingleElement(ctx, el, page, scene, theme, now, null, presentState);
+      }
       ctx.restore();
     }
 
-    const alpha = Math.max(0.2, Math.min(0.92, Number(dimOpacity) || 0.72));
-    ctx.fillStyle = `rgba(2, 6, 23, ${alpha})`;
-    ctx.beginPath();
-    ctx.rect(0, 0, this.width, this.height);
-    ctx.arc(x, y, radius, 0, Math.PI * 2, true);
-    ctx.fill('evenodd');
+    if (dimBackground !== false) {
+      const alpha = Math.max(0.2, Math.min(0.92, Number(dimOpacity) || 0.72));
+      ctx.fillStyle = `rgba(2, 6, 23, ${alpha})`;
+      ctx.beginPath();
+      ctx.rect(0, 0, this.width, this.height);
+      ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+    }
 
     ctx.strokeStyle = magnifier ? '#38bdf8' : '#facc15';
     ctx.lineWidth = 3;
@@ -629,6 +752,57 @@ export class CanvasRenderer {
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+
+  drawMinimap(page, scene, theme, minimapOpen = false) {
+    if (!this.minimapCanvas || !this.minimapCtx) return;
+    this.minimapCanvas.classList?.toggle('wb-hidden', !minimapOpen);
+    if (!minimapOpen) return;
+
+    const mctx = this.minimapCtx;
+    const mw = this.minimapCanvas.width || 180;
+    const mh = this.minimapCanvas.height || 120;
+    mctx.clearRect(0, 0, mw, mh);
+    mctx.fillStyle = theme.canvasBg;
+    mctx.fillRect(0, 0, mw, mh);
+
+    const visible = page.elements.filter((e) => !e.hidden);
+    const vp = this.getViewportWorldBounds(page.camera);
+    const contentBounds = getSelectionBounds(visible);
+    const minX = contentBounds ? Math.min(contentBounds.x - 100, vp.x) : vp.x;
+    const minY = contentBounds ? Math.min(contentBounds.y - 100, vp.y) : vp.y;
+    const maxX = contentBounds
+      ? Math.max(contentBounds.x + contentBounds.w + 100, vp.x + vp.w)
+      : vp.x + vp.w;
+    const maxY = contentBounds
+      ? Math.max(contentBounds.y + contentBounds.h + 100, vp.y + vp.h)
+      : vp.y + vp.h;
+    const worldW = Math.max(400, maxX - minX);
+    const worldH = Math.max(300, maxY - minY);
+    const scale = Math.min((mw - 12) / worldW, (mh - 12) / worldH);
+    const ox = (mw - worldW * scale) / 2 - minX * scale;
+    const oy = (mh - worldH * scale) / 2 - minY * scale;
+
+    mctx.save();
+    mctx.translate(ox, oy);
+    mctx.scale(scale, scale);
+
+    for (const el of visible) {
+      const b = getElementBounds(el);
+      mctx.fillStyle =
+        el.fill && el.fill !== 'transparent' ? resolveThemeColor(el.fill, scene.theme) : 'rgba(100, 116, 139, 0.25)';
+      mctx.strokeStyle = resolveThemeColor(el.stroke || '#475569', scene.theme);
+      mctx.lineWidth = Math.max(1 / scale, 1);
+      mctx.fillRect(b.x, b.y, Math.max(6, b.w), Math.max(6, b.h));
+      mctx.strokeRect(b.x, b.y, Math.max(6, b.w), Math.max(6, b.h));
+    }
+
+    mctx.strokeStyle = '#2563eb';
+    mctx.lineWidth = 1.8 / scale;
+    mctx.fillStyle = 'rgba(37, 99, 235, 0.08)';
+    mctx.fillRect(vp.x + 80, vp.y + 80, Math.max(20, vp.w - 160), Math.max(20, vp.h - 160));
+    mctx.strokeRect(vp.x + 80, vp.y + 80, Math.max(20, vp.w - 160), Math.max(20, vp.h - 160));
+    mctx.restore();
   }
 
   exportToPngCanvas(scene, page, options = {}) {

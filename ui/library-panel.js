@@ -87,6 +87,7 @@ export function initLibraryPanel(app) {
     panel.querySelector('#btn-close-library')?.addEventListener('click', () => {
       app.clearPlacementPreview?.();
       panel.classList.add('wb-hidden');
+      app.toolbarUI?.update();
     });
 
     panel.querySelector('#btn-lib-density')?.addEventListener('click', () => {

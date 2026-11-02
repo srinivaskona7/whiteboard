@@ -385,7 +385,7 @@ export function initClassroomUI(app) {
                   ${participants
                     .map(
                       (p) =>
-                        `<span class="wb-participant-chip" style="border-color:${escapeXml(p.color || '#2563eb')}"><i style="background:${escapeXml(p.color || '#2563eb')}"></i>${escapeXml(p.name || 'User')} (${escapeXml(p.role)})</span>`
+                        `<span class="wb-participant-chip" style="border-color:${escapeXml(p.color || '#2563eb')}"><i style="background:${escapeXml(p.color || '#2563eb')}"></i>${p.handRaised ? '✋ ' : ''}${escapeXml(p.name || 'User')} (${escapeXml(p.role)})</span>`
                     )
                     .join('')}
                 </div>
@@ -402,8 +402,35 @@ export function initClassroomUI(app) {
                             : ''
                         }
                       </div>`
-                    : ''
+                    : `<div class="wb-btn-group" style="margin-top:6px;">
+                        <button type="button" class="wb-btn wb-sm" id="btn-cls-broadcast-view" title="Broadcast current page and camera viewport to students following you">📡 Broadcast My View</button>
+                        <button type="button" class="wb-btn wb-sm" id="btn-cls-shared-timer" title="Open Shared Classroom Timer">⏱ Shared Timer</button>
+                      </div>`
                 }`
+              : ''
+          }
+        </div>
+
+        <div class="wb-prop-section">
+          <div class="wb-prop-title">Facilitation: Hand & Reactions</div>
+          <div class="wb-btn-group" style="margin-bottom:6px;">
+            <button type="button" class="wb-btn wb-sm ${collab?.handRaised ? 'active wb-primary' : ''}" id="btn-cls-raise-hand">
+              ✋ ${collab?.handRaised ? 'Lower Hand' : 'Raise Hand'}
+            </button>
+            <button type="button" class="wb-btn wb-sm" data-cls-reaction="👍" title="Send Thumbs Up">👍</button>
+            <button type="button" class="wb-btn wb-sm" data-cls-reaction="👏" title="Send Applause">👏</button>
+            <button type="button" class="wb-btn wb-sm" data-cls-reaction="💡" title="Got It / Idea">💡</button>
+            <button type="button" class="wb-btn wb-sm" data-cls-reaction="❓" title="Need Clarification">❓</button>
+            <button type="button" class="wb-btn wb-sm" data-cls-reaction="✅" title="Ready / Done">✅</button>
+          </div>
+          ${
+            collab?.recentReactions?.length > 0
+              ? `<div class="wb-muted" style="font-size:11px;display:flex;gap:6px;flex-wrap:wrap;">
+                  ${collab.recentReactions
+                    .slice(-4)
+                    .map((r) => `<span>${escapeXml(r.emoji)} ${escapeXml(r.authorName)}</span>`)
+                    .join(' · ')}
+                </div>`
               : ''
           }
         </div>
@@ -421,6 +448,9 @@ export function initClassroomUI(app) {
           <div class="wb-btn-group" style="flex-direction:column;gap:6px;">
             <button type="button" class="wb-btn wb-sm wb-primary" id="btn-cls-live-student">
               🎓 ${isLive ? 'Copy Student Join Link (Viewer / Q&A)' : 'Start Live Room & Copy Student Link'}
+            </button>
+            <button type="button" class="wb-btn wb-sm" id="btn-cls-live-questioner">
+              ❓ ${isLive ? 'Copy Questioner Link (Pointer & Q&A)' : 'Start Live Room & Copy Questioner Link'}
             </button>
             ${
               !isLive || collab.role === 'teacher'
@@ -519,6 +549,7 @@ export function initClassroomUI(app) {
 
     panel.querySelector('#btn-close-classroom')?.addEventListener('click', () => {
       panel.classList.add('wb-hidden');
+      app.toolbarUI?.update();
     });
 
     panel.querySelector('#cls-link-ttl')?.addEventListener('change', (e) => {
@@ -533,6 +564,25 @@ export function initClassroomUI(app) {
       app.collab?.setFollowTeacher(false);
     });
 
+    panel.querySelector('#btn-cls-broadcast-view')?.addEventListener('click', () => {
+      app.collab?.broadcastTeacherCamera();
+      app.dialogs.showToast('📡 Broadcasted current viewport to students following you.', 'info');
+    });
+
+    panel.querySelector('#btn-cls-shared-timer')?.addEventListener('click', () => {
+      app.timerUI?.toggle();
+    });
+
+    panel.querySelector('#btn-cls-raise-hand')?.addEventListener('click', () => {
+      app.collab?.toggleHandRaised();
+    });
+
+    panel.querySelectorAll('[data-cls-reaction]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        app.collab?.sendReaction(btn.dataset.clsReaction);
+      });
+    });
+
     panel.querySelector('#btn-cls-live-student')?.addEventListener('click', async () => {
       try {
         if (app.collab?.status === 'live' && app.collab.roomId) {
@@ -541,6 +591,21 @@ export function initClassroomUI(app) {
         } else {
           const created = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtlMs() });
           await copyVerifiedLink(created.viewerUrl, 'Student Live Join Link (Viewer / Q&A)');
+        }
+      } catch (err) {
+        app.dialogs.showToast(err.message);
+      }
+    });
+
+    panel.querySelector('#btn-cls-live-questioner')?.addEventListener('click', async () => {
+      try {
+        if (app.collab?.status === 'live' && app.collab.roomId) {
+          const url = app.collab.buildShortUrl(`#/r/${app.collab.roomId}?role=questioner`);
+          await copyVerifiedLink(url, 'Student Questioner Link (Pointer & Q&A)');
+        } else {
+          const created = await app.collab.startOrUpdateLiveRoom({ expiresInMs: getTtlMs() });
+          const url = app.collab.buildShortUrl(`#/r/${created.roomId}?role=questioner`);
+          await copyVerifiedLink(url, 'Student Questioner Link (Pointer & Q&A)');
         }
       } catch (err) {
         app.dialogs.showToast(err.message);
@@ -670,8 +735,15 @@ export function initClassroomUI(app) {
   }
 
   function toggle() {
+    const willOpen = panel.classList.contains('wb-hidden');
+    if (willOpen) {
+      document.getElementById('wb-library-panel')?.classList.add('wb-hidden');
+      document.getElementById('wb-layers-panel')?.classList.add('wb-hidden');
+      app.clearPlacementPreview?.();
+    }
     panel.classList.toggle('wb-hidden');
     if (!panel.classList.contains('wb-hidden')) render();
+    app.toolbarUI?.update();
   }
 
   return {

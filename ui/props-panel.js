@@ -1,13 +1,40 @@
 // ui/props-panel.js
 import { PALETTE_STROKE_COLORS, PALETTE_FILL_COLORS } from '../render/themes.js';
 import { escapeXml } from '../render/svg-export.js';
-import { getConnectorDirectionPreset, applyConnectorDirectionPreset } from '../scene/model.js';
+import {
+  getConnectorDirectionPreset,
+  applyConnectorDirectionPreset,
+  getElementContainmentPath,
+  getContainerChildren,
+  isFrameIncludedInPresentation,
+} from '../scene/model.js';
 import { resetConnectorRoute } from '../scene/routing.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
+
+function getSharedProp(elements, getter, fallback) {
+  if (!elements || elements.length === 0) {
+    return { value: fallback, mixed: false };
+  }
+  const first = getter(elements[0]);
+  for (let i = 1; i < elements.length; i++) {
+    if (getter(elements[i]) !== first) {
+      return { value: first, mixed: true };
+    }
+  }
+  return { value: first ?? fallback, mixed: false };
+}
 
 export function initPropsPanel(app) {
   const container = document.getElementById('wb-props-panel');
   if (!container) return { update() {} };
+
+  function isStudentRestrictedRole() {
+    const role = app.collab?.role;
+    return (
+      (app.collab?.status === 'live' || app.collab?.status === 'connecting' || app.collab?.status === 'readonly-snapshot') &&
+      (role === 'viewer' || role === 'questioner')
+    );
+  }
 
   function render() {
     const page = app.getPage();
@@ -66,9 +93,72 @@ export function initPropsPanel(app) {
           </div>
         </div>
       `);
+      if (!isStudentRestrictedRole()) {
+        sections.push(`
+          <div class="wb-prop-section">
+            <div class="wb-prop-title">Teacher Notes (Page)</div>
+            <p class="wb-muted" style="margin-bottom:4px;">Visible only to the teacher. Excluded from student links, snapshots & handouts.</p>
+            <textarea id="prop-page-teacher-notes" class="wb-textarea" rows="3" placeholder="Lesson talking points, solutions, or timing cues for ${escapeXml(page.name || 'this page')}..." aria-label="Page Teacher Notes">${escapeXml(page.teacherNotes || '')}</textarea>
+          </div>
+        `);
+      }
       container.innerHTML = sections.join('');
       bindEvents(selected);
       return;
+    }
+
+    // 1b. Container Breadcrumbs & Element Classification when 1 element is selected
+    if (selected.length === 1) {
+      const el = selected[0];
+      const hierarchy = getElementContainmentPath(page, el);
+      const isContainerEl = Boolean(el.type === 'frame' || el.isContainer || el.isBoundary);
+      const children = isContainerEl ? getContainerChildren(page, el.id) : [];
+      const kindBadge =
+        el.type === 'frame'
+          ? 'Presentation Frame'
+          : el.isContainer || el.isBoundary
+            ? 'Architectural Container'
+            : el.groupId
+              ? `Group (${el.groupId.slice(-4)})`
+              : el.type === 'line' || el.type === 'arrow'
+                ? 'Connector'
+                : 'Component';
+
+      if (hierarchy.length > 1 || isContainerEl || el.groupId) {
+        sections.push(`
+          <div class="wb-prop-section">
+            <div class="wb-prop-row" style="margin-top:0;">
+              <span class="wb-prop-title" style="margin:0;">Hierarchy</span>
+              <span class="wb-kind-badge" data-kind="${escapeXml(kindBadge)}">${escapeXml(kindBadge)}</span>
+            </div>
+            <div class="wb-breadcrumbs" id="wb-container-breadcrumbs" role="navigation" aria-label="Container Breadcrumbs">
+              ${hierarchy
+                .map((item, idx) => {
+                  const isCurrent = idx === hierarchy.length - 1;
+                  return `<button type="button" class="wb-breadcrumb-chip ${isCurrent ? 'active' : ''}" data-breadcrumb-id="${escapeXml(item.id)}" ${item.groupId ? `data-breadcrumb-group="${escapeXml(item.groupId)}"` : ''} title="Select ${escapeXml(item.name)} (${escapeXml(item.kind)})">${escapeXml(item.name)}</button>`;
+                })
+                .join('<span class="wb-breadcrumb-sep">›</span>')}
+            </div>
+            ${
+              isContainerEl
+                ? `<div class="wb-btn-group" style="margin-top:6px;">
+                    <button type="button" class="wb-btn wb-sm" id="btn-select-container-children" ${children.length === 0 ? 'disabled' : ''} title="Navigate inside container and select its child components">↳ Select Children (${children.length})</button>
+                  </div>`
+                : ''
+            }
+          </div>
+        `);
+      }
+    } else if (selected.length > 1) {
+      const uniqueGroups = new Set(selected.map((e) => e.groupId).filter(Boolean));
+      sections.push(`
+        <div class="wb-prop-section" style="padding-bottom:6px;">
+          <div class="wb-prop-row" style="margin:0;">
+            <span class="wb-muted">Multi-selection (${selected.length} items)</span>
+            ${uniqueGroups.size === 1 ? `<span class="wb-kind-badge">Grouped</span>` : `<span class="wb-mixed-badge">Mixed Selection</span>`}
+          </div>
+        </div>
+      `);
     }
 
     // 2. Stamp tool selector when stamp tool is active
@@ -142,27 +232,35 @@ export function initPropsPanel(app) {
       selected.some((e) => e.type === 'text' || e.type === 'code');
     const isImage = selected.some((e) => e.type === 'image');
 
+    const strokeMeta = getSharedProp(selected, (e) => e.stroke, ref.stroke || '#1e293b');
+    const swMeta = getSharedProp(selected, (e) => e.strokeWidth || 2, ref.strokeWidth || 2);
+    const ssMeta = getSharedProp(selected, (e) => e.strokeStyle || 'solid', ref.strokeStyle || 'solid');
+    const fillMeta = getSharedProp(selected, (e) => e.fill || 'transparent', ref.fill || 'transparent');
+
     // Stroke & Fill
     if (!isImage) {
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Stroke</div>
+          <div class="wb-prop-row" style="margin-top:0;">
+            <span class="wb-prop-title" style="margin:0;">Stroke</span>
+            ${strokeMeta.mixed || swMeta.mixed || ssMeta.mixed ? `<span class="wb-mixed-badge">Mixed</span>` : ''}
+          </div>
           <div class="wb-color-grid">
             ${PALETTE_STROKE_COLORS.map(
               (c) =>
-                `<button type="button" class="wb-color-swatch ${ref.stroke === c ? 'active' : ''}" style="background:${c}" data-stroke="${c}" aria-label="Stroke ${c}"></button>`
+                `<button type="button" class="wb-color-swatch ${!strokeMeta.mixed && strokeMeta.value === c ? 'active' : ''}" style="background:${c}" data-stroke="${c}" aria-label="Stroke ${c}"></button>`
             ).join('')}
-            <input type="color" id="prop-stroke-custom" value="${ref.stroke && ref.stroke.startsWith('#') ? ref.stroke : '#1e293b'}" aria-label="Custom stroke color"/>
+            <input type="color" id="prop-stroke-custom" value="${strokeMeta.value && String(strokeMeta.value).startsWith('#') ? strokeMeta.value : '#1e293b'}" aria-label="Custom stroke color"/>
           </div>
           <label class="wb-prop-row">
-            <span>Width (${ref.strokeWidth || 2}px)</span>
-            <input type="range" id="prop-stroke-width" min="1" max="24" value="${ref.strokeWidth || 2}"/>
+            <span>Width (${swMeta.mixed ? 'Mixed' : `${swMeta.value}px`})</span>
+            <input type="range" id="prop-stroke-width" min="1" max="24" value="${swMeta.value || 2}"/>
           </label>
           <div class="wb-btn-group">
             ${['solid', 'dashed', 'dotted']
               .map(
                 (st) =>
-                  `<button type="button" class="wb-btn wb-sm ${(ref.strokeStyle || 'solid') === st ? 'active' : ''}" data-stroke-style="${st}">${st}</button>`
+                  `<button type="button" class="wb-btn wb-sm ${!ssMeta.mixed && ssMeta.value === st ? 'active' : ''}" data-stroke-style="${st}">${st}</button>`
               )
               .join('')}
           </div>
@@ -173,13 +271,16 @@ export function initPropsPanel(app) {
     if (isShape) {
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Fill & Shape Style</div>
+          <div class="wb-prop-row" style="margin-top:0;">
+            <span class="wb-prop-title" style="margin:0;">Fill & Shape Style</span>
+            ${fillMeta.mixed ? `<span class="wb-mixed-badge">Mixed</span>` : ''}
+          </div>
           <div class="wb-color-grid">
             ${PALETTE_FILL_COLORS.map(
               (c) =>
-                `<button type="button" class="wb-color-swatch ${ref.fill === c ? 'active' : ''} ${c === 'transparent' ? 'wb-swatch-clear' : ''}" style="background:${c === 'transparent' ? 'transparent' : c}" data-fill="${c}" aria-label="Fill ${c}"></button>`
+                `<button type="button" class="wb-color-swatch ${!fillMeta.mixed && fillMeta.value === c ? 'active' : ''} ${c === 'transparent' ? 'wb-swatch-clear' : ''}" style="background:${c === 'transparent' ? 'transparent' : c}" data-fill="${c}" aria-label="Fill ${c}"></button>`
             ).join('')}
-            <input type="color" id="prop-fill-custom" value="${ref.fill && ref.fill.startsWith('#') ? ref.fill : '#ffffff'}" aria-label="Custom fill color"/>
+            <input type="color" id="prop-fill-custom" value="${fillMeta.value && String(fillMeta.value).startsWith('#') ? fillMeta.value : '#ffffff'}" aria-label="Custom fill color"/>
           </div>
           <label class="wb-prop-row">
             <span>Corner Roundness</span>
@@ -197,12 +298,15 @@ export function initPropsPanel(app) {
       `);
     }
 
-    // Connector Routing, Direction Presets & Arrowheads
+    // Connector Routing, Direction Presets, Rounded-Elbow Corner Radius & Source/Middle/Dest Labels
     if (isConnector) {
+      const connEls = selected.filter((e) => e.type === 'line' || e.type === 'arrow');
+      const routeMeta = getSharedProp(connEls, (e) => e.routing || 'orthogonal', ref.routing || 'orthogonal');
       const arrowTypes = ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'];
       const routingModes = [
         ['straight', 'Straight'],
         ['orthogonal', 'Right-Angle'],
+        ['rounded-elbow', 'Rounded-Elbow'],
         ['curved', 'Curved'],
       ];
       const dirPreset = getConnectorDirectionPreset(ref);
@@ -215,15 +319,26 @@ export function initPropsPanel(app) {
       const portOpts = ['auto', 'top', 'right', 'bottom', 'left'];
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Connector Route & Direction</div>
+          <div class="wb-prop-row" style="margin-top:0;">
+            <span class="wb-prop-title" style="margin:0;">Connector Route & Labels</span>
+            ${routeMeta.mixed ? `<span class="wb-mixed-badge">Mixed</span>` : ''}
+          </div>
           <div class="wb-btn-group" role="group" aria-label="Connector Routing Mode">
             ${routingModes
               .map(
                 ([rt, label]) =>
-                  `<button type="button" class="wb-btn wb-sm ${(ref.routing || 'orthogonal') === rt ? 'active' : ''}" data-routing="${rt}">${label}</button>`
+                  `<button type="button" class="wb-btn wb-sm ${!routeMeta.mixed && routeMeta.value === rt ? 'active' : ''}" data-routing="${rt}">${label}</button>`
               )
               .join('')}
           </div>
+          ${
+            (ref.routing || 'orthogonal') === 'rounded-elbow'
+              ? `<label class="wb-prop-row">
+                  <span>Elbow Radius (${ref.cornerRadius || 14}px)</span>
+                  <input type="range" id="prop-corner-radius" min="4" max="36" value="${ref.cornerRadius || 14}" aria-label="Rounded Elbow Corner Radius"/>
+                </label>`
+              : ''
+          }
           <div class="wb-btn-group" role="group" aria-label="Connector Direction Preset">
             ${dirPresets
               .map(
@@ -235,8 +350,16 @@ export function initPropsPanel(app) {
           ${
             selected.length === 1
               ? `<label class="wb-prop-row">
-                  <span>Label</span>
-                  <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. HTTPS / gRPC" value="${escapeXml(ref.text || '')}" aria-label="Connector Label"/>
+                  <span>Source Label</span>
+                  <input type="text" id="prop-start-label" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. client / out" value="${escapeXml(ref.startLabel || '')}" aria-label="Connector Source Label"/>
+                </label>
+                <label class="wb-prop-row">
+                  <span>Middle Label</span>
+                  <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. HTTPS / gRPC" value="${escapeXml(ref.text || '')}" aria-label="Connector Middle Label"/>
+                </label>
+                <label class="wb-prop-row">
+                  <span>Dest Label</span>
+                  <input type="text" id="prop-end-label" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. :443 / target" value="${escapeXml(ref.endLabel || '')}" aria-label="Connector Destination Label"/>
                 </label>
                 <div class="wb-btn-group" style="flex-wrap:wrap;gap:3px;">
                   ${quickLabels
@@ -247,7 +370,7 @@ export function initPropsPanel(app) {
                     .join('')}
                 </div>
                 <label class="wb-prop-row">
-                  <span>Label Pos (${Math.round((ref.labelT ?? 0.5) * 100)}%)</span>
+                  <span>Mid Label Pos (${Math.round((ref.labelT ?? 0.5) * 100)}%)</span>
                   <input type="range" id="prop-label-t" min="10" max="90" value="${Math.round((ref.labelT ?? 0.5) * 100)}" aria-label="Connector Label Position"/>
                 </label>`
               : ''
@@ -309,9 +432,14 @@ export function initPropsPanel(app) {
 
     // Typography
     if (hasText) {
+      const fontMeta = getSharedProp(selected, (e) => e.fontFamily || 'sans', ref.fontFamily || 'sans');
+      const sizeMeta = getSharedProp(selected, (e) => e.fontSize || 18, ref.fontSize || 18);
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Label & Typography</div>
+          <div class="wb-prop-row" style="margin-top:0;">
+            <span class="wb-prop-title" style="margin:0;">Label & Typography</span>
+            ${fontMeta.mixed || sizeMeta.mixed ? `<span class="wb-mixed-badge">Mixed</span>` : ''}
+          </div>
           ${
             selected.length === 1 && !isConnector
               ? `<label class="wb-prop-row">
@@ -323,15 +451,16 @@ export function initPropsPanel(app) {
           <label class="wb-prop-row">
             <span>Font</span>
             <select id="prop-font-family" aria-label="Font Family">
-              <option value="sans" ${ref.fontFamily === 'sans' ? 'selected' : ''}>Sans-serif</option>
-              <option value="serif" ${ref.fontFamily === 'serif' ? 'selected' : ''}>Serif</option>
-              <option value="mono" ${ref.fontFamily === 'mono' ? 'selected' : ''}>Monospace</option>
-              <option value="hand" ${ref.fontFamily === 'hand' ? 'selected' : ''}>Hand-drawn</option>
+              ${fontMeta.mixed ? `<option value="__mixed__" selected disabled>— Mixed —</option>` : ''}
+              <option value="sans" ${!fontMeta.mixed && fontMeta.value === 'sans' ? 'selected' : ''}>Sans-serif</option>
+              <option value="serif" ${!fontMeta.mixed && fontMeta.value === 'serif' ? 'selected' : ''}>Serif</option>
+              <option value="mono" ${!fontMeta.mixed && fontMeta.value === 'mono' ? 'selected' : ''}>Monospace</option>
+              <option value="hand" ${!fontMeta.mixed && fontMeta.value === 'hand' ? 'selected' : ''}>Hand-drawn</option>
             </select>
           </label>
           <label class="wb-prop-row">
-            <span>Size (${ref.fontSize || 18}px)</span>
-            <input type="range" id="prop-font-size" min="10" max="64" value="${ref.fontSize || 18}"/>
+            <span>Size (${sizeMeta.mixed ? 'Mixed' : `${sizeMeta.value}px`})</span>
+            <input type="range" id="prop-font-size" min="10" max="64" value="${sizeMeta.value || 18}"/>
           </label>
           <label class="wb-prop-row">
             <span>Text Color</span>
@@ -387,7 +516,7 @@ export function initPropsPanel(app) {
       const fr = selected[0];
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">${fr.type === 'frame' ? 'Frame / Slide' : 'Architecture Boundary Container'}</div>
+          <div class="wb-prop-title">${fr.type === 'frame' ? 'Presentation Frame / Slide' : 'Architecture Boundary Container'}</div>
           <label class="wb-prop-row">
             <span>Move Contents Together</span>
             <input type="checkbox" id="prop-move-children" ${fr.moveChildren !== false ? 'checked' : ''}/>
@@ -395,6 +524,10 @@ export function initPropsPanel(app) {
           ${
             fr.type === 'frame'
               ? `<label class="wb-prop-row">
+                  <span>Include in Presentation</span>
+                  <input type="checkbox" id="prop-frame-include-pres" ${isFrameIncludedInPresentation(fr) ? 'checked' : ''}/>
+                </label>
+                <label class="wb-prop-row">
                   <span>Slide Order #</span>
                   <input type="number" id="prop-slide-order" min="1" max="99" value="${fr.slideOrder || 1}" style="width:60px"/>
                 </label>
@@ -403,6 +536,12 @@ export function initPropsPanel(app) {
                   <input type="checkbox" id="prop-frame-clip" ${fr.clip ? 'checked' : ''}/>
                 </label>
                 <button type="button" class="wb-btn wb-sm" id="btn-frame-collapse">${fr.collapsed ? 'Expand Frame' : 'Collapse Frame'}</button>`
+              : ''
+          }
+          ${
+            !isStudentRestrictedRole()
+              ? `<div class="wb-prop-subtitle" style="margin-top:8px;">Teacher Notes (Private)</div>
+                 <textarea id="prop-el-teacher-notes" class="wb-textarea" rows="3" placeholder="Private speaker notes for this frame/section (never sent to students)..." aria-label="Frame Teacher Notes">${escapeXml(fr.teacherNotes || '')}</textarea>`
               : ''
           }
         </div>
@@ -466,17 +605,22 @@ export function initPropsPanel(app) {
 
     // Common Selection Actions (Reveal Step, Hyperlink, Format Painter, Library, Z-order, Lock)
     if (selected.length > 0) {
+      const revMeta = getSharedProp(selected, (e) => e.revealStep || 0, ref.revealStep || 0);
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Element Actions</div>
+          <div class="wb-prop-row" style="margin-top:0;">
+            <span class="wb-prop-title" style="margin:0;">Element Actions</span>
+            ${revMeta.mixed ? `<span class="wb-mixed-badge">Mixed</span>` : ''}
+          </div>
           <label class="wb-prop-row">
             <span>Reveal Step</span>
             <select id="prop-reveal-step" aria-label="Presentation Reveal Step">
-              <option value="0" ${(ref.revealStep || 0) === 0 ? 'selected' : ''}>Always Visible</option>
+              ${revMeta.mixed ? `<option value="__mixed__" selected disabled>— Mixed —</option>` : ''}
+              <option value="0" ${!revMeta.mixed && revMeta.value === 0 ? 'selected' : ''}>Always Visible</option>
               ${[1, 2, 3, 4, 5, 6, 7, 8, 9]
                 .map(
                   (s) =>
-                    `<option value="${s}" ${ref.revealStep === s ? 'selected' : ''}>Step ${s}</option>`
+                    `<option value="${s}" ${!revMeta.mixed && revMeta.value === s ? 'selected' : ''}>Step ${s}</option>`
                 )
                 .join('')}
             </select>
@@ -506,6 +650,48 @@ export function initPropsPanel(app) {
       container.classList.add('wb-hidden');
       app.toolbarUI?.update();
     });
+
+    container.querySelector('#prop-page-teacher-notes')?.addEventListener('change', (e) => {
+      const page = app.getPage();
+      page.teacherNotes = e.target.value;
+      app.scheduleAutosave(app.scene);
+      app.presentUI?.renderBar?.();
+    });
+
+    container.querySelectorAll('[data-breadcrumb-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const page = app.getPage();
+        const grpId = btn.dataset.breadcrumbGroup;
+        if (grpId) {
+          const grpMembers = page.elements.filter((e) => e.groupId === grpId && !e.hidden).map((e) => e.id);
+          if (grpMembers.length > 0) {
+            app.selectedIds = new Set(grpMembers);
+            app.updateUI();
+            app.requestRender();
+          }
+          return;
+        }
+        const targetId = btn.dataset.breadcrumbId;
+        if (targetId && page.elements.some((e) => e.id === targetId)) {
+          app.selectedIds = new Set([targetId]);
+          app.updateUI();
+          app.requestRender();
+        }
+      });
+    });
+
+    container.querySelector('#btn-select-container-children')?.addEventListener('click', () => {
+      if (selected.length === 1) {
+        const page = app.getPage();
+        const children = getContainerChildren(page, selected[0].id);
+        if (children.length > 0) {
+          app.selectedIds = new Set(children.map((c) => c.id));
+          app.updateUI();
+          app.requestRender();
+        }
+      }
+    });
+
     const applyProp = (mutator) => {
       mutator(app.currentStyle);
       for (const el of selected) {
@@ -545,11 +731,42 @@ export function initPropsPanel(app) {
         })
       )
     );
+    container.querySelector('#prop-corner-radius')?.addEventListener('input', (e) => {
+      applyProp((t) => {
+        t.cornerRadius = Math.max(4, Math.min(36, Number(e.target.value) || 14));
+      });
+    });
     container.querySelectorAll('[data-dir-preset]').forEach((b) =>
       b.addEventListener('click', () =>
         applyProp((t) => applyConnectorDirectionPreset(t, b.dataset.dirPreset))
       )
     );
+    container.querySelector('#prop-start-label')?.addEventListener('change', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].startLabel = e.target.value;
+        app.commitChange();
+        app.requestRender();
+      }
+    });
+    container.querySelector('#prop-start-label')?.addEventListener('input', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].startLabel = e.target.value;
+        app.requestRender();
+      }
+    });
+    container.querySelector('#prop-end-label')?.addEventListener('change', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].endLabel = e.target.value;
+        app.commitChange();
+        app.requestRender();
+      }
+    });
+    container.querySelector('#prop-end-label')?.addEventListener('input', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].endLabel = e.target.value;
+        app.requestRender();
+      }
+    });
     container.querySelectorAll('[data-quick-label]').forEach((b) =>
       b.addEventListener('click', () => {
         if (selected[0] && !selected[0].locked) {
@@ -601,13 +818,15 @@ export function initPropsPanel(app) {
     container.querySelector('#prop-font-family')?.addEventListener('change', (e) => applyProp((t) => (t.fontFamily = e.target.value)));
     container.querySelector('#prop-font-size')?.addEventListener('change', (e) => applyProp((t) => (t.fontSize = Number(e.target.value))));
     container.querySelector('#prop-text-color')?.addEventListener('input', (e) => applyProp((t) => (t.textColor = e.target.value)));
-    container.querySelector('#prop-label-text')?.addEventListener('input', (e) => {
+    const onMidLabelUpdate = (e) => {
       if (selected[0] && !selected[0].locked) {
         selected[0].text = e.target.value;
         app.commitChange();
         app.requestRender();
       }
-    });
+    };
+    container.querySelector('#prop-label-text')?.addEventListener('input', onMidLabelUpdate);
+    container.querySelector('#prop-label-text')?.addEventListener('change', onMidLabelUpdate);
     container.querySelectorAll('[data-align]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.textAlign = b.dataset.align))));
     container.querySelector('#prop-bg-type')?.addEventListener('change', (e) => app.setBackground(e.target.value));
     container.querySelector('#prop-snap-grid')?.addEventListener('change', (e) => { app.scene.settings.snapToGrid = e.target.checked; app.scheduleAutosave(app.scene); });
@@ -641,6 +860,23 @@ export function initPropsPanel(app) {
       if (selected[0]) {
         selected[0].moveChildren = e.target.checked;
         app.commitChange();
+      }
+    });
+    container.querySelector('#prop-frame-include-pres')?.addEventListener('change', (e) => {
+      if (selected[0]) {
+        const included = Boolean(e.target.checked);
+        selected[0].includeInPresentation = included;
+        selected[0].excludeFromPresentation = !included;
+        app.commitChange();
+        app.presentUI?.renderBar?.();
+        app.requestRender();
+      }
+    });
+    container.querySelector('#prop-el-teacher-notes')?.addEventListener('change', (e) => {
+      if (selected[0]) {
+        selected[0].teacherNotes = e.target.value;
+        app.commitChange();
+        app.presentUI?.renderBar?.();
       }
     });
     container.querySelector('#prop-code-hl')?.addEventListener('input', (e) => {

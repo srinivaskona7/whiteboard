@@ -51,6 +51,7 @@ export function initLayersPanel(app) {
 
     panel.querySelector('#btn-close-layers')?.addEventListener('click', () => {
       panel.classList.add('wb-hidden');
+      app.toolbarUI?.update();
     });
 
     panel.querySelectorAll('[data-sel-layer]').forEach((b) => {

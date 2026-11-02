@@ -80,6 +80,8 @@ export function createElement(type, props = {}) {
     hidden: Boolean(props.hidden),
     link: props.link ?? '',
     revealStep: props.revealStep ?? 0,
+    teacherNotes: props.teacherNotes ?? '',
+    isJunction: Boolean(props.isJunction),
   };
 
   if (isFreehand) {
@@ -114,6 +116,9 @@ export function createElement(type, props = {}) {
     base.w = Math.abs(base.x2 - base.x);
     base.h = Math.abs(base.y2 - base.y);
     base.routing = props.routing ?? (type === 'arrow' ? 'orthogonal' : 'straight');
+    base.cornerRadius = Number.isFinite(Number(props.cornerRadius))
+      ? Math.max(2, Math.min(48, Number(props.cornerRadius)))
+      : 14;
     base.startArrow = props.startArrow ?? 'none';
     base.endArrow = props.endArrow ?? (type === 'arrow' ? 'arrow' : 'none');
     base.startBinding = props.startBinding ? { ...props.startBinding } : null;
@@ -124,6 +129,8 @@ export function createElement(type, props = {}) {
       ? props.waypoints.map((p) => ({ x: p.x, y: p.y }))
       : [];
     base.labelT = props.labelT ?? 0.5;
+    base.startLabel = props.startLabel ?? '';
+    base.endLabel = props.endLabel ?? '';
     base.manualRoute = Boolean(props.manualRoute);
   }
 
@@ -148,10 +155,14 @@ export function createElement(type, props = {}) {
   }
 
   if (isFrame) {
+    const excluded =
+      props.includeInPresentation === false || Boolean(props.excludeFromPresentation);
     base.clip = Boolean(props.clip);
     base.collapsed = Boolean(props.collapsed);
     base.expandedHeight = props.expandedHeight ?? base.h;
     base.slideOrder = props.slideOrder ?? 1;
+    base.excludeFromPresentation = excluded;
+    base.includeInPresentation = !excluded;
     base.isContainer = true;
     base.moveChildren = props.moveChildren !== false;
   }
@@ -263,7 +274,117 @@ export function createPage(name = 'Page 1', id = uid('page')) {
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
     background: 'dots', // 'plain' | 'grid' | 'dots'
+    teacherNotes: '',
   };
+}
+
+export function createJunctionElement(x = 0, y = 0, props = {}) {
+  return createElement('ellipse', {
+    x: x - 9,
+    y: y - 9,
+    w: 18,
+    h: 18,
+    name: props.name || 'Flow Junction',
+    text: '',
+    fill: props.fill || '#1e293b',
+    stroke: props.stroke || '#1e293b',
+    strokeWidth: 2,
+    isJunction: true,
+    autoGrow: false,
+    ...props,
+  });
+}
+
+export function getElementContainmentPath(page, elementOrId) {
+  if (!page || !Array.isArray(page.elements)) return [];
+  const target =
+    typeof elementOrId === 'string' ? findElement(page, elementOrId) : elementOrId;
+  if (!target) return [];
+
+  const containers = page.elements.filter(
+    (c) =>
+      c &&
+      !c.hidden &&
+      c.id !== target.id &&
+      (c.type === 'frame' || c.isContainer || c.isBoundary)
+  );
+
+  const cx =
+    target.type === 'line' || target.type === 'arrow'
+      ? (target.x + target.x2) / 2
+      : target.x + (target.w || 0) / 2;
+  const cy =
+    target.type === 'line' || target.type === 'arrow'
+      ? (target.y + target.y2) / 2
+      : target.y + (target.h || 0) / 2;
+
+  const enclosing = containers
+    .filter((c) => {
+      if (target.containerId === c.id) return true;
+      const fh = c.type === 'frame' && c.collapsed ? 42 : c.h || 0;
+      return cx >= c.x && cx <= c.x + (c.w || 0) && cy >= c.y && cy <= c.y + fh;
+    })
+    .sort((a, b) => (b.w || 0) * (b.h || 0) - (a.w || 0) * (a.h || 0));
+
+  const path = enclosing.map((c) => ({
+    id: c.id,
+    name: c.text ? String(c.text).split('\n')[0] : c.name || c.type,
+    kind: c.type === 'frame' ? 'frame' : 'container',
+    type: c.type,
+  }));
+
+  if (target.groupId) {
+    path.push({
+      id: target.id,
+      groupId: target.groupId,
+      name: `Group (${target.groupId.slice(-4)})`,
+      kind: 'group',
+      type: 'group',
+    });
+  }
+
+  path.push({
+    id: target.id,
+    name: target.text ? String(target.text).split('\n')[0] : target.name || target.type,
+    kind: target.type === 'frame' ? 'frame' : target.isContainer || target.isBoundary ? 'container' : 'element',
+    type: target.type,
+  });
+
+  return path;
+}
+
+export function isFrameIncludedInPresentation(el) {
+  if (!el || el.type !== 'frame' || el.hidden) return false;
+  if (el.includeInPresentation === false || el.excludeFromPresentation === true) return false;
+  return true;
+}
+
+export const getContainerHierarchy = getElementContainmentPath;
+
+export function syncContainerMemberships(page, movedElements = []) {
+  if (!page || !Array.isArray(page.elements)) return;
+  const movedSet = new Set((movedElements || []).map((e) => e.id));
+  const containers = page.elements.filter(
+    (c) => c && !c.hidden && (c.type === 'frame' || c.isContainer || c.isBoundary)
+  );
+  for (const el of movedElements) {
+    if (!el || el.type === 'line' || el.type === 'arrow') continue;
+    // If parent container moved together with this child, keep its explicit membership
+    if (el.containerId && movedSet.has(el.containerId)) continue;
+    const cx = el.x + (el.w || 0) / 2;
+    const cy = el.y + (el.h || 0) / 2;
+    const elArea = Math.max(1, (el.w || 1) * (el.h || 1));
+    const candidates = containers
+      .filter((c) => {
+        if (c.id === el.id) return false;
+        const fh = c.type === 'frame' && c.collapsed ? 42 : c.h || 0;
+        const cArea = (c.w || 0) * fh;
+        if (cArea <= elArea) return false;
+        return cx >= c.x && cx <= c.x + (c.w || 0) && cy >= c.y && cy <= c.y + fh;
+      })
+      .sort((a, b) => (a.w || 0) * (a.h || 0) - (b.w || 0) * (b.h || 0));
+    el.containerId = candidates.length > 0 ? candidates[0].id : null;
+  }
 }
 
 export function createScene(preferredTheme = 'light') {
@@ -293,34 +414,53 @@ export function findElement(page, id) {
   return page.elements.find((e) => e.id === id) || null;
 }
 
+function normalizeOffset(offsetOrDx = { x: 24, y: 24 }, dy = null) {
+  if (typeof offsetOrDx === 'number') {
+    const dxVal = Number.isFinite(offsetOrDx) ? offsetOrDx : 0;
+    const dyVal = typeof dy === 'number' && Number.isFinite(dy) ? dy : dxVal;
+    return { x: dxVal, y: dyVal };
+  }
+  const ox = Number.isFinite(offsetOrDx?.x) ? offsetOrDx.x : 0;
+  const oy = Number.isFinite(offsetOrDx?.y) ? offsetOrDx.y : 0;
+  return { x: ox, y: oy };
+}
+
 export function cloneElement(el, offset = { x: 24, y: 24 }, idMap = null) {
+  const normOffset = normalizeOffset(offset);
   const copy = structuredClone(el);
   const newId = uid(el.type);
-  if (idMap) idMap.set(el.id, newId);
+  if (idMap && typeof idMap.set === 'function') idMap.set(el.id, newId);
   copy.id = newId;
-  copy.x += offset.x;
-  copy.y += offset.y;
+  copy.x += normOffset.x;
+  copy.y += normOffset.y;
   if (copy.type === 'line' || copy.type === 'arrow') {
-    copy.x2 += offset.x;
-    copy.y2 += offset.y;
+    copy.x2 += normOffset.x;
+    copy.y2 += normOffset.y;
     if (copy.controlPoint) {
-      copy.controlPoint.x += offset.x;
-      copy.controlPoint.y += offset.y;
+      copy.controlPoint.x += normOffset.x;
+      copy.controlPoint.y += normOffset.y;
     }
     if (Array.isArray(copy.waypoints)) {
-      copy.waypoints = copy.waypoints.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y }));
+      copy.waypoints = copy.waypoints.map((p) => ({
+        x: p.x + normOffset.x,
+        y: p.y + normOffset.y,
+      }));
     }
   }
   if (Array.isArray(copy.points)) {
-    copy.points = copy.points.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y }));
+    copy.points = copy.points.map((p) => ({
+      x: p.x + normOffset.x,
+      y: p.y + normOffset.y,
+    }));
   }
   return copy;
 }
 
-export function cloneElementsWithBindings(elements, offset = { x: 24, y: 24 }) {
+export function cloneElementsWithBindings(elements, offset = { x: 24, y: 24 }, dy = null) {
+  const normOffset = normalizeOffset(offset, dy);
   const idMap = new Map();
   const groupMap = new Map();
-  const clones = elements.map((el) => cloneElement(el, offset, idMap));
+  const clones = (elements || []).map((el) => cloneElement(el, normOffset, idMap));
 
   for (const copy of clones) {
     if (copy.groupId) {

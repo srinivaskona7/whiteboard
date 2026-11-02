@@ -1,43 +1,65 @@
-// tools/laser.js
+// tools/laser.js — Ephemeral Laser Trail Tool with Unified Clock & Prune Contract
+
+export const LASER_LIFETIME_MS = 1200;
 
 export class LaserTool {
-  constructor(app) {
+  constructor(app, options = {}) {
     this.app = app;
+    this.lifetimeMs = Number(options.lifetimeMs) > 0 ? Number(options.lifetimeMs) : LASER_LIFETIME_MS;
     this.isDown = false;
     this.trail = [];
-    this.rafId = null;
   }
 
-  onPointerDown(world) {
+  onPointerDown(world, evOrNow, now = Date.now()) {
+    if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y)) return;
+    const ts = typeof evOrNow === 'number' ? evOrNow : now;
     this.isDown = true;
-    this.trail.push({ x: world.x, y: world.y, t: Date.now() });
-    this.startCleanupLoop();
-    this.app.requestRender();
+    this.prune(ts);
+    this.trail.push({ x: world.x, y: world.y, t: ts });
+    this.app?.requestRender?.();
   }
 
-  onPointerMove(world) {
+  onPointerMove(world, evOrNow, now = Date.now()) {
     if (!this.isDown) return;
-    this.trail.push({ x: world.x, y: world.y, t: Date.now() });
-    this.startCleanupLoop();
-    this.app.requestRender();
+    if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y)) return;
+    const ts = typeof evOrNow === 'number' ? evOrNow : now;
+    this.prune(ts);
+    this.trail.push({ x: world.x, y: world.y, t: ts });
+    this.app?.requestRender?.();
   }
 
-  onPointerUp() {
+  onPointerUp(worldOrNow, evOrNow, now = Date.now()) {
+    const ts =
+      typeof worldOrNow === 'number'
+        ? worldOrNow
+        : typeof evOrNow === 'number'
+          ? evOrNow
+          : now;
     this.isDown = false;
+    this.prune(ts);
+    this.app?.requestRender?.();
   }
 
-  startCleanupLoop() {
-    if (this.rafId) return;
-    const tick = () => {
-      const now = Date.now();
-      this.trail = this.trail.filter((pt) => now - pt.t < 900);
-      this.app.requestRender();
-      if (this.trail.length > 0 || this.isDown) {
-        this.rafId = requestAnimationFrame(tick);
-      } else {
-        this.rafId = null;
-      }
-    };
-    this.rafId = requestAnimationFrame(tick);
+  prune(now = Date.now()) {
+    const cutoff = now - this.lifetimeMs;
+    if (this.trail.length > 0) {
+      this.trail = this.trail.filter(
+        (pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y) && now - pt.t < this.lifetimeMs && pt.t > cutoff
+      );
+    }
+    return this.trail;
+  }
+
+  getActiveTrail(now = Date.now()) {
+    return this.prune(now);
+  }
+
+  hasActiveTrail(now = Date.now()) {
+    return Boolean(this.isDown || this.prune(now).length > 0);
+  }
+
+  cancel() {
+    this.isDown = false;
+    this.trail = [];
   }
 }

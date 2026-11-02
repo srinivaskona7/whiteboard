@@ -4,7 +4,9 @@ import { getStencilById } from '../stencils/index.js';
 import {
   getConnectorPoints,
   getPointAlongConnector,
+  getConnectorLabelPosition,
   getConnectorTangentFromPoint,
+  strokeRoundedElbowCanvasPath,
 } from '../scene/routing.js';
 
 export function getDashArray(strokeStyle, strokeWidth = 2) {
@@ -403,6 +405,8 @@ export function drawConnectorElement(ctx, el, page, themeTokens) {
   if (el.routing === 'curved' && pts.length === 3) {
     ctx.moveTo(pts[0].x, pts[0].y);
     ctx.quadraticCurveTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y);
+  } else if (el.routing === 'rounded-elbow' && pts.length >= 3) {
+    strokeRoundedElbowCanvasPath(ctx, pts, Number(el.cornerRadius) || 14);
   } else {
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) {
@@ -424,12 +428,18 @@ export function drawConnectorElement(ctx, el, page, themeTokens) {
     drawArrowhead(ctx, el.endArrow, pLast.x, pLast.y, pFrom.x, pFrom.y, sw, stroke);
   }
 
-  // Connector label
-  if (el.text) {
-    const lp = getPointAlongConnector(el, el.labelT ?? 0.5, page);
-    const fontSize = el.fontSize || 15;
+  // Connector labels: source (startLabel), middle (text), destination (endLabel)
+  const labelSpecs = [
+    el.startLabel ? { text: String(el.startLabel), role: 'start', sizeScale: 0.86 } : null,
+    el.text ? { text: String(el.text), role: 'middle', sizeScale: 1 } : null,
+    el.endLabel ? { text: String(el.endLabel), role: 'end', sizeScale: 0.86 } : null,
+  ].filter(Boolean);
+
+  for (const spec of labelSpecs) {
+    const lp = getConnectorLabelPosition(el, spec.role, page);
+    const fontSize = Math.max(11, Math.round((el.fontSize || 15) * spec.sizeScale));
     ctx.font = `500 ${fontSize}px ${FONT_MAP[el.fontFamily || 'sans']}`;
-    const metrics = ctx.measureText(el.text);
+    const metrics = ctx.measureText(spec.text);
     const bw = metrics.width + 14;
     const bh = fontSize + 10;
     ctx.fillStyle = themeTokens.connectorLabelBg;
@@ -439,7 +449,7 @@ export function drawConnectorElement(ctx, el, page, themeTokens) {
     ctx.fillStyle = stroke;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(el.text, lp.x, lp.y);
+    ctx.fillText(spec.text, lp.x, lp.y);
   }
   ctx.restore();
 }

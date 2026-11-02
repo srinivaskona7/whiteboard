@@ -36,6 +36,10 @@ import {
   saveUserLibrary,
   saveThemePreference,
   saveRecoverySnapshot,
+  loadWorkspacePreferences,
+  saveWorkspacePreferences,
+  DEFAULT_PRESET_TOOLS,
+  WORKSPACE_PRESETS,
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
@@ -68,10 +72,24 @@ const FOCUS_TOOLS_STORAGE_KEY = 'studioboard_focus_tools_v1';
 
 export class WhiteboardApp {
   constructor() {
+    // 1. Persistent document state
     this.scene = loadSceneFromStorage();
     this.history = new HistoryManager(100);
     for (const p of this.scene.pages) this.history.initPage(p);
 
+    // 2. Local workspace preferences (separate from document schema)
+    this.workspacePrefs = loadWorkspacePreferences();
+    this.activePreset = this.workspacePrefs.preset || 'diagram';
+    this.pinnedToolsByPreset = {
+      teach: [...(this.workspacePrefs.pinnedToolsByPreset?.teach || DEFAULT_PRESET_TOOLS.teach)],
+      diagram: [...(this.workspacePrefs.pinnedToolsByPreset?.diagram || DEFAULT_PRESET_TOOLS.diagram)],
+      collaborate: [
+        ...(this.workspacePrefs.pinnedToolsByPreset?.collaborate || DEFAULT_PRESET_TOOLS.collaborate),
+      ],
+    };
+    this.userLibrary = loadUserLibrary();
+
+    // 3. Transient UI & pointer interaction state
     this.activeTool = 'select';
     this.toolLock = false;
     this.selectedIds = new Set();
@@ -79,8 +97,6 @@ export class WhiteboardApp {
     this.formatPainterStyle = null;
     this.currentStyle = { ...DEFAULT_STYLE };
     this.nextStampNumber = 1;
-    this.userLibrary = loadUserLibrary();
-
     this.hoveredElement = null;
     this.hoveredPort = null;
     this.connectorPreview = null;
@@ -88,22 +104,38 @@ export class WhiteboardApp {
     this.smartGuides = [];
     this.marqueeBox = null;
     this.cropState = null;
+    this.activeSubInteraction = null;
     this.spacePressed = false;
     this.isPanning = false;
     this.panStart = { x: 0, y: 0 };
-    this.minimapOpen = true;
+    this.minimapOpen = Boolean(this.workspacePrefs.minimapOpen);
+    this.propsDrawerOpen = true;
+
+    // 4. Ephemeral teaching & presentation state
     this.annotationMode = false;
     this.focusMode = false;
     this.focusToolIds = this._loadFocusTools();
-    this.propsDrawerOpen = false;
     this.studentPointers = [];
-    this.spotlight = { active: false, x: 500, y: 340, radius: 130, magnifier: false, dimOpacity: 0.72 };
+    this.spotlight = {
+      active: false,
+      x: 500,
+      y: 340,
+      radius: 130,
+      magnifier: false,
+      magnifierScale: 2,
+      dimOpacity: 0.72,
+      dimBackground: true,
+    };
     this.presentState = { active: false, slideIndex: 0, revealStep: 0 };
+    this._lastFatalErrorTime = 0;
 
     this.canvas = document.getElementById('wb-canvas');
     this.minimapCanvas = document.getElementById('wb-minimap');
     this.canvasWrap = document.getElementById('wb-canvas-wrap');
     this.renderer = new CanvasRenderer(this.canvas, this.minimapCanvas);
+    this.renderer.onRenderError = (scope, err) => {
+      console.warn(`[StudioBoard] Overlay/element isolated error (${scope}):`, err);
+    };
 
     this.selectTool = new SelectTool(this);
     this.drawTool = new DrawTool(this);
@@ -128,25 +160,156 @@ export class WhiteboardApp {
     this.timerUI = initTimerUI(this);
     this.paletteUI = initCommandPalette(this);
 
-    this.scheduleAutosave = createDebouncedAutosave((state) => {
-      const el = document.getElementById('wb-autosave-status');
-      if (el) {
-        el.textContent =
-          state === 'saved' ? 'Saved locally' : state === 'saving' ? 'Saving…' : 'Save failed';
+    this.scheduleAutosave = createDebouncedAutosave(
+      350,
+      (quotaErr) => {
+        const el = document.getElementById('wb-autosave-status');
+        if (el) {
+          el.textContent = 'Save failed (Quota)';
+          el.dataset.state = 'error';
+        }
+        this.dialogs?.showToast(
+          quotaErr?.message || 'Browser storage is full. Export .whiteboard.json to back up your board.'
+        );
+      },
+      (state) => {
+        const el = document.getElementById('wb-autosave-status');
+        if (el) {
+          el.dataset.state = state;
+          el.textContent =
+            state === 'saved' ? 'Saved locally' : state === 'saving' ? 'Saving…' : 'Save failed';
+        }
       }
-    }, 350);
+    );
 
     this._initTheme();
     this._bindEvents();
     setupImagePasteAndDrop(this);
+    this._updateCanvasCursor();
+    this.setWorkspacePreset(this.activePreset, { applyDefaultPanels: true, silent: true });
     this.handleResize();
     this._initShareRouteFromHash();
     this.updateUI();
     this.requestRender();
   }
 
+  get fadingInk() {
+    return this.annotationMode;
+  }
+
+  set fadingInk(val) {
+    this.annotationMode = Boolean(val);
+  }
+
+  get copiedStyle() {
+    return this.formatPainterStyle;
+  }
+
+  set copiedStyle(val) {
+    this.formatPainterStyle = val;
+  }
+
+  scheduleFadingCleanup() {
+    this.requestRender();
+  }
+
+  getPinnedTools(presetId = this.activePreset) {
+    const key = WORKSPACE_PRESETS[presetId] ? presetId : 'diagram';
+    const list = this.pinnedToolsByPreset?.[key];
+    return Array.isArray(list) && list.length > 0 ? list : [...DEFAULT_PRESET_TOOLS[key]];
+  }
+
+  setWorkspacePreset(presetId, { applyDefaultPanels = true, silent = false } = {}) {
+    if (!WORKSPACE_PRESETS[presetId]) return false;
+    this.activePreset = presetId;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.dataset.preset = presetId;
+    }
+
+    if (applyDefaultPanels && typeof document !== 'undefined') {
+      const libPanel = document.getElementById('wb-library-panel');
+      const layersPanel = document.getElementById('wb-layers-panel');
+      const clsPanel = document.getElementById('wb-classroom-panel');
+      const propsPanel = document.getElementById('wb-props-panel');
+
+      if (presetId === 'teach') {
+        libPanel?.classList.add('wb-hidden');
+        layersPanel?.classList.add('wb-hidden');
+        clsPanel?.classList.add('wb-hidden');
+        propsPanel?.classList.add('wb-hidden');
+        this.propsDrawerOpen = false;
+      } else if (presetId === 'diagram') {
+        clsPanel?.classList.add('wb-hidden');
+        propsPanel?.classList.remove('wb-hidden');
+        this.propsDrawerOpen = true;
+      } else if (presetId === 'collaborate') {
+        libPanel?.classList.add('wb-hidden');
+        layersPanel?.classList.add('wb-hidden');
+        clsPanel?.classList.remove('wb-hidden');
+        propsPanel?.classList.add('wb-hidden');
+        this.propsDrawerOpen = false;
+      }
+      this.clearPlacementPreview();
+    }
+
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      preset: presetId,
+      pinnedToolsByPreset: this.pinnedToolsByPreset,
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+
+    this.updateUI();
+    this.handleResize();
+    this.requestRender();
+    if (!silent) {
+      this.dialogs?.showToast(`Workspace preset: ${WORKSPACE_PRESETS[presetId].label}`, 'info');
+    }
+    return true;
+  }
+
+  setPinnedToolsForPreset(presetId, toolIds) {
+    const key = WORKSPACE_PRESETS[presetId] ? presetId : this.activePreset;
+    const clean = Array.isArray(toolIds) && toolIds.length > 0 ? toolIds : ['select'];
+    this.pinnedToolsByPreset[key] = [...clean];
+    if (key === 'teach') {
+      this.focusToolIds = [...clean];
+      try {
+        localStorage.setItem(FOCUS_TOOLS_STORAGE_KEY, JSON.stringify(this.focusToolIds));
+      } catch {
+        // Ignore
+      }
+    }
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      pinnedToolsByPreset: this.pinnedToolsByPreset,
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.updateUI();
+  }
+
+  resetPresetTools(presetId = this.activePreset) {
+    const key = WORKSPACE_PRESETS[presetId] ? presetId : 'diagram';
+    this.pinnedToolsByPreset[key] = [...DEFAULT_PRESET_TOOLS[key]];
+    if (key === 'teach') {
+      this.focusToolIds = [...DEFAULT_PRESET_TOOLS.teach];
+      try {
+        localStorage.setItem(FOCUS_TOOLS_STORAGE_KEY, JSON.stringify(this.focusToolIds));
+      } catch {
+        // Ignore
+      }
+    }
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      pinnedToolsByPreset: this.pinnedToolsByPreset,
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.updateUI();
+    return this.pinnedToolsByPreset[key];
+  }
+
   _loadFocusTools() {
-    const def = ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question'];
+    const def = [...DEFAULT_PRESET_TOOLS.teach];
     try {
       const raw = localStorage.getItem(FOCUS_TOOLS_STORAGE_KEY);
       const parsed = raw ? JSON.parse(raw) : def;
@@ -157,13 +320,7 @@ export class WhiteboardApp {
   }
 
   setFocusTools(toolIds) {
-    this.focusToolIds = Array.isArray(toolIds) && toolIds.length ? toolIds : ['select'];
-    try {
-      localStorage.setItem(FOCUS_TOOLS_STORAGE_KEY, JSON.stringify(this.focusToolIds));
-    } catch {
-      // Ignore
-    }
-    this.updateUI();
+    this.setPinnedToolsForPreset(this.activePreset, toolIds);
   }
 
   async _initShareRouteFromHash() {
@@ -178,7 +335,7 @@ export class WhiteboardApp {
       return;
     }
     if (route.mode === 'room') {
-      await this.collab.joinRoomById(route.roomId, route.token);
+      await this.collab.joinRoomById(route.roomId, route.token, route.roleHint);
       this.classroomUI.openJoinBanner(route.roomId);
       return;
     }
@@ -249,6 +406,55 @@ export class WhiteboardApp {
     );
   }
 
+  getViewportCenterWorld() {
+    return this.getUsableViewportCenter();
+  }
+
+  _updateCanvasCursor() {
+    if (!this.canvas) return;
+    if (this.isPanning) {
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+    if (this.spacePressed || this.activeTool === 'hand') {
+      this.canvas.style.cursor = 'grab';
+      return;
+    }
+    const cursorMap = {
+      select: 'default',
+      text: 'text',
+      eraser: 'cell',
+      laser: 'crosshair',
+      pointer: 'pointer',
+      question: 'help',
+    };
+    this.canvas.style.cursor = cursorMap[this.activeTool] || 'crosshair';
+  }
+
+  cancelActiveInteractions() {
+    if (this.activeSubInteraction) {
+      this.activeSubInteraction = null;
+    }
+    if (this.connectorTool?.activeConnector) {
+      this.connectorTool.cancel();
+    }
+    if (this.selectTool?.isActive()) {
+      this.selectTool.cancel();
+    }
+    if (this.drawTool?.drawingEl || this.drawTool?.erasing) {
+      this.drawTool.drawingEl = null;
+      this.drawTool.erasing = false;
+    }
+    if (this.laserTool?.isDown) {
+      this.laserTool.onPointerUp();
+    }
+    this.isPanning = false;
+    this.marqueeBox = null;
+    this.smartGuides = [];
+    this.connectorPreview = null;
+    this._updateCanvasCursor();
+  }
+
   setTool(toolId) {
     if (
       !this.collab.canEditBoard() &&
@@ -258,9 +464,10 @@ export class WhiteboardApp {
       return;
     }
     if (this.textTool.isOpen()) this.textTool.commit();
+    this.cancelActiveInteractions();
     this.activeTool = toolId;
     this.hoveredPort = null;
-    this.connectorPreview = null;
+    this._updateCanvasCursor();
     this.toolbarUI.update();
     this.propsUI.update();
     this.requestRender();
@@ -307,6 +514,10 @@ export class WhiteboardApp {
   }
 
   updateUI() {
+    const rightPanel = document.getElementById('wb-props-panel');
+    if (rightPanel) {
+      this.propsDrawerOpen = !rightPanel.classList.contains('wb-hidden');
+    }
     this.toolbarUI.update();
     this.propsUI.update();
     this.pagesUI.update();
@@ -314,11 +525,29 @@ export class WhiteboardApp {
     this.classroomUI?.update();
   }
 
+  _handleFatalRenderError(err) {
+    const now = Date.now();
+    if (now - this._lastFatalErrorTime > 4000) {
+      this._lastFatalErrorTime = now;
+      console.error('[StudioBoard] Render loop recovered from error:', err);
+      this.dialogs?.showToast('Recovered from a transient render error. Your board data is safe.');
+    }
+  }
+
   requestRender() {
     if (this._raf) return;
     this._raf = requestAnimationFrame(() => {
-      this._raf = null;
-      this.renderNow();
+      let needsAnotherFrame = false;
+      try {
+        needsAnotherFrame = Boolean(this.renderNow());
+      } catch (err) {
+        this._handleFatalRenderError(err);
+      } finally {
+        this._raf = null;
+        if (needsAnotherFrame) {
+          this.requestRender();
+        }
+      }
     });
   }
 
@@ -334,8 +563,11 @@ export class WhiteboardApp {
       return true;
     });
     if (page.elements.length !== beforeLen) this.scheduleAutosave(this.scene);
-    this.studentPointers = this.studentPointers.filter((p) => now - p.createdAt < 6500);
-    const activeTrail = this.laserTool.prune(now);
+    this.studentPointers = this.studentPointers.filter(
+      (p) => now - (p.createdAt ?? p.time ?? now) < 6500
+    );
+    const activeTrail =
+      typeof this.laserTool?.prune === 'function' ? this.laserTool.prune(now) : [];
     const remoteCursors = this.collab.getInterpolatedRemoteCursors(page.id);
 
     this.renderer.render(this.scene, {
@@ -358,14 +590,12 @@ export class WhiteboardApp {
       now,
     });
 
-    if (
+    return (
       activeTrail.length > 0 ||
       hasFading ||
       this.studentPointers.length > 0 ||
       remoteCursors.length > 0
-    ) {
-      this.requestRender();
-    }
+    );
   }
 
   handleResize() {
@@ -389,6 +619,12 @@ export class WhiteboardApp {
     this.collab.broadcastTeacherCamera();
     this.toolbarUI.update();
     this.requestRender();
+  }
+
+  setZoom(targetZoom = 1, centerScreen = null) {
+    const cam = this.getPage().camera;
+    const factor = (Number(targetZoom) || 1) / (cam.zoom || 1);
+    this.zoomBy(factor, centerScreen);
   }
 
   resetZoom() {
@@ -487,6 +723,19 @@ export class WhiteboardApp {
     this.requestRender();
   }
 
+  reorderPage(idx, dir) {
+    if (!this.collab.canEditBoard()) return;
+    const pages = this.scene.pages;
+    const targetIdx = idx + dir;
+    if (idx < 0 || idx >= pages.length || targetIdx < 0 || targetIdx >= pages.length) return;
+    const [moved] = pages.splice(idx, 1);
+    pages.splice(targetIdx, 0, moved);
+    this.scheduleAutosave(this.scene);
+    this.collab.broadcastSceneChange();
+    this.updateUI();
+    this.requestRender();
+  }
+
   deleteSelection() {
     if (!this.collab.canEditBoard()) {
       this.dialogs.showToast('Viewers cannot delete protected board content.');
@@ -527,6 +776,13 @@ export class WhiteboardApp {
   copySelection() {
     const selected = this.getSelectedElements();
     if (selected.length > 0) this.clipboard = cloneElementsWithBindings(selected, 0, 0);
+  }
+
+  cutSelection() {
+    if (!this.collab.canEditBoard()) return;
+    if (this.selectedIds.size === 0) return;
+    this.copySelection();
+    this.deleteSelection();
   }
 
   pasteClipboard() {
@@ -657,6 +913,14 @@ export class WhiteboardApp {
     this.requestRender();
   }
 
+  reorderElementById(elId, dir) {
+    if (!this.collab.canEditBoard()) return;
+    reorderElement(this.getPage(), elId, dir);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+  }
+
   toggleLockSelection() {
     if (!this.collab.canEditBoard()) return;
     for (const el of this.getSelectedElements()) el.locked = !el.locked;
@@ -679,6 +943,19 @@ export class WhiteboardApp {
       this.formatPainterStyle = extractStyle(sel[0]);
       this.dialogs.showToast('Format Painter active — click an element to apply.');
     }
+  }
+
+  copySelectedStyle() {
+    this.activateFormatPainter();
+  }
+
+  setBackground(bg = 'dots') {
+    if (!this.collab.canEditBoard()) return;
+    const page = this.getPage();
+    page.background = bg;
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
   }
 
   placeStencil(stencilId, worldPos = null) {
@@ -735,6 +1012,10 @@ export class WhiteboardApp {
     this.updateUI();
     this.requestRender();
     return true;
+  }
+
+  insertStencilFromLibrary(stencilId, worldPos = null) {
+    return this.placeStencil(stencilId, worldPos);
   }
 
   previewBatchInsertion(stencilIds = [], layoutMode = 'grid') {
@@ -805,7 +1086,7 @@ export class WhiteboardApp {
     const pack = buildDevOpsDiagramPacks().find((p) => p.id === packId);
     if (!pack) return;
     const page = this.getPage();
-    const built = pack.build();
+    const built = typeof pack.build === 'function' ? pack.build() : cloneElementsWithBindings(pack.elements || [], 0, 0);
     const bBounds = getSelectionBounds(built) || { x: 0, y: 0 };
     const origin = computeNonOverlappingOrigin(page, this.getUsableViewportCenter());
     const dx = Math.round(origin.x - bBounds.x);
@@ -829,6 +1110,7 @@ export class WhiteboardApp {
     if (!this.collab.canEditBoard()) return;
     const tpl = BUILTIN_TEMPLATES.find((t) => t.id === tplId);
     if (!tpl) return;
+    saveRecoverySnapshot(this.scene, `Before Template: ${tpl.name}`);
     const page = this.getPage();
     const built = tpl.build();
     const check = validateElementsBatch(built);
@@ -854,6 +1136,11 @@ export class WhiteboardApp {
     this.commitChange();
     this.updateUI();
     this.requestRender();
+    return el;
+  }
+
+  insertMathTool(kind = 'ruler') {
+    return this.insertMathOverlay(kind);
   }
 
   addSelectionToLibrary() {
@@ -903,15 +1190,19 @@ export class WhiteboardApp {
 
   exportUserLibrary() {
     const blob = new Blob([JSON.stringify(this.userLibrary, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'whiteboard.library.json';
-    a.click();
+    this.downloadBlob(blob, 'whiteboard.library.json');
   }
 
   togglePanel(panelId) {
     const p = document.getElementById(panelId);
     if (!p) return;
+    const willOpen = p.classList.contains('wb-hidden');
+    if (willOpen) {
+      for (const id of ['wb-library-panel', 'wb-layers-panel', 'wb-classroom-panel']) {
+        if (id !== panelId) document.getElementById(id)?.classList.add('wb-hidden');
+      }
+      if (panelId !== 'wb-library-panel') this.clearPlacementPreview();
+    }
     p.classList.toggle('wb-hidden');
     if (p.classList.contains('wb-hidden') && panelId === 'wb-library-panel') {
       this.clearPlacementPreview();
@@ -922,14 +1213,13 @@ export class WhiteboardApp {
   togglePropsDrawer() {
     const p = document.getElementById('wb-props-panel');
     if (!p) return;
-    this.propsDrawerOpen = !p.classList.contains('wb-hidden');
     p.classList.toggle('wb-hidden');
     this.propsDrawerOpen = !p.classList.contains('wb-hidden');
     this.toolbarUI.update();
   }
 
   toggleSpotlight(magnifier = false) {
-    if (this.spotlight.active && this.spotlight.magnifier === magnifier) {
+    if (this.spotlight.active && this.spotlight.magnifier === Boolean(magnifier)) {
       this.spotlight.active = false;
     } else {
       this.spotlight.active = true;
@@ -958,9 +1248,25 @@ export class WhiteboardApp {
     this.handleResize();
   }
 
+  toggleFullScreen() {
+    try {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.();
+      } else {
+        document.exitFullscreen?.();
+      }
+    } catch {
+      // Ignore fullscreen API restriction in embedded contexts
+    }
+  }
+
+  toggleFullscreen() {
+    this.toggleFullScreen();
+  }
+
   toggleImageCrop(el) {
     if (this.cropState && this.cropState.element.id === el.id) {
-      const box = this.cropState.box;
+      const box = this.cropState.box || this.cropState.rect;
       const sx = (el.naturalWidth || el.w) / el.w;
       const sy = (el.naturalHeight || el.h) / el.h;
       el.crop = {
@@ -976,9 +1282,16 @@ export class WhiteboardApp {
       this.cropState = null;
       this.commitChange();
     } else {
+      const rect = {
+        x: el.x + 12,
+        y: el.y + 12,
+        w: Math.max(32, el.w - 24),
+        h: Math.max(32, el.h - 24),
+      };
       this.cropState = {
         element: el,
-        box: { x: el.x + 12, y: el.y + 12, w: Math.max(32, el.w - 24), h: Math.max(32, el.h - 24) },
+        box: rect,
+        rect,
       };
     }
     this.propsUI.update();
@@ -1011,30 +1324,105 @@ export class WhiteboardApp {
     this.requestRender();
   }
 
+  toggleTheme() {
+    this.cycleTheme();
+  }
+
+  downloadBlob(blob, filename = 'download') {
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL?.(url), 1500);
+  }
+
+  exportPngDownload(options = {}) {
+    try {
+      const offscreen = this.renderer.exportToPngCanvas(this.scene, this.getPage(), options);
+      const safeName = (this.getPage().name || 'page')
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, '-');
+      if (typeof offscreen.toBlob === 'function') {
+        offscreen.toBlob((blob) => {
+          if (blob) {
+            this.downloadBlob(blob, `${safeName}.png`);
+            this.dialogs.showToast('Downloaded PNG export.', 'success');
+          }
+        }, 'image/png');
+      } else if (typeof offscreen.toDataURL === 'function') {
+        const a = document.createElement('a');
+        a.href = offscreen.toDataURL('image/png');
+        a.download = `${safeName}.png`;
+        a.click();
+        this.dialogs.showToast('Downloaded PNG export.', 'success');
+      }
+    } catch (err) {
+      this.dialogs.showToast(`PNG export failed: ${err.message}`);
+    }
+  }
+
+  async copyPngToClipboard(options = {}) {
+    try {
+      const offscreen = this.renderer.exportToPngCanvas(this.scene, this.getPage(), options);
+      if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined' && typeof offscreen.toBlob === 'function') {
+        const blob = await new Promise((resolve) => offscreen.toBlob(resolve, 'image/png'));
+        if (blob) {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          this.dialogs.showToast('Copied PNG to clipboard.', 'success');
+          return true;
+        }
+      }
+      this.exportPngDownload(options);
+      return false;
+    } catch {
+      this.exportPngDownload(options);
+      return false;
+    }
+  }
+
+  openImageFilePicker() {
+    document.getElementById('wb-file-image')?.click();
+  }
+
+  openWhiteboardFilePicker() {
+    document.getElementById('wb-file-open-json')?.click();
+  }
+
   saveSceneFile() {
     try {
       saveRecoverySnapshot(this.scene, 'Pre-save Checkpoint');
       const json = serializeScene(this.scene);
       const blob = new Blob([json], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
       const safeName = (this.scene.title || 'board')
         .toLowerCase()
         .replace(/[^a-z0-9-_]+/g, '-');
-      a.download = `${safeName}.whiteboard.json`;
-      a.click();
+      this.downloadBlob(blob, `${safeName}.whiteboard.json`);
     } catch (err) {
       this.dialogs.showToast(`Save aborted: ${err.message}`);
     }
   }
 
+  saveWhiteboardFile() {
+    this.saveSceneFile();
+  }
+
   _bindEvents() {
     window.addEventListener('resize', () => this.handleResize());
     window.addEventListener('hashchange', () => this._initShareRouteFromHash());
+    window.addEventListener('blur', () => {
+      this.spacePressed = false;
+      this.cancelActiveInteractions();
+      this.requestRender();
+    });
 
     this.canvas.addEventListener('pointerdown', (ev) => this._onPointerDown(ev));
     window.addEventListener('pointermove', (ev) => this._onPointerMove(ev));
     window.addEventListener('pointerup', (ev) => this._onPointerUp(ev));
+    window.addEventListener('pointercancel', () => {
+      this.cancelActiveInteractions();
+      this.requestRender();
+    });
 
     this.canvas.addEventListener(
       'wheel',
@@ -1111,11 +1499,15 @@ export class WhiteboardApp {
 
     window.addEventListener('keydown', (ev) => this._onKeyDown(ev));
     window.addEventListener('keyup', (ev) => {
-      if (ev.code === 'Space') this.spacePressed = false;
+      if (ev.code === 'Space') {
+        this.spacePressed = false;
+        this._updateCanvasCursor();
+      }
     });
   }
 
   _getToolHandler() {
+    if (this.activeSubInteraction) return this.activeSubInteraction;
     const t = this.activeTool;
     if (t === 'select') return this.selectTool;
     if (t === 'pen' || t === 'highlighter') return this.drawTool;
@@ -1140,6 +1532,7 @@ export class WhiteboardApp {
       if (this.collab.followingTeacher) this.collab.setFollowTeacher(false);
       this.isPanning = true;
       this.panStart = { x: ev.clientX, y: ev.clientY };
+      this._updateCanvasCursor();
       return;
     }
 
@@ -1180,6 +1573,7 @@ export class WhiteboardApp {
   _onPointerUp(ev) {
     if (this.isPanning) {
       this.isPanning = false;
+      this._updateCanvasCursor();
       return;
     }
     if (this.spotlight.active) return;
@@ -1202,10 +1596,11 @@ export class WhiteboardApp {
   _onKeyDown(ev) {
     // Do not intercept Escape, letter shortcuts, or arrow keys while editing text or typing in inputs
     if (this._isEditingInput(ev.target)) {
-      if (ev.key === 'Escape' && (this.paletteUI.isOpen() || this.dialogs.isOpen())) {
+      if (ev.key === 'Escape') {
         ev.preventDefault();
         if (this.paletteUI.isOpen()) this.paletteUI.close();
-        else this.dialogs.close();
+        else if (this.dialogs.isOpen()) this.dialogs.close();
+        else if (this.textTool.isOpen()) this.textTool.commit();
       }
       return;
     }
@@ -1235,7 +1630,8 @@ export class WhiteboardApp {
         this.requestRender();
         return;
       }
-      if (this.connectorTool.activeConnector) {
+      if (this.activeSubInteraction || this.connectorTool.activeConnector) {
+        this.activeSubInteraction = null;
         this.connectorTool.cancel();
         return;
       }
@@ -1245,6 +1641,7 @@ export class WhiteboardApp {
       }
       if (this.spotlight.active) {
         this.spotlight.active = false;
+        this.presentUI?.renderBar?.();
         this.updateUI();
         this.requestRender();
         return;
@@ -1271,17 +1668,32 @@ export class WhiteboardApp {
     }
 
     if (this.presentState.active) {
-      if (ev.key === 'ArrowRight' || ev.key === ' ') {
+      if (ev.key === 'ArrowRight' || ev.key === ' ' || ev.key === 'PageDown') {
         ev.preventDefault();
         this.presentUI.stepNext();
-      } else if (ev.key === 'ArrowLeft') {
+      } else if (ev.key === 'ArrowLeft' || ev.key === 'PageUp') {
         ev.preventDefault();
         this.presentUI.stepPrev();
+      } else if (!ev.ctrlKey && !ev.metaKey && ev.key.toLowerCase() === 'l') {
+        ev.preventDefault();
+        this.setTool(this.activeTool === 'laser' ? 'select' : 'laser');
+        this.presentUI.renderBar();
+      } else if (!ev.ctrlKey && !ev.metaKey && ev.key.toLowerCase() === 'p') {
+        ev.preventDefault();
+        this.setTool(this.activeTool === 'pen' ? 'select' : 'pen');
+        this.presentUI.renderBar();
+      } else if (!ev.ctrlKey && !ev.metaKey && ev.key.toLowerCase() === 'v') {
+        ev.preventDefault();
+        this.setTool('select');
+        this.presentUI.renderBar();
       }
       return;
     }
 
-    if (ev.code === 'Space') this.spacePressed = true;
+    if (ev.code === 'Space') {
+      this.spacePressed = true;
+      this._updateCanvasCursor();
+    }
     const mod = ev.ctrlKey || ev.metaKey;
 
     if (mod && ev.key.toLowerCase() === 'k') {
@@ -1303,6 +1715,11 @@ export class WhiteboardApp {
     if (mod && ev.key.toLowerCase() === 'c') {
       ev.preventDefault();
       this.copySelection();
+      return;
+    }
+    if (mod && ev.key.toLowerCase() === 'x') {
+      ev.preventDefault();
+      this.cutSelection();
       return;
     }
     if (mod && ev.key.toLowerCase() === 'v') {
@@ -1353,7 +1770,31 @@ export class WhiteboardApp {
       return;
     }
 
+    if (!mod && (ev.key === '[' || ev.key === ']')) {
+      ev.preventDefault();
+      this.reorderSelection(ev.key === '[' ? 'back' : 'front');
+      return;
+    }
+
     const key = ev.key.toLowerCase();
+    if (!mod && ev.shiftKey && key === 'q') {
+      ev.preventDefault();
+      this.toolLock = !this.toolLock;
+      this.toolbarUI.update();
+      return;
+    }
+    if (!mod && key === 'f') {
+      ev.preventDefault();
+      if (ev.shiftKey) this.toggleFocusMode();
+      else this.toggleFullScreen();
+      return;
+    }
+    if (!mod && !ev.shiftKey && key === 'i') {
+      ev.preventDefault();
+      this.openImageFilePicker();
+      return;
+    }
+
     const map = {
       v: 'select',
       h: 'hand',
@@ -1375,7 +1816,7 @@ export class WhiteboardApp {
       w: 'pointer',
       q: 'question',
     };
-    if (!mod && map[key]) {
+    if (!mod && !ev.shiftKey && map[key]) {
       this.setTool(map[key]);
       return;
     }
@@ -1403,11 +1844,28 @@ export class WhiteboardApp {
       this.toggleFocusMode();
       return;
     }
-    if (!mod && (ev.key === '!' || (ev.shiftKey && ev.code === 'Digit1'))) {
+    if (!mod && (ev.key === '+' || ev.key === '=')) {
+      ev.preventDefault();
+      this.zoomBy(1.2);
+      return;
+    }
+    if (!mod && ev.key === '-') {
+      ev.preventDefault();
+      this.zoomBy(1 / 1.2);
+      return;
+    }
+    if (!mod && ev.key === '0') {
+      ev.preventDefault();
+      this.resetZoom();
+      return;
+    }
+    if (!mod && (ev.key === '1' || ev.key === '!' || (ev.shiftKey && ev.code === 'Digit1'))) {
+      ev.preventDefault();
       this.fitToContent();
       return;
     }
-    if (!mod && (ev.key === '@' || (ev.shiftKey && ev.code === 'Digit2'))) {
+    if (!mod && (ev.key === '2' || ev.key === '@' || (ev.shiftKey && ev.code === 'Digit2'))) {
+      ev.preventDefault();
       this.zoomToSelection();
       return;
     }

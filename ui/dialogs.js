@@ -8,8 +8,7 @@ import {
   parseSceneJson,
 } from '../scene/storage.js';
 import { renderUrlQrSvg } from './qr.js';
-import { TOOL_REGISTRY } from './registry.js';
-import { SHORTCUT_REFERENCE } from './registry.js';
+import { TOOL_REGISTRY, SHORTCUT_REFERENCE, formatShortcut } from './registry.js';
 
 export function initDialogs(app) {
   const backdrop = document.getElementById('wb-modal-backdrop');
@@ -62,7 +61,7 @@ export function initDialogs(app) {
       `<div class="wb-shortcuts-grid">
         ${SHORTCUT_REFERENCE.map(
           (r) =>
-            `<div class="wb-shortcut-row"><kbd>${escapeXml(r.key)}</kbd><span>${escapeXml(r.desc)}</span></div>`
+            `<div class="wb-shortcut-row"><kbd>${escapeXml(formatShortcut(r.key))}</kbd><span>${escapeXml(r.desc)}</span></div>`
         ).join('')}
       </div>`
     );
@@ -426,10 +425,12 @@ export function initDialogs(app) {
             b.addEventListener('click', () => {
               const chosen = snaps[Number(b.dataset.restoreIdx)];
               if (chosen?.sceneJson) {
+                saveRecoverySnapshot(app.scene, 'Before Restore Checkpoint');
                 app.scene = parseSceneJson(chosen.sceneJson);
                 for (const p of app.scene.pages) app.history.initPage(p);
                 app.selectedIds.clear();
                 app.scheduleAutosave(app.scene);
+                app.collab?.broadcastSceneChange();
                 app.updateUI();
                 app.requestRender();
                 close();
@@ -518,47 +519,82 @@ export function initDialogs(app) {
     );
   }
 
-  function openFocusToolsModal() {
-    const currentSet = new Set(
-      app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']
-    );
-    openHtml(
-      'Customize Teaching Focus Tools',
-      `
-        <p class="wb-muted">Choose which tools stay visible on the dock while Teaching Focus Mode is active.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;">
-          ${TOOL_REGISTRY.map(
-            (t) => `
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
-              <input type="checkbox" data-focus-tool="${escapeXml(t.id)}" ${currentSet.has(t.id) ? 'checked' : ''} />
-              <span>${escapeXml(t.label)} (${escapeXml(t.shortcut)})</span>
-            </label>
-          `
-          ).join('')}
-        </div>
-        <div class="wb-modal-actions">
-          <button type="button" class="wb-btn" id="btn-focus-tools-reset">Reset Default</button>
-          <button type="button" class="wb-btn wb-primary" id="btn-focus-tools-save">Save Focus Tools</button>
-        </div>
-      `,
-      (modal) => {
-        modal.querySelector('#btn-focus-tools-reset')?.addEventListener('click', () => {
-          app.setFocusTools(['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']);
-          close();
-          showToast('Reset Teaching Focus tools to default.', 'info');
-        });
-        modal.querySelector('#btn-focus-tools-save')?.addEventListener('click', () => {
-          const chosen = [];
-          modal.querySelectorAll('[data-focus-tool]').forEach((chk) => {
-            if (chk.checked) chosen.push(chk.dataset.focusTool);
+  function openFocusToolsModal(initialPreset = null) {
+    let targetPreset = ['teach', 'diagram', 'collaborate'].includes(initialPreset)
+      ? initialPreset
+      : app.activePreset || 'diagram';
+
+    const renderCustomizeModal = () => {
+      const currentList = app.getPinnedTools
+        ? app.getPinnedTools(targetPreset)
+        : app.focusToolIds || ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question'];
+      const currentSet = new Set(currentList);
+
+      openHtml(
+        'Customize Pinned Workspace Tools',
+        `
+          <p class="wb-muted" style="margin-bottom:8px;">Choose which tools are pinned to the left dock for each workspace preset. Unpinned tools remain accessible in the <strong>+</strong> menu.</p>
+          <div class="wb-btn-group" style="margin-bottom:10px;" role="group" aria-label="Target Preset">
+            ${['teach', 'diagram', 'collaborate']
+              .map(
+                (pid) => `
+              <button type="button" class="wb-btn wb-sm ${targetPreset === pid ? 'active wb-primary' : ''}" data-cust-preset="${pid}">
+                ${pid === 'teach' ? 'Teach' : pid === 'diagram' ? 'Diagram' : 'Collaborate'}
+              </button>
+            `
+              )
+              .join('')}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;">
+            ${TOOL_REGISTRY.map(
+              (t) => `
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+                <input type="checkbox" data-focus-tool="${escapeXml(t.id)}" ${currentSet.has(t.id) ? 'checked' : ''} />
+                <span>${escapeXml(t.label)} (${escapeXml(t.shortcut)})</span>
+              </label>
+            `
+            ).join('')}
+          </div>
+          <div class="wb-modal-actions">
+            <button type="button" class="wb-btn" id="btn-focus-tools-reset">Restore Preset Defaults</button>
+            <button type="button" class="wb-btn wb-primary" id="btn-focus-tools-save">Save Pinned Tools</button>
+          </div>
+        `,
+        (modal) => {
+          modal.querySelectorAll('[data-cust-preset]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              targetPreset = btn.dataset.custPreset;
+              renderCustomizeModal();
+            });
           });
-          if (chosen.length === 0) chosen.push('select');
-          app.setFocusTools(chosen);
-          close();
-          showToast('Saved custom Teaching Focus toolset.', 'success');
-        });
-      }
-    );
+          modal.querySelector('#btn-focus-tools-reset')?.addEventListener('click', () => {
+            if (app.resetPresetTools) {
+              app.resetPresetTools(targetPreset);
+            } else {
+              app.setFocusTools(['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'question']);
+            }
+            close();
+            showToast(`Restored default tools for ${targetPreset} preset.`, 'info');
+          });
+          modal.querySelector('#btn-focus-tools-save')?.addEventListener('click', () => {
+            const chosen = [];
+            modal.querySelectorAll('[data-focus-tool]').forEach((chk) => {
+              if (chk.checked) chosen.push(chk.dataset.focusTool);
+            });
+            if (chosen.length === 0) chosen.push('select');
+            if (app.setPinnedToolsForPreset) {
+              app.setPinnedToolsForPreset(targetPreset, chosen);
+            } else {
+              app.setFocusTools(chosen);
+            }
+            close();
+            showToast(`Saved pinned tools for ${targetPreset} preset.`, 'success');
+          });
+        }
+      );
+    };
+
+    renderCustomizeModal();
   }
 
   return {
@@ -569,6 +605,7 @@ export function initDialogs(app) {
     openMermaidModal,
     openExportModal,
     openShareUrlModal,
+    openShareModal: openShareUrlModal,
     openRevealTimelineModal,
     openRecoveryModal,
     openHyperlinkModal,

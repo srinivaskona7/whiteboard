@@ -37,7 +37,15 @@ export function initTimerUI(app) {
     }
   }
 
-  function startTimer() {
+  function broadcastIfLive() {
+    app.collab?.broadcastTimerState?.({
+      running,
+      remainingSec,
+      mode: 'countdown',
+    });
+  }
+
+  function startTimer(syncRemote = true) {
     if (running) return;
     running = true;
     intervalId = setInterval(() => {
@@ -45,22 +53,36 @@ export function initTimerUI(app) {
         remainingSec -= 1;
         render();
         if (remainingSec === 0) {
-          stopTimer();
+          stopTimer(false);
           playGentleChime();
           app.dialogs?.showToast('⏰ Classroom Timer Finished!', 'info');
         }
       }
     }, 1000);
     render();
+    if (syncRemote) broadcastIfLive();
   }
 
-  function stopTimer() {
+  function stopTimer(syncRemote = true) {
     running = false;
     if (intervalId) {
       clearInterval(intervalId);
       intervalId = null;
     }
     render();
+    if (syncRemote) broadcastIfLive();
+  }
+
+  function applyRemoteTimerState(timerState) {
+    if (!timerState || typeof timerState !== 'object') return;
+    const nextSec = Math.max(0, Number(timerState.remainingSec) || 0);
+    remainingSec = nextSec;
+    if (timerState.running) {
+      widget.classList.remove('wb-hidden');
+      startTimer(false);
+    } else {
+      stopTimer(false);
+    }
   }
 
   function render() {
@@ -90,24 +112,26 @@ export function initTimerUI(app) {
 
     widget.querySelectorAll('[data-preset]').forEach((b) => {
       b.addEventListener('click', () => {
-        stopTimer();
+        stopTimer(false);
         remainingSec = Number(b.dataset.preset);
         render();
+        broadcastIfLive();
       });
     });
 
     widget.querySelector('#btn-timer-set')?.addEventListener('click', () => {
       const val = Number(widget.querySelector('#timer-custom-min')?.value);
       if (val > 0) {
-        stopTimer();
+        stopTimer(false);
         remainingSec = Math.round(val * 60);
         render();
+        broadcastIfLive();
       }
     });
 
     widget.querySelector('#btn-timer-toggle')?.addEventListener('click', () => {
-      if (running) stopTimer();
-      else startTimer();
+      if (running) stopTimer(true);
+      else startTimer(true);
     });
   }
 
@@ -117,5 +141,5 @@ export function initTimerUI(app) {
   }
 
   render();
-  return { toggle };
+  return { toggle, applyRemoteTimerState };
 }

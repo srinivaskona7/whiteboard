@@ -1,7 +1,7 @@
 # Project Memory — Classroom Whiteboard + Diagramming Studio
 
 ## Session Plan
-- Active Checklist & Requirements: [SESSION_PLAN.md](./SESSION_PLAN.md) (All 8 steps completed `[x]`)
+- Active Checklist & Requirements: [SESSION_PLAN.md](./SESSION_PLAN.md) (Phases A → H in progress)
 - Feature Verification Checklist: [../feature-list.md](../feature-list.md)
 
 ## Architecture & Module Tree
@@ -62,5 +62,5 @@
 
 ## Invariants
 - Only `vite` in `devDependencies`, zero `dependencies`.
-- `npm test` runs `node --test tests/*.test.js` (28 tests across 13 suites).
+- `npm test` runs `node --test tests/*.test.js` (34 tests across 14 suites).
 - `npm run build` outputs to `dist/` with `base: './'`.
