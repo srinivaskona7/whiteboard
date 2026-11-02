@@ -41,8 +41,9 @@
   - `present.js` — Presentation mode controller (frames as slides, step-by-step reveal 1..N, overview strip, fullscreen integration)
   - `layers.js` — Layers panel (z-order, lock/unlock, hide/show, rename)
   - `timer.js` — Classroom countdown timer (1/3/5/10m + custom) with WebAudio chime
+  - `classroom.js` — Shareable classroom links (`#classroom=1&...`), student name join, component pointers/pings (`BroadcastChannel` + canvas beacon), and location/component-attached Question Pins + Q&A drawer
 - `stencils/`
-  - `flowchart.js`, `uml.js`, `er.js`, `kubernetes.js`, `cloud.js`, `network.js`, `generic.js`, `index.js`
+  - `card.js`, `devops-cloud.js` (AWS, Azure, GCP), `devops-infra.js` (Linux, Docker, Kubernetes, Networking), `devops-cicd.js` (Git, CI/CD, IaC, Config Management), `devops-data-sec.js` (Monitoring, Logging, Security, Databases, Storage, Messaging), `flowchart.js`, `uml.js`, `er.js`, `generic.js`, `index.js`
 - `templates/`
   - `index.js` — 11 offline built-in templates (Blank, Kanban, Mind Map, Flowchart Starter, Kubernetes Architecture, Sequence Diagram, KWL Chart, Venn Diagram, 2x2 Matrix, Number Line, Coordinate Axes)
 - `tests/`

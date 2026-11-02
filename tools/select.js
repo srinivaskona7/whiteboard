@@ -9,6 +9,7 @@ import {
 import {
   getElementBounds,
   getSelectionBounds,
+  syncFreehandBounds,
   boxesIntersect,
   translateElement,
   snapAngle,
@@ -18,6 +19,7 @@ import {
 } from '../scene/geometry.js';
 import {
   hitTestHandle,
+  hitTestMultiSelectionHandle,
   hitTestScene,
   hitTestFrameCollapseButton,
   hitTestHyperlinkBadge,
@@ -76,13 +78,40 @@ export class SelectTool {
           if (selEl.type === 'line' || selEl.type === 'arrow') {
             this.mode = 'connector-handle';
           } else if (handle.id === 'rotate') {
+            if (selEl.type === 'pen' || selEl.type === 'highlighter') syncFreehandBounds(selEl);
             this.mode = 'rotate';
           } else {
+            if (selEl.type === 'pen' || selEl.type === 'highlighter') syncFreehandBounds(selEl);
             this.mode = 'resize';
             this.initialBox = { x: selEl.x, y: selEl.y, w: selEl.w, h: selEl.h };
+            this.initialPoints = Array.isArray(selEl.points)
+              ? selEl.points.map((p) => ({ x: p.x, y: p.y }))
+              : null;
           }
           return;
         }
+      }
+    } else if (this.app.selectedIds.size > 1) {
+      const selectedEls = page.elements.filter((e) => this.app.selectedIds.has(e.id) && !e.locked);
+      const gb = getSelectionBounds(selectedEls);
+      const gHandle = hitTestMultiSelectionHandle(gb, world.x, world.y, zoom);
+      if (gHandle && gb) {
+        this.startWorld = { ...world };
+        this.lastWorld = { ...world };
+        this.activeHandle = gHandle;
+        this.initialGroupBox = { ...gb };
+        this.initialGroupItems = selectedEls.map((el) => ({
+          el,
+          x: el.x,
+          y: el.y,
+          w: el.w,
+          h: el.h,
+          x2: el.x2,
+          y2: el.y2,
+        }));
+        this.mode = 'group-resize';
+        this.didMutate = false;
+        return;
       }
     }
 
@@ -185,17 +214,35 @@ export class SelectTool {
     const page = this.app.getPage();
 
     if (!this.mode) {
-      // Hover detection for connection ports and cursor feedback
+      // Hover detection for handles, connection ports, and cursor feedback
+      let cursor = 'default';
+      if (this.app.selectedIds.size === 1) {
+        const onlyId = Array.from(this.app.selectedIds)[0];
+        const selEl = page.elements.find((e) => e.id === onlyId);
+        const hd = selEl ? hitTestHandle(selEl, world.x, world.y, page.camera.zoom, page) : null;
+        if (hd) cursor = hd.cursor || 'pointer';
+      } else if (this.app.selectedIds.size > 1) {
+        const selectedEls = page.elements.filter((e) => this.app.selectedIds.has(e.id) && !e.locked);
+        const gb = getSelectionBounds(selectedEls);
+        const ghd = hitTestMultiSelectionHandle(gb, world.x, world.y, page.camera.zoom);
+        if (ghd) cursor = ghd.cursor || 'pointer';
+      }
+
       const port = findHoverPort(page, world.x, world.y, 18 / page.camera.zoom);
       this.app.hoveredPort = port;
       if (port) {
         this.app.hoveredElement = port.element;
+        if (cursor === 'default') cursor = 'crosshair';
       } else {
         const hit = hitTestScene(page, world.x, world.y, { includeLocked: false });
         this.app.hoveredElement =
           hit && hit.type !== 'line' && hit.type !== 'arrow' && hit.type !== 'pen' && hit.type !== 'highlighter'
             ? hit
             : null;
+        if (hit && cursor === 'default') cursor = 'move';
+      }
+      if (this.app.canvas?.style) {
+        this.app.canvas.style.cursor = cursor;
       }
       this.app.requestRender();
       return;
@@ -256,6 +303,17 @@ export class SelectTool {
     if (this.mode === 'resize' && this.targetElement) {
       this.applyResize(this.targetElement, this.activeHandle.id, world, ev);
       updateConnectorBindings(page, [this.targetElement.id]);
+      this.didMutate = true;
+      this.app.requestRender();
+      return;
+    }
+
+    if (this.mode === 'group-resize' && this.initialGroupBox && this.initialGroupItems) {
+      this.applyGroupResize(this.activeHandle.id, world, ev);
+      updateConnectorBindings(
+        page,
+        this.initialGroupItems.map((it) => it.el.id)
+      );
       this.didMutate = true;
       this.app.requestRender();
       return;
@@ -369,22 +427,22 @@ export class SelectTool {
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
     const local = unrotatePoint(world.x, world.y, cx, cy, el.rotation || 0);
+    const right = box.x + box.w;
+    const bottom = box.y + box.h;
 
     let nx = box.x;
     let ny = box.y;
     let nw = box.w;
     let nh = box.h;
 
-    if (handleId.includes('e')) nw = Math.max(20, local.x - box.x);
-    if (handleId.includes('s')) nh = Math.max(20, local.y - box.y);
+    if (handleId.includes('e')) nw = Math.max(24, local.x - box.x);
+    if (handleId.includes('s')) nh = Math.max(24, local.y - box.y);
     if (handleId.includes('w')) {
-      const right = box.x + box.w;
-      nx = Math.min(right - 20, local.x);
+      nx = Math.min(right - 24, local.x);
       nw = right - nx;
     }
     if (handleId.includes('n')) {
-      const bottom = box.y + box.h;
-      ny = Math.min(bottom - 20, local.y);
+      ny = Math.min(bottom - 24, local.y);
       nh = bottom - ny;
     }
 
@@ -394,24 +452,88 @@ export class SelectTool {
     if (lockRatio && box.w > 0 && box.h > 0) {
       const ratio = box.w / box.h;
       if (handleId === 'n' || handleId === 's') {
-        nw = nh * ratio;
+        nw = Math.max(24, nh * ratio);
       } else {
-        nh = nw / ratio;
+        nh = Math.max(24, nw / ratio);
       }
     }
 
     if (this.app.scene.settings.snapToGrid && !ev.altKey) {
       const g = this.app.scene.settings.gridSize || 20;
-      nw = Math.max(20, Math.round(nw / (g / 2)) * (g / 2));
-      nh = Math.max(20, Math.round(nh / (g / 2)) * (g / 2));
+      const step = Math.max(5, g / 2);
+      nw = Math.max(24, Math.round(nw / step) * step);
+      nh = Math.max(24, Math.round(nh / step) * step);
     }
+
+    // Re-anchor west and north edges so opposite edge never drifts
+    if (handleId.includes('w')) nx = right - nw;
+    if (handleId.includes('n')) ny = bottom - nh;
 
     el.x = nx;
     el.y = ny;
     el.w = nw;
     el.h = nh;
+    if (this.initialPoints && (el.type === 'pen' || el.type === 'highlighter')) {
+      const pad = Math.max(2, (el.strokeWidth || 2) / 2);
+      const oldInnerW = Math.max(1, box.w - pad * 2);
+      const oldInnerH = Math.max(1, box.h - pad * 2);
+      const newInnerW = Math.max(1, nw - pad * 2);
+      const newInnerH = Math.max(1, nh - pad * 2);
+      const oldMinX = box.x + pad;
+      const oldMinY = box.y + pad;
+      const newMinX = nx + pad;
+      const newMinY = ny + pad;
+      el.points = this.initialPoints.map((p) => ({
+        x: newMinX + ((p.x - oldMinX) / oldInnerW) * newInnerW,
+        y: newMinY + ((p.y - oldMinY) / oldInnerH) * newInnerH,
+      }));
+      syncFreehandBounds(el);
+    }
     if (el.type === 'frame' && !el.collapsed) {
       el.expandedHeight = nh;
+    }
+  }
+
+  applyGroupResize(handleId, world, ev) {
+    const box = this.initialGroupBox;
+    const right = box.x + box.w;
+    const bottom = box.y + box.h;
+    let nx = box.x;
+    let ny = box.y;
+    let nw = box.w;
+    let nh = box.h;
+
+    if (handleId.includes('e')) nw = Math.max(40, world.x - box.x);
+    if (handleId.includes('s')) nh = Math.max(40, world.y - box.y);
+    if (handleId.includes('w')) {
+      nx = Math.min(right - 40, world.x);
+      nw = right - nx;
+    }
+    if (handleId.includes('n')) {
+      ny = Math.min(bottom - 40, world.y);
+      nh = bottom - ny;
+    }
+    if (ev.shiftKey && box.w > 0 && box.h > 0) {
+      const ratio = box.w / box.h;
+      nh = Math.max(40, nw / ratio);
+    }
+    if (handleId.includes('w')) nx = right - nw;
+    if (handleId.includes('n')) ny = bottom - nh;
+
+    const sx = box.w > 0 ? nw / box.w : 1;
+    const sy = box.h > 0 ? nh / box.h : 1;
+
+    for (const item of this.initialGroupItems) {
+      const { el } = item;
+      el.x = nx + (item.x - box.x) * sx;
+      el.y = ny + (item.y - box.y) * sy;
+      if (el.type === 'line' || el.type === 'arrow') {
+        el.x2 = nx + (item.x2 - box.x) * sx;
+        el.y2 = ny + (item.y2 - box.y) * sy;
+      } else {
+        el.w = Math.max(24, item.w * sx);
+        el.h = Math.max(24, item.h * sy);
+      }
     }
   }
 }

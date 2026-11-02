@@ -13,10 +13,11 @@ import {
 import {
   getElementBounds,
   getSelectionBounds,
+  syncFreehandBounds,
   isElementInViewport,
   getConnectionPorts,
 } from '../scene/geometry.js';
-import { getElementHandles } from '../scene/hit.js';
+import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
 
 export class CanvasRenderer {
   constructor(canvas) {
@@ -172,10 +173,22 @@ export class CanvasRenderer {
           ctx.strokeStyle = theme.selectionStroke;
           ctx.lineWidth = 1.5 / cam.zoom;
           ctx.setLineDash([6 / cam.zoom, 4 / cam.zoom]);
-          ctx.strokeRect(gb.x - 4, gb.y - 4, gb.w + 8, gb.h + 8);
+          ctx.strokeRect(gb.x, gb.y, gb.w, gb.h);
+          ctx.setLineDash([]);
+          const hs = 7.5 / cam.zoom;
+          for (const hd of getMultiSelectionHandles(gb)) {
+            ctx.fillStyle = theme.handleFill;
+            ctx.strokeStyle = theme.handleStroke;
+            ctx.fillRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
+            ctx.strokeRect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
+          }
           ctx.restore();
         }
       }
+    }
+
+    if (appState.classroomPointers && appState.classroomPointers.length > 0) {
+      this.drawClassroomPointers(ctx, appState.classroomPointers, page, cam.zoom, now);
     }
 
     if (cropState && cropState.element) {
@@ -208,30 +221,18 @@ export class CanvasRenderer {
     if (bgType === 'plain') return;
     const step = gridSize * cam.zoom;
     if (step < 6) return;
-    const offsetX = ((cam.x % step) + step) % step;
-    const offsetY = ((cam.y % step) + step) % step;
-
+    const offsetX = ((cam.x % step) + step) % step, offsetY = ((cam.y % step) + step) % step;
     ctx.save();
     if (bgType === 'grid') {
-      ctx.strokeStyle = theme.gridMinor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let x = offsetX; x < this.width; x += step) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, this.height);
-      }
-      for (let y = offsetY; y < this.height; y += step) {
-        ctx.moveTo(0, y);
-        ctx.lineTo(this.width, y);
-      }
+      ctx.strokeStyle = theme.gridMinor; ctx.lineWidth = 1; ctx.beginPath();
+      for (let x = offsetX; x < this.width; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, this.height); }
+      for (let y = offsetY; y < this.height; y += step) { ctx.moveTo(0, y); ctx.lineTo(this.width, y); }
       ctx.stroke();
     } else if (bgType === 'dots') {
       ctx.fillStyle = theme.dotsColor;
       const r = Math.max(1, Math.min(2.2, cam.zoom * 1.2));
       for (let x = offsetX; x < this.width; x += step) {
-        for (let y = offsetY; y < this.height; y += step) {
-          ctx.fillRect(x - r / 2, y - r / 2, r, r);
-        }
+        for (let y = offsetY; y < this.height; y += step) ctx.fillRect(x - r / 2, y - r / 2, r, r);
       }
     }
     ctx.restore();
@@ -240,43 +241,26 @@ export class CanvasRenderer {
   drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState) {
     ctx.save();
     let alpha = el.opacity ?? 1;
-    if (el.fading && el.createdAt) {
-      const elapsed = now - el.createdAt;
-      if (elapsed > 2200) alpha *= Math.max(0, 1 - (elapsed - 2200) / 800);
+    if (el.fading && el.createdAt && now - el.createdAt > 2200) {
+      alpha *= Math.max(0, 1 - (now - el.createdAt - 2200) / 800);
     }
     ctx.globalAlpha = alpha;
-
+    if (el.type === 'pen' || el.type === 'highlighter') syncFreehandBounds(el);
     const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
-    if (el.rotation && el.type !== 'line' && el.type !== 'arrow' && el.type !== 'pen' && el.type !== 'highlighter') {
-      const cx = el.x + el.w / 2;
-      const cy = el.y + h / 2;
-      ctx.translate(cx, cy);
-      ctx.rotate(el.rotation);
-      ctx.translate(-cx, -cy);
+    if (el.rotation && el.type !== 'line' && el.type !== 'arrow') {
+      const cx = el.x + el.w / 2, cy = el.y + h / 2;
+      ctx.translate(cx, cy); ctx.rotate(el.rotation); ctx.translate(-cx, -cy);
     }
-
-    if (el.type === 'pen' || el.type === 'highlighter') {
-      this.drawFreehand(ctx, el, theme);
-    } else if (el.type === 'line' || el.type === 'arrow') {
-      drawConnectorElement(ctx, el, page, theme);
-    } else if (el.type === 'frame') {
-      this.drawFrame(ctx, el, theme);
-    } else if (el.type === 'image') {
-      this.drawImageElement(ctx, el, scene.files, theme);
-    } else if (el.type === 'text') {
-      if (editingElementId !== el.id) drawElementText(ctx, el, theme.name, 4);
-    } else if (el.type === 'table') {
-      drawTableElement(ctx, el, theme.name);
-    } else if (el.type === 'code') {
-      drawCodeElement(ctx, el);
-    } else if (el.type === 'stamp') {
-      drawStamp(ctx, el);
-    } else if (el.type === 'math') {
-      drawMathTool(ctx, el);
-    } else {
-      const cloneForRender = editingElementId === el.id ? { ...el, text: '' } : el;
-      drawShapeElement(ctx, cloneForRender, theme);
-    }
+    if (el.type === 'pen' || el.type === 'highlighter') this.drawFreehand(ctx, el, theme);
+    else if (el.type === 'line' || el.type === 'arrow') drawConnectorElement(ctx, el, page, theme);
+    else if (el.type === 'frame') this.drawFrame(ctx, el, theme);
+    else if (el.type === 'image') this.drawImageElement(ctx, el, scene.files, theme);
+    else if (el.type === 'text') { if (editingElementId !== el.id) drawElementText(ctx, el, theme.name, 4); }
+    else if (el.type === 'table') drawTableElement(ctx, el, theme.name);
+    else if (el.type === 'code') drawCodeElement(ctx, el);
+    else if (el.type === 'stamp') drawStamp(ctx, el);
+    else if (el.type === 'math') drawMathTool(ctx, el);
+    else drawShapeElement(ctx, editingElementId === el.id ? { ...el, text: '' } : el, theme);
 
     if (!presentState?.active) this.drawElementBadges(ctx, el);
     ctx.restore();
@@ -387,95 +371,54 @@ export class CanvasRenderer {
   drawElementBadges(ctx, el) {
     const b = getElementBounds(el);
     if (el.link) {
-      ctx.save();
-      ctx.fillStyle = '#2563eb';
-      ctx.beginPath();
-      ctx.roundRect(b.maxX - 22, b.minY + 4, 18, 18, 4);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('↗', b.maxX - 13, b.minY + 13);
-      ctx.restore();
+      ctx.save(); ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.roundRect(b.maxX - 22, b.minY + 4, 18, 18, 4); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('↗', b.maxX - 13, b.minY + 13); ctx.restore();
     }
     if (el.revealStep > 0) {
-      ctx.save();
-      ctx.fillStyle = '#7c3aed';
-      ctx.beginPath();
-      ctx.roundRect(b.minX + 4, b.minY + 4, 22, 18, 4);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`S${el.revealStep}`, b.minX + 15, b.minY + 13);
-      ctx.restore();
+      ctx.save(); ctx.fillStyle = '#7c3aed'; ctx.beginPath(); ctx.roundRect(b.minX + 4, b.minY + 4, 22, 18, 4); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`S${el.revealStep}`, b.minX + 15, b.minY + 13); ctx.restore();
     }
   }
 
   drawConnectionPorts(ctx, el, hoveredPort, zoom, theme) {
     const ports = getConnectionPorts(el);
-    if (ports.length === 0) return;
+    if (!ports.length) return;
     const r = 5.5 / zoom;
     ctx.save();
     for (const p of ports) {
       const isHover = hoveredPort && hoveredPort.elementId === el.id && hoveredPort.port === p.port;
       ctx.fillStyle = isHover ? theme.portHoverFill : theme.portFill;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5 / zoom;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, isHover ? r * 1.35 : r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5 / zoom;
+      ctx.beginPath(); ctx.arc(p.x, p.y, isHover ? r * 1.35 : r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
 
   drawSelectionHandles(ctx, el, page, zoom, theme) {
     ctx.save();
-    ctx.strokeStyle = theme.selectionStroke;
-    ctx.lineWidth = 1.5 / zoom;
-
+    ctx.strokeStyle = theme.selectionStroke; ctx.lineWidth = 1.5 / zoom;
+    if (el.type === 'pen' || el.type === 'highlighter') syncFreehandBounds(el);
     if (el.type !== 'line' && el.type !== 'arrow') {
-      const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
-      const cx = el.x + el.w / 2;
-      const cy = el.y + h / 2;
+      const h = el.type === 'frame' && el.collapsed ? 42 : el.h, cx = el.x + el.w / 2, cy = el.y + h / 2;
       ctx.save();
-      if (el.rotation) {
-        ctx.translate(cx, cy);
-        ctx.rotate(el.rotation);
-        ctx.translate(-cx, -cy);
-      }
+      if (el.rotation) { ctx.translate(cx, cy); ctx.rotate(el.rotation); ctx.translate(-cx, -cy); }
       ctx.strokeRect(el.x, el.y, el.w, h);
-      if (!el.locked) {
-        ctx.beginPath();
-        ctx.moveTo(cx, el.y);
-        ctx.lineTo(cx, el.y - 28);
-        ctx.stroke();
-      }
+      if (!el.locked) { ctx.beginPath(); ctx.moveTo(cx, el.y); ctx.lineTo(cx, el.y - 28); ctx.stroke(); }
       ctx.restore();
     }
-
-    if (el.locked) {
-      ctx.restore();
-      return;
-    }
-
-    const handles = getElementHandles(el, page);
-    const size = 8 / zoom;
+    if (el.locked) { ctx.restore(); return; }
+    const handles = getElementHandles(el, page), size = 8 / zoom;
     for (const hd of handles) {
       ctx.fillStyle = hd.id === 'mid' ? '#f59e0b' : hd.id === 'label' ? '#10b981' : theme.handleFill;
-      ctx.strokeStyle = theme.handleStroke;
-      ctx.lineWidth = 1.6 / zoom;
-      ctx.beginPath();
+      ctx.strokeStyle = theme.handleStroke; ctx.lineWidth = 1.6 / zoom; ctx.beginPath();
       if (hd.id === 'rotate' || hd.id === 'mid' || hd.id === 'start' || hd.id === 'end' || hd.id === 'label') {
         ctx.arc(hd.x, hd.y, size * 0.65, 0, Math.PI * 2);
       } else {
         ctx.rect(hd.x - size / 2, hd.y - size / 2, size, size);
       }
-      ctx.fill();
-      ctx.stroke();
+      ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
@@ -499,8 +442,7 @@ export class CanvasRenderer {
     for (let i = 1; i < trail.length; i++) {
       const p0 = trail[i - 1];
       const p1 = trail[i];
-      const age = now - p1.t;
-      const alpha = Math.max(0, 1 - age / 900);
+      const alpha = Math.max(0, 1 - (now - (p1.time || p1.t || now)) / 900);
       if (alpha <= 0) continue;
       ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
       ctx.lineWidth = (6 * alpha) / zoom;
@@ -509,12 +451,46 @@ export class CanvasRenderer {
       ctx.lineTo(p1.x, p1.y);
       ctx.stroke();
     }
-    const last = trail[trail.length - 1];
-    if (now - last.t < 200) {
-      ctx.fillStyle = '#ef4444';
+    ctx.restore();
+  }
+
+  drawClassroomPointers(ctx, pointers, page, zoom, now) {
+    ctx.save();
+    for (const pt of pointers) {
+      if (now - (pt.time || now) > 12000) continue;
+      let px = pt.x;
+      let py = pt.y;
+      if (pt.targetElementId) {
+        const target = page.elements.find((e) => e.id === pt.targetElementId);
+        if (target) {
+          px = target.x + target.w / 2;
+          py = target.y + target.h / 2;
+          ctx.strokeStyle = pt.color || '#ec4899';
+          ctx.lineWidth = 3 / zoom;
+          ctx.strokeRect(target.x - 4, target.y - 4, target.w + 8, target.h + 8);
+        }
+      }
+      const pulse = 10 + ((now % 1000) / 1000) * 14;
+      ctx.strokeStyle = pt.color || '#ec4899';
+      ctx.lineWidth = 2.5 / zoom;
       ctx.beginPath();
-      ctx.arc(last.x, last.y, 6 / zoom, 0, Math.PI * 2);
+      ctx.arc(px, py, pulse / zoom, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = pt.color || '#ec4899';
+      ctx.beginPath();
+      ctx.arc(px, py, 5 / zoom, 0, Math.PI * 2);
       ctx.fill();
+      const label = `${pt.authorName || 'Student'}${pt.targetElementName ? ` → ${pt.targetElementName}` : ''}`;
+      ctx.font = `bold ${Math.round(12 / zoom)}px ${FONT_MAP.sans}`;
+      const lw = ctx.measureText(label).width + 14 / zoom;
+      const lh = 20 / zoom;
+      ctx.beginPath();
+      ctx.roundRect(px + 8 / zoom, py - lh - 4 / zoom, lw, lh, 6 / zoom);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, px + 15 / zoom, py - lh / 2 - 4 / zoom);
     }
     ctx.restore();
   }

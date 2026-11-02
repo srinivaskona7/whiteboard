@@ -3,6 +3,7 @@ import {
   unrotatePoint,
   rotatePoint,
   getElementBounds,
+  syncFreehandBounds,
   distanceToSegment,
 } from './geometry.js';
 import {
@@ -27,6 +28,10 @@ export function getElementHandles(el, page = null) {
       handles.push({ id: 'label', x: lp.x, y: lp.y, cursor: 'ew-resize' });
     }
     return handles;
+  }
+
+  if (el.type === 'pen' || el.type === 'highlighter') {
+    syncFreehandBounds(el);
   }
 
   const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
@@ -67,17 +72,56 @@ export function hitTestHandle(el, px, py, zoom = 1, page = null) {
   return null;
 }
 
+export function getMultiSelectionHandles(bounds) {
+  if (!bounds) return [];
+  const { x, y, w, h } = bounds;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  return [
+    { id: 'nw', x, y, cursor: 'nwse-resize' },
+    { id: 'n', x: cx, y, cursor: 'ns-resize' },
+    { id: 'ne', x: x + w, y, cursor: 'nesw-resize' },
+    { id: 'e', x: x + w, y: cy, cursor: 'ew-resize' },
+    { id: 'se', x: x + w, y: y + h, cursor: 'nwse-resize' },
+    { id: 's', x: cx, y: y + h, cursor: 'ns-resize' },
+    { id: 'sw', x, y: y + h, cursor: 'nesw-resize' },
+    { id: 'w', x, y: cy, cursor: 'ew-resize' },
+  ];
+}
+
+export function hitTestMultiSelectionHandle(bounds, px, py, zoom = 1) {
+  if (!bounds) return null;
+  const tol = 10 / Math.max(0.25, zoom);
+  for (const hd of getMultiSelectionHandles(bounds)) {
+    if (Math.hypot(px - hd.x, py - hd.y) <= tol) {
+      return hd;
+    }
+  }
+  return null;
+}
+
 export function hitTestElement(el, px, py, page = null, tolerance = 7) {
   if (!el || el.hidden) return false;
 
+  if (el.type !== 'line' && el.type !== 'arrow') {
+    const b = getElementBounds(el);
+    const pad = Math.max(tolerance, (el.strokeWidth || 2) + 8);
+    if (px < b.minX - pad || px > b.maxX + pad || py < b.minY - pad || py > b.maxY + pad) {
+      return false;
+    }
+  }
+
   if (el.type === 'pen' || el.type === 'highlighter') {
     const pts = el.points || [];
-    const hitTol = Math.max(tolerance, (el.strokeWidth || 2) / 2 + 4);
+    const hitTol = Math.max(tolerance, (el.strokeWidth || 2) / 2 + 5);
+    const cx = el.x + el.w / 2;
+    const cy = el.y + el.h / 2;
+    const local = el.rotation ? unrotatePoint(px, py, cx, cy, el.rotation) : { x: px, y: py };
     if (pts.length === 1) {
-      return Math.hypot(px - pts[0].x, py - pts[0].y) <= hitTol;
+      return Math.hypot(local.x - pts[0].x, local.y - pts[0].y) <= hitTol;
     }
     for (let i = 0; i < pts.length - 1; i++) {
-      if (distanceToSegment(px, py, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) <= hitTol) {
+      if (distanceToSegment(local.x, local.y, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) <= hitTol) {
         return true;
       }
     }

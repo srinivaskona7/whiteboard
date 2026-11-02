@@ -10,8 +10,28 @@ export function initPropsPanel(app) {
     const page = app.getPage();
     const selected = page.elements.filter((e) => app.selectedIds.has(e.id));
     const tool = app.activeTool;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
 
-    const sections = [];
+    const shouldShow = isMobile
+      ? Boolean(app.propsDrawerOpen)
+      : Boolean(
+          app.propsDrawerOpen ||
+            selected.length > 0 ||
+            (tool !== 'select' && tool !== 'hand' && tool !== 'eraser' && tool !== 'laser')
+        );
+
+    if (!shouldShow) {
+      container.classList.add('wb-hidden');
+      return;
+    }
+    container.classList.remove('wb-hidden');
+
+    const sections = [
+      `<div class="wb-panel-header" style="padding:0 0 8px 0;margin-bottom:8px;">
+        <strong>${selected.length > 0 ? `Inspector (${selected.length})` : 'Canvas & Tool Style'}</strong>
+        <button type="button" class="wb-icon-btn" id="btn-close-props" aria-label="Close Inspector Panel" title="Close Inspector Panel">✕</button>
+      </div>`,
+    ];
 
     // 1. Page & Canvas Context when nothing is selected and Select/Hand tool is active
     if (selected.length === 0 && (tool === 'select' || tool === 'hand')) {
@@ -177,17 +197,30 @@ export function initPropsPanel(app) {
     // Connector Routing & Arrowheads
     if (isConnector) {
       const arrowTypes = ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'];
+      const routingModes = [
+        ['straight', 'Straight'],
+        ['orthogonal', 'Right-Angle'],
+        ['curved', 'Curved'],
+      ];
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Connector Routing</div>
+          <div class="wb-prop-title">Connector Routing & Label</div>
           <div class="wb-btn-group">
-            ${['straight', 'orthogonal', 'curved']
+            ${routingModes
               .map(
-                (rt) =>
-                  `<button type="button" class="wb-btn wb-sm ${(ref.routing || 'orthogonal') === rt ? 'active' : ''}" data-routing="${rt}">${rt}</button>`
+                ([rt, label]) =>
+                  `<button type="button" class="wb-btn wb-sm ${(ref.routing || 'orthogonal') === rt ? 'active' : ''}" data-routing="${rt}">${label}</button>`
               )
               .join('')}
           </div>
+          ${
+            selected.length === 1
+              ? `<label class="wb-prop-row">
+                  <span>Label</span>
+                  <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. HTTPS / gRPC" value="${escapeXml(ref.text || '')}" aria-label="Connector Label"/>
+                </label>`
+              : ''
+          }
           <label class="wb-prop-row">
             <span>Start Cap</span>
             <select id="prop-start-arrow" aria-label="Start Arrowhead">
@@ -216,7 +249,15 @@ export function initPropsPanel(app) {
     if (hasText) {
       sections.push(`
         <div class="wb-prop-section">
-          <div class="wb-prop-title">Typography</div>
+          <div class="wb-prop-title">Label & Typography</div>
+          ${
+            selected.length === 1 && !isConnector
+              ? `<label class="wb-prop-row">
+                  <span>Label</span>
+                  <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="Component label..." value="${escapeXml(ref.text || '')}" aria-label="Component Label"/>
+                </label>`
+              : ''
+          }
           <label class="wb-prop-row">
             <span>Font</span>
             <select id="prop-font-family" aria-label="Font Family">
@@ -333,6 +374,12 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" id="btn-match-size">Match Size</button>
           </div>
           <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" data-arrange="row" title="Arrange in Horizontal Row">→ Row</button>
+            <button type="button" class="wb-btn wb-sm" data-arrange="column" title="Arrange in Vertical Column">↓ Col</button>
+            <button type="button" class="wb-btn wb-sm" data-arrange="grid" title="Arrange in Balanced Grid">⊞ Grid</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-auto-connect" title="Connect Selected Components in Sequence">⛓ Connect</button>
+          </div>
+          <div class="wb-btn-group">
             <button type="button" class="wb-btn wb-sm" id="btn-group">Group (⌘G)</button>
             <button type="button" class="wb-btn wb-sm" id="btn-ungroup">Ungroup</button>
           </div>
@@ -366,7 +413,7 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" data-z="front" title="Bring to Front (])">Front</button>
             <button type="button" class="wb-btn wb-sm" data-z="back" title="Send to Back ([)">Back</button>
             <button type="button" class="wb-btn wb-sm" id="btn-lock-el">${ref.locked ? '🔓 Unlock' : '🔒 Lock'}</button>
-            <button type="button" class="wb-btn wb-sm wb-danger" id="btn-delete-el">🗑</button>
+            <button type="button" class="wb-btn wb-sm wb-danger" id="btn-delete-el" aria-label="Delete selected elements" title="Delete selected elements">🗑</button>
           </div>
         </div>
       `);
@@ -377,6 +424,11 @@ export function initPropsPanel(app) {
   }
 
   function bindEvents(selected) {
+    container.querySelector('#btn-close-props')?.addEventListener('click', () => {
+      app.propsDrawerOpen = false;
+      container.classList.add('wb-hidden');
+      app.toolbarUI?.update();
+    });
     const applyProp = (mutator) => {
       mutator(app.currentStyle);
       for (const el of selected) {
@@ -401,178 +453,81 @@ export function initPropsPanel(app) {
         if (t.type === 'text') t.textColor = e.target.value;
       });
     });
-    container.querySelector('#prop-stroke-width')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.strokeWidth = Number(e.target.value)));
+    container.querySelector('#prop-stroke-width')?.addEventListener('change', (e) => applyProp((t) => (t.strokeWidth = Number(e.target.value))));
+    container.querySelectorAll('[data-stroke-style]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.strokeStyle = b.dataset.strokeStyle))));
+    container.querySelectorAll('[data-fill]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.fill = b.dataset.fill))));
+    container.querySelector('#prop-fill-custom')?.addEventListener('input', (e) => applyProp((t) => (t.fill = e.target.value)));
+    container.querySelector('#prop-roundness')?.addEventListener('change', (e) => applyProp((t) => (t.roundness = Number(e.target.value))));
+    container.querySelector('#prop-sloppy')?.addEventListener('change', (e) => applyProp((t) => (t.sloppy = e.target.checked)));
+    container.querySelector('#prop-autogrow')?.addEventListener('change', (e) => applyProp((t) => (t.autoGrow = e.target.checked)));
+    container.querySelectorAll('[data-routing]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.routing = b.dataset.routing))));
+    container.querySelector('#prop-start-arrow')?.addEventListener('change', (e) => applyProp((t) => (t.startArrow = e.target.value)));
+    container.querySelector('#prop-end-arrow')?.addEventListener('change', (e) => applyProp((t) => (t.endArrow = e.target.value)));
+    container.querySelector('#prop-font-family')?.addEventListener('change', (e) => applyProp((t) => (t.fontFamily = e.target.value)));
+    container.querySelector('#prop-font-size')?.addEventListener('change', (e) => applyProp((t) => (t.fontSize = Number(e.target.value))));
+    container.querySelector('#prop-text-color')?.addEventListener('input', (e) => applyProp((t) => (t.textColor = e.target.value)));
+    container.querySelector('#prop-label-text')?.addEventListener('input', (e) => {
+      if (selected[0] && !selected[0].locked) {
+        selected[0].text = e.target.value;
+        app.commitChange();
+        app.requestRender();
+      }
     });
-    container.querySelectorAll('[data-stroke-style]').forEach((b) => {
-      b.addEventListener('click', () => applyProp((t) => (t.strokeStyle = b.dataset.strokeStyle)));
-    });
-    container.querySelectorAll('[data-fill]').forEach((b) => {
-      b.addEventListener('click', () => applyProp((t) => (t.fill = b.dataset.fill)));
-    });
-    container.querySelector('#prop-fill-custom')?.addEventListener('input', (e) => {
-      applyProp((t) => (t.fill = e.target.value));
-    });
-    container.querySelector('#prop-roundness')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.roundness = Number(e.target.value)));
-    });
-    container.querySelector('#prop-sloppy')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.sloppy = e.target.checked));
-    });
-    container.querySelector('#prop-autogrow')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.autoGrow = e.target.checked));
-    });
-    container.querySelectorAll('[data-routing]').forEach((b) => {
-      b.addEventListener('click', () => applyProp((t) => (t.routing = b.dataset.routing)));
-    });
-    container.querySelector('#prop-start-arrow')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.startArrow = e.target.value));
-    });
-    container.querySelector('#prop-end-arrow')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.endArrow = e.target.value));
-    });
-    container.querySelector('#prop-font-family')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.fontFamily = e.target.value));
-    });
-    container.querySelector('#prop-font-size')?.addEventListener('change', (e) => {
-      applyProp((t) => (t.fontSize = Number(e.target.value)));
-    });
-    container.querySelector('#prop-text-color')?.addEventListener('input', (e) => {
-      applyProp((t) => (t.textColor = e.target.value));
-    });
-    container.querySelectorAll('[data-align]').forEach((b) => {
-      b.addEventListener('click', () => applyProp((t) => (t.textAlign = b.dataset.align)));
-    });
-
-    // Canvas & Grid
-    container.querySelector('#prop-bg-type')?.addEventListener('change', (e) => {
-      app.setBackground(e.target.value);
-    });
-    container.querySelector('#prop-snap-grid')?.addEventListener('change', (e) => {
-      app.scene.settings.snapToGrid = e.target.checked;
-      app.scheduleAutosave(app.scene);
-    });
-    container.querySelector('#prop-snap-obj')?.addEventListener('change', (e) => {
-      app.scene.settings.snapToObjects = e.target.checked;
-      app.scheduleAutosave(app.scene);
-    });
-    container.querySelectorAll('[data-math]').forEach((b) => {
-      b.addEventListener('click', () => app.insertMathOverlay(b.dataset.math));
-    });
-
-    // Stamp kind
-    container.querySelectorAll('[data-stamp-kind]').forEach((b) => {
-      b.addEventListener('click', () => {
-        app.stampTool.stampKind = b.dataset.stampKind;
-        render();
-      });
-    });
-
-    // Annotation & Spotlight
-    container.querySelector('#prop-fading-ink')?.addEventListener('change', (e) => {
-      app.fadingInk = e.target.checked;
-    });
-    container.querySelector('#prop-magnifier')?.addEventListener('change', (e) => {
-      app.spotlight.magnifier = e.target.checked;
-      app.requestRender();
-    });
+    container.querySelectorAll('[data-align]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.textAlign = b.dataset.align))));
+    container.querySelector('#prop-bg-type')?.addEventListener('change', (e) => app.setBackground(e.target.value));
+    container.querySelector('#prop-snap-grid')?.addEventListener('change', (e) => { app.scene.settings.snapToGrid = e.target.checked; app.scheduleAutosave(app.scene); });
+    container.querySelector('#prop-snap-obj')?.addEventListener('change', (e) => { app.scene.settings.snapToObjects = e.target.checked; app.scheduleAutosave(app.scene); });
+    container.querySelectorAll('[data-math]').forEach((b) => b.addEventListener('click', () => app.insertMathOverlay(b.dataset.math)));
+    container.querySelectorAll('[data-stamp-kind]').forEach((b) => b.addEventListener('click', () => { app.stampTool.stampKind = b.dataset.stampKind; render(); }));
+    container.querySelector('#prop-fading-ink')?.addEventListener('change', (e) => (app.fadingInk = e.target.checked));
+    container.querySelector('#prop-magnifier')?.addEventListener('change', (e) => { app.spotlight.magnifier = e.target.checked; app.requestRender(); });
 
     // Table actions
     if (selected.length === 1 && selected[0].type === 'table') {
       const tbl = selected[0];
       container.querySelector('#btn-table-add-row')?.addEventListener('click', () => {
-        tbl.rows += 1;
-        tbl.cells.push(Array.from({ length: tbl.cols }, () => ''));
-        tbl.h += 36;
-        app.commitChange();
-        app.requestRender();
-        render();
+        tbl.rows += 1; tbl.cells.push(Array.from({ length: tbl.cols }, () => '')); tbl.h += 36;
+        app.commitChange(); app.requestRender(); render();
       });
       container.querySelector('#btn-table-del-row')?.addEventListener('click', () => {
-        if (tbl.rows > 1) {
-          tbl.rows -= 1;
-          tbl.cells.pop();
-          app.commitChange();
-          app.requestRender();
-          render();
-        }
+        if (tbl.rows > 1) { tbl.rows -= 1; tbl.cells.pop(); app.commitChange(); app.requestRender(); render(); }
       });
       container.querySelector('#btn-table-add-col')?.addEventListener('click', () => {
-        tbl.cols += 1;
-        tbl.cells.forEach((r) => r.push(''));
-        tbl.w += 90;
-        app.commitChange();
-        app.requestRender();
-        render();
+        tbl.cols += 1; tbl.cells.forEach((r) => r.push('')); tbl.w += 90;
+        app.commitChange(); app.requestRender(); render();
       });
       container.querySelector('#btn-table-del-col')?.addEventListener('click', () => {
-        if (tbl.cols > 1) {
-          tbl.cols -= 1;
-          tbl.cells.forEach((r) => r.pop());
-          app.commitChange();
-          app.requestRender();
-          render();
-        }
+        if (tbl.cols > 1) { tbl.cols -= 1; tbl.cells.forEach((r) => r.pop()); app.commitChange(); app.requestRender(); render(); }
       });
     }
 
-    // Code highlight
+    // Code highlight & Frame options
     container.querySelector('#prop-code-hl')?.addEventListener('input', (e) => {
-      if (selected[0]) {
-        selected[0].highlightLines = e.target.value;
-        app.commitChange();
-        app.requestRender();
-      }
+      if (selected[0]) { selected[0].highlightLines = e.target.value; app.commitChange(); app.requestRender(); }
     });
-
-    // Frame options
     container.querySelector('#prop-slide-order')?.addEventListener('change', (e) => {
-      if (selected[0]) {
-        selected[0].slideOrder = Math.max(1, Number(e.target.value) || 1);
-        app.commitChange();
-        app.requestRender();
-      }
+      if (selected[0]) { selected[0].slideOrder = Math.max(1, Number(e.target.value) || 1); app.commitChange(); app.requestRender(); }
     });
     container.querySelector('#prop-frame-clip')?.addEventListener('change', (e) => {
-      if (selected[0]) {
-        selected[0].clip = e.target.checked;
-        app.commitChange();
-        app.requestRender();
-      }
+      if (selected[0]) { selected[0].clip = e.target.checked; app.commitChange(); app.requestRender(); }
     });
-    container.querySelector('#btn-frame-collapse')?.addEventListener('click', () => {
-      if (selected[0]) app.toggleFrame(selected[0].id);
-    });
+    container.querySelector('#btn-frame-collapse')?.addEventListener('click', () => { if (selected[0]) app.toggleFrame(selected[0].id); });
 
     // Image options
     container.querySelector('#prop-img-aspect')?.addEventListener('change', (e) => {
-      if (selected[0]) {
-        selected[0].lockAspectRatio = e.target.checked;
-        app.commitChange();
-      }
+      if (selected[0]) { selected[0].lockAspectRatio = e.target.checked; app.commitChange(); }
     });
-    container.querySelector('#btn-img-crop')?.addEventListener('click', () => {
-      if (selected[0]) app.toggleImageCrop(selected[0]);
-    });
+    container.querySelector('#btn-img-crop')?.addEventListener('click', () => { if (selected[0]) app.toggleImageCrop(selected[0]); });
     container.querySelector('#btn-img-reset-crop')?.addEventListener('click', () => {
-      if (selected[0]) {
-        selected[0].crop = null;
-        app.commitChange();
-        app.requestRender();
-        render();
-      }
+      if (selected[0]) { selected[0].crop = null; app.commitChange(); app.requestRender(); render(); }
     });
-    container.querySelector('#btn-img-bg')?.addEventListener('click', () => {
-      if (selected[0]) app.toggleImageBackgroundLock(selected[0]);
-    });
+    container.querySelector('#btn-img-bg')?.addEventListener('click', () => { if (selected[0]) app.toggleImageBackgroundLock(selected[0]); });
 
-    // Alignment & Distribution
-    container.querySelectorAll('[data-align-el]').forEach((b) => {
-      b.addEventListener('click', () => app.alignSelection(b.dataset.alignEl));
-    });
-    container.querySelectorAll('[data-dist]').forEach((b) => {
-      b.addEventListener('click', () => app.distributeSelection(b.dataset.dist));
-    });
+    // Alignment, Arrangement & Distribution
+    container.querySelectorAll('[data-align-el]').forEach((b) => b.addEventListener('click', () => app.alignSelection(b.dataset.alignEl)));
+    container.querySelectorAll('[data-dist]').forEach((b) => b.addEventListener('click', () => app.distributeSelection(b.dataset.dist)));
+    container.querySelectorAll('[data-arrange]').forEach((b) => b.addEventListener('click', () => app.arrangeSelection(b.dataset.arrange)));
+    container.querySelector('#btn-auto-connect')?.addEventListener('click', () => app.connectSelectionFlow());
     container.querySelector('#btn-match-size')?.addEventListener('click', () => app.matchSelectionSize());
     container.querySelector('#btn-group')?.addEventListener('click', () => app.groupSelection());
     container.querySelector('#btn-ungroup')?.addEventListener('click', () => app.ungroupSelection());
@@ -581,15 +536,12 @@ export function initPropsPanel(app) {
     container.querySelector('#prop-reveal-step')?.addEventListener('change', (e) => {
       const val = Number(e.target.value);
       for (const el of selected) el.revealStep = val;
-      app.commitChange();
-      app.requestRender();
+      app.commitChange(); app.requestRender();
     });
     container.querySelector('#btn-copy-style')?.addEventListener('click', () => app.copySelectedStyle());
     container.querySelector('#btn-add-to-lib')?.addEventListener('click', () => app.addSelectionToLibrary());
     container.querySelector('#btn-edit-link')?.addEventListener('click', () => app.dialogs.openHyperlinkModal());
-    container.querySelectorAll('[data-z]').forEach((b) => {
-      b.addEventListener('click', () => app.reorderSelection(b.dataset.z));
-    });
+    container.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => app.reorderSelection(b.dataset.z)));
     container.querySelector('#btn-lock-el')?.addEventListener('click', () => app.toggleLockSelection());
     container.querySelector('#btn-delete-el')?.addEventListener('click', () => app.deleteSelection());
   }

@@ -1,6 +1,7 @@
 // render/svg-export.js
 import { getThemeTokens, FONT_MAP, resolveThemeColor } from './themes.js';
-import { getSelectionBounds } from '../scene/geometry.js';
+import { getSelectionBounds, syncFreehandBounds } from '../scene/geometry.js';
+import { wrapShapeTextLines } from '../scene/model.js';
 import { getConnectorPoints, getPointAlongConnector } from '../scene/routing.js';
 import { getStencilById } from '../stencils/index.js';
 import { parseHighlightSet } from './shapes.js';
@@ -45,21 +46,24 @@ function renderSvgArrowhead(type, tipX, tipY, fromX, fromY, strokeWidth, strokeC
 
 function renderSvgTextBlock(el, themeName, padding = 12) {
   if (!el.text) return '';
-  const fontSize = el.fontSize || 18;
+  const isCard = el.type === 'stencil' && Boolean(getStencilById(el.stencilId)?.isCard);
+  const fontSize = isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
   const fontStack = escapeXml(FONT_MAP[el.fontFamily || 'sans'] || FONT_MAP.sans);
   const color = resolveThemeColor(el.textColor || el.stroke || '#1e293b', themeName, 'text');
-  const lines = String(el.text).split(String.fromCharCode(10));
-  const lineH = fontSize * 1.32;
+  const lines = wrapShapeTextLines(el, el.text);
+  const lineH = fontSize * (isCard ? 1.18 : 1.32);
   const totalH = lines.length * lineH;
-  const startY = el.y + el.h / 2 - totalH / 2 + lineH / 2;
+  const zoneCenterY = isCard ? el.y + el.h * 0.785 : el.y + el.h / 2;
+  const startY = zoneCenterY - totalH / 2 + lineH / 2;
 
   const align = el.textAlign || 'center';
   const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+  const innerPad = el.type === 'diamond' ? Math.round(el.w * 0.23) : padding;
   const tx =
     align === 'left'
-      ? el.x + padding
+      ? el.x + innerPad
       : align === 'right'
-        ? el.x + el.w - padding
+        ? el.x + el.w - innerPad
         : el.x + el.w / 2;
 
   return lines
@@ -117,12 +121,15 @@ function elementToSvg(el, page, scene, theme) {
   const dash = getSvgDashAttr(el.strokeStyle, sw);
   const opacityAttr = el.opacity !== undefined && el.opacity < 1 ? ` opacity="${el.opacity}"` : '';
 
+  if (el.type === 'pen' || el.type === 'highlighter') {
+    syncFreehandBounds(el);
+  }
   const h = el.type === 'frame' && el.collapsed ? 42 : el.h;
   const cx = el.x + el.w / 2;
   const cy = el.y + h / 2;
   const rotDeg = el.rotation ? (el.rotation * 180) / Math.PI : 0;
   const transformAttr =
-    rotDeg && el.type !== 'line' && el.type !== 'arrow' && el.type !== 'pen' && el.type !== 'highlighter'
+    rotDeg && el.type !== 'line' && el.type !== 'arrow'
       ? ` transform="rotate(${rotDeg} ${cx} ${cy})"`
       : '';
 
@@ -240,6 +247,10 @@ function elementToSvg(el, page, scene, theme) {
     inner = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/><text x="${cx}" y="${cy}" font-family="sans-serif" font-size="${Math.round(r)}" font-weight="bold" fill="#1d4ed8" text-anchor="middle" dominant-baseline="central">${escapeXml(label)}</text>`;
   } else if (el.type === 'math') {
     inner = `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" rx="4" fill="rgba(254,249,195,0.85)" stroke="#ca8a04" stroke-width="2"/>`;
+  } else if (el.type === 'question') {
+    const accent = el.resolved ? '#16a34a' : '#d97706';
+    const bg = el.resolved ? '#dcfce7' : '#fef3c7';
+    inner = `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" rx="10" fill="${bg}" stroke="${accent}" stroke-width="2"/><circle cx="${el.x + 18}" cy="${el.y + 18}" r="10" fill="${accent}"/><text x="${el.x + 18}" y="${el.y + 18}" font-family="sans-serif" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="central">${el.resolved ? '✓' : '?'}</text><text x="${el.x + 34}" y="${el.y + 18}" font-family="sans-serif" font-size="11" font-weight="bold" fill="#0f172a" dominant-baseline="central">${escapeXml(el.authorName || 'Student')}</text><text x="${el.x + 10}" y="${el.y + 42}" font-family="sans-serif" font-size="12" fill="#1e293b" dominant-baseline="central">${escapeXml(el.text || '')}</text>`;
   }
 
   return `<g data-id="${escapeXml(el.id)}" data-type="${escapeXml(el.type)}"${opacityAttr}${transformAttr}>${inner}</g>`;

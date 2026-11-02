@@ -4,6 +4,7 @@ import { SCHEMA_VERSION, createScene, createPage, createElement, uid } from './m
 export const STORAGE_KEY = 'classroom_whiteboard_scene_v2';
 export const LIBRARY_STORAGE_KEY = 'classroom_whiteboard_user_library_v1';
 export const THEME_STORAGE_KEY = 'classroom_whiteboard_theme_v1';
+export const RECOVERY_STORAGE_KEY = 'classroom_whiteboard_recovery_v1';
 
 export function migrateSceneData(raw) {
   if (!raw || typeof raw !== 'object') {
@@ -58,7 +59,7 @@ export function migrateSceneData(raw) {
         y: Number(p.camera?.y) || 0,
         zoom: Math.max(0.1, Math.min(8, Number(p.camera?.zoom) || 1)),
       };
-      p.background = ['plain', 'grid', 'dots'].includes(p.background) ? p.background : 'grid';
+      p.background = ['plain', 'grid', 'dots'].includes(p.background) ? p.background : 'dots';
     }
   }
 
@@ -66,6 +67,8 @@ export function migrateSceneData(raw) {
     data.activePageId = data.pages[0].id;
   }
 
+  data.title =
+    typeof data.title === 'string' && data.title.trim() ? data.title.trim() : 'StudioBoard Lesson';
   data.files = data.files && typeof data.files === 'object' ? data.files : {};
   data.theme = data.theme === 'dark' ? 'dark' : 'light';
   data.settings = {
@@ -83,6 +86,7 @@ export function serializeScene(scene) {
   const payload = {
     version: SCHEMA_VERSION,
     app: 'classroom-whiteboard-studio',
+    title: scene.title || 'StudioBoard Lesson',
     exportedAt: new Date().toISOString(),
     theme: scene.theme,
     activePageId: scene.activePageId,
@@ -127,14 +131,65 @@ export function loadSceneFromLocalStorage(preferredTheme = 'light', storage = gl
   }
 }
 
-export function createDebouncedAutosave(delayMs = 450, onQuotaError = null) {
+export function createDebouncedAutosave(delayMs = 500, onQuotaError = null, onStatusChange = null) {
   let timer = null;
+  let lastSnapshotTime = 0;
   return function scheduleSave(scene) {
+    if (!scene) return;
+    if (onStatusChange) onStatusChange('saving');
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      saveSceneToLocalStorage(scene, onQuotaError);
+      const ok = saveSceneToLocalStorage(scene, onQuotaError);
+      if (onStatusChange) onStatusChange(ok ? 'saved' : 'error');
+      const now = Date.now();
+      if (ok && now - lastSnapshotTime > 45000) {
+        lastSnapshotTime = now;
+        saveRecoverySnapshot(scene, 'Auto-checkpoint');
+      }
     }, delayMs);
   };
+}
+
+export function loadRecoverySnapshots(storage = globalThis.localStorage) {
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(RECOVERY_STORAGE_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRecoverySnapshot(scene, label = 'Manual Checkpoint', storage = globalThis.localStorage) {
+  if (!storage || !scene) return false;
+  try {
+    const list = loadRecoverySnapshots(storage);
+    const totalElements = (scene.pages || []).reduce((acc, p) => acc + (p.elements?.length || 0), 0);
+    const snap = {
+      id: uid('snap'),
+      timestamp: new Date().toISOString(),
+      label,
+      title: scene.title || 'StudioBoard Lesson',
+      pageCount: scene.pages?.length || 1,
+      elementCount: totalElements,
+      sceneJson: JSON.stringify({
+        version: SCHEMA_VERSION,
+        title: scene.title,
+        theme: scene.theme,
+        activePageId: scene.activePageId,
+        pages: scene.pages,
+        files: scene.files || {},
+        settings: scene.settings,
+      }),
+    };
+    const next = [snap, ...list].slice(0, 10);
+    storage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(next));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function loadUserLibrary(storage = globalThis.localStorage) {

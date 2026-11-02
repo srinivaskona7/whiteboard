@@ -1,6 +1,6 @@
 // tools/draw.js
 import { createElement } from '../scene/model.js';
-import { simplifyFreehandPoints, snapPointToGrid } from '../scene/geometry.js';
+import { simplifyFreehandPoints, snapPointToGrid, syncFreehandBounds } from '../scene/geometry.js';
 import { hitTestScene } from '../scene/hit.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
 
@@ -35,6 +35,7 @@ export class DrawTool {
         fading: isFading,
         createdAt: Date.now(),
       });
+      syncFreehandBounds(el);
       page.elements.push(el);
       this.activeElement = el;
       this.app.requestRender();
@@ -99,7 +100,16 @@ export class DrawTool {
     if (!this.activeElement) return;
 
     if (tool === 'pen' || tool === 'highlighter') {
-      this.activeElement.points.push({ x: world.x, y: world.y });
+      const coalesced = typeof ev?.getCoalescedEvents === 'function' ? ev.getCoalescedEvents() : null;
+      if (coalesced && coalesced.length > 1) {
+        for (const ce of coalesced) {
+          const cw = this.app.screenToWorld(ce.clientX, ce.clientY);
+          this.activeElement.points.push({ x: cw.x, y: cw.y });
+        }
+      } else {
+        this.activeElement.points.push({ x: world.x, y: world.y });
+      }
+      syncFreehandBounds(this.activeElement);
       this.app.requestRender();
       return;
     }
@@ -149,6 +159,7 @@ export class DrawTool {
 
     if (tool === 'pen' || tool === 'highlighter') {
       el.points = simplifyFreehandPoints(el.points, 1.5);
+      syncFreehandBounds(el);
       if (!el.fading) {
         this.app.commitChange();
       } else {

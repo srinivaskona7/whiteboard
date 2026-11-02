@@ -20,22 +20,23 @@ export function initPagesBar(app) {
               class="wb-page-select"
               role="tab"
               aria-selected="${p.id === activeId}"
+              aria-label="Switch to page ${escapeXml(p.name)} (double-click to rename)"
               data-switch-page="${escapeXml(p.id)}"
-              title="Double-click to rename"
+              title="Switch to ${escapeXml(p.name)} (Double-click to rename)"
             >
               ${escapeXml(p.name)}
             </button>
             <div class="wb-page-tab-actions">
-              ${idx > 0 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:-1" title="Move Left">‹</button>` : ''}
-              ${idx < pages.length - 1 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:1" title="Move Right">›</button>` : ''}
-              <button type="button" class="wb-page-mini" data-dup-page="${escapeXml(p.id)}" title="Duplicate Page">⧉</button>
-              ${pages.length > 1 ? `<button type="button" class="wb-page-mini" data-del-page="${escapeXml(p.id)}" title="Delete Page">✕</button>` : ''}
+              ${idx > 0 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:-1" aria-label="Move page left" title="Move page left">‹</button>` : ''}
+              ${idx < pages.length - 1 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:1" aria-label="Move page right" title="Move page right">›</button>` : ''}
+              <button type="button" class="wb-page-mini" data-dup-page="${escapeXml(p.id)}" aria-label="Duplicate page ${escapeXml(p.name)}" title="Duplicate page">⧉</button>
+              ${pages.length > 1 ? `<button type="button" class="wb-page-mini" data-del-page="${escapeXml(p.id)}" aria-label="Delete page ${escapeXml(p.name)}" title="Delete page">✕</button>` : ''}
             </div>
           </div>
         `
           )
           .join('')}
-        <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add Page" title="Add New Page">+ Page</button>
+        <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add new page" title="Add new page">+ Page</button>
       </div>
     `;
 
@@ -50,7 +51,7 @@ export function initPagesBar(app) {
         app.dialogs.openPromptModal('Rename Page', 'Page Name:', p.name, (newName) => {
           if (newName && newName.trim()) {
             p.name = newName.trim();
-            app.scheduleAutosave();
+            app.scheduleAutosave(app.scene);
             render();
           }
         });

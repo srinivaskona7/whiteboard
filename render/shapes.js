@@ -117,31 +117,39 @@ export function wrapTextLines(ctx, text, maxWidth) {
 
 export function drawElementText(ctx, el, themeName = 'light', padding = 12) {
   if (!el.text || el.type === 'frame' || el.type === 'code' || el.type === 'table') return;
-  const fontSize = el.fontSize || 18;
+  const isCard = el.type === 'stencil' && Boolean(getStencilById(el.stencilId)?.isCard);
+  const fontSize = isCard ? Math.min(el.fontSize || 14, 15) : el.fontSize || 18;
   const fontStack = FONT_MAP[el.fontFamily || 'sans'] || FONT_MAP.sans;
   const color = resolveThemeColor(el.textColor || el.stroke || '#1e293b', themeName, 'text');
 
   ctx.save();
-  ctx.font = `${fontSize}px ${fontStack}`;
+  ctx.font = `${isCard ? '600 ' : ''}${fontSize}px ${fontStack}`;
   ctx.fillStyle = color;
   ctx.textBaseline = 'middle';
 
-  const maxW = Math.max(24, el.w - padding * 2);
+  const maxW =
+    el.type === 'diamond'
+      ? Math.max(48, el.w * 0.54)
+      : el.type === 'ellipse'
+        ? Math.max(54, el.w * 0.72)
+        : Math.max(36, el.w - padding * 2);
   const lines =
-    el.type === 'sticky'
-      ? wrapTextLines(ctx, el.text, maxW)
-      : String(el.text).split(String.fromCharCode(10));
-  const lineH = fontSize * 1.32;
+    el.type === 'text'
+      ? String(el.text).split(String.fromCharCode(10))
+      : wrapTextLines(ctx, el.text, maxW);
+  const lineH = fontSize * (isCard ? 1.18 : 1.32);
   const totalH = lines.length * lineH;
-  const startY = el.y + el.h / 2 - totalH / 2 + lineH / 2;
+  const zoneCenterY = isCard ? el.y + el.h * 0.785 : el.y + el.h / 2;
+  const startY = zoneCenterY - totalH / 2 + lineH / 2;
 
   const align = el.textAlign || 'center';
   ctx.textAlign = align;
+  const innerPad = el.type === 'diamond' ? Math.round(el.w * 0.23) : padding;
   const tx =
     align === 'left'
-      ? el.x + padding
+      ? el.x + innerPad
       : align === 'right'
-        ? el.x + el.w - padding
+        ? el.x + el.w - innerPad
         : el.x + el.w / 2;
 
   lines.forEach((line, idx) => {
@@ -152,92 +160,41 @@ export function drawElementText(ctx, el, themeName = 'light', padding = 12) {
 
 export function drawStamp(ctx, el) {
   const { x, y, w, h, stampKind = 'tick', badgeValue = 1 } = el;
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const r = Math.min(w, h) / 2 - 3;
-
+  const cx = x + w / 2, cy = y + h / 2, r = Math.min(w, h) / 2 - 3;
   ctx.save();
   ctx.lineWidth = 3;
-  if (stampKind === 'tick') {
-    ctx.fillStyle = 'rgba(22, 163, 74, 0.16)';
-    ctx.strokeStyle = '#16a34a';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx - r * 0.45, cy + r * 0.05);
-    ctx.lineTo(cx - r * 0.1, cy + r * 0.4);
-    ctx.lineTo(cx + r * 0.48, cy - r * 0.35);
-    ctx.stroke();
-  } else if (stampKind === 'cross') {
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.16)';
-    ctx.strokeStyle = '#dc2626';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    const d = r * 0.38;
-    ctx.beginPath();
-    ctx.moveTo(cx - d, cy - d);
-    ctx.lineTo(cx + d, cy + d);
-    ctx.moveTo(cx + d, cy - d);
-    ctx.lineTo(cx - d, cy + d);
-    ctx.stroke();
-  } else if (stampKind === 'star') {
-    ctx.fillStyle = '#fef08a';
-    ctx.strokeStyle = '#ca8a04';
+  const styles = {
+    tick: ['rgba(22, 163, 74, 0.16)', '#16a34a'],
+    cross: ['rgba(220, 38, 38, 0.16)', '#dc2626'],
+    star: ['#fef08a', '#ca8a04'],
+    question: ['rgba(124, 58, 237, 0.15)', '#7c3aed'],
+    'arrow-up': ['rgba(37, 99, 235, 0.15)', '#2563eb'],
+    badge: ['#2563eb', '#1d4ed8'],
+  };
+  const [fill, stroke] = styles[stampKind] || styles.badge;
+  ctx.fillStyle = fill; ctx.strokeStyle = stroke;
+  if (stampKind === 'star') {
     ctx.beginPath();
     for (let i = 0; i < 10; i++) {
-      const rad = i % 2 === 0 ? r : r * 0.45;
-      const ang = (i * Math.PI) / 5 - Math.PI / 2;
-      const px = cx + rad * Math.cos(ang);
-      const py = cy + rad * Math.sin(ang);
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+      const rad = i % 2 === 0 ? r : r * 0.45, ang = (i * Math.PI) / 5 - Math.PI / 2;
+      const px = cx + rad * Math.cos(ang), py = cy + rad * Math.sin(ang);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  } else if (stampKind === 'question') {
-    ctx.fillStyle = 'rgba(124, 58, 237, 0.15)';
-    ctx.strokeStyle = '#7c3aed';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = `bold ${Math.round(r * 1.2)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('?', cx, cy + 2);
-  } else if (stampKind === 'arrow-up') {
-    ctx.fillStyle = 'rgba(37, 99, 235, 0.15)';
-    ctx.strokeStyle = '#2563eb';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + r * 0.45);
-    ctx.lineTo(cx, cy - r * 0.45);
-    ctx.moveTo(cx - r * 0.35, cy - r * 0.1);
-    ctx.lineTo(cx, cy - r * 0.45);
-    ctx.lineTo(cx + r * 0.35, cy - r * 0.1);
-    ctx.stroke();
+    ctx.closePath(); ctx.fill(); ctx.stroke();
   } else {
-    // Number badge 1..9
-    ctx.fillStyle = '#2563eb';
-    ctx.strokeStyle = '#1d4ed8';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${Math.round(r * 1.1)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(badgeValue || 1), cx, cy + 1);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (stampKind === 'tick') {
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.45, cy + r * 0.05); ctx.lineTo(cx - r * 0.1, cy + r * 0.4); ctx.lineTo(cx + r * 0.48, cy - r * 0.35); ctx.stroke();
+    } else if (stampKind === 'cross') {
+      const d = r * 0.38;
+      ctx.beginPath(); ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d); ctx.moveTo(cx + d, cy - d); ctx.lineTo(cx - d, cy + d); ctx.stroke();
+    } else if (stampKind === 'arrow-up') {
+      ctx.beginPath(); ctx.moveTo(cx, cy + r * 0.45); ctx.lineTo(cx, cy - r * 0.45); ctx.moveTo(cx - r * 0.35, cy - r * 0.1); ctx.lineTo(cx, cy - r * 0.45); ctx.lineTo(cx + r * 0.35, cy - r * 0.1); ctx.stroke();
+    } else {
+      ctx.fillStyle = stampKind === 'question' ? '#7c3aed' : '#ffffff';
+      ctx.font = `bold ${Math.round(r * 1.15)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(stampKind === 'question' ? '?' : String(badgeValue || 1), cx, cy + 1);
+    }
   }
   ctx.restore();
 }
@@ -492,9 +449,54 @@ export function drawShapeElement(ctx, el, themeTokens) {
 
   if (el.type === 'stencil') {
     const stencil = getStencilById(el.stencilId);
+    if (stencil.isCard && fill === 'transparent') {
+      ctx.fillStyle = themeTokens.name === 'dark' ? '#1e293b' : '#ffffff';
+    }
+    if (stencil.isCard && (!el.stroke || el.stroke === '#1e293b')) {
+      ctx.strokeStyle = stencil.color || stroke;
+    }
     stencil.draw(ctx, x, y, w, h);
     ctx.setLineDash([]);
-    drawElementText(ctx, el, themeTokens.name, 16);
+    drawElementText(ctx, el, themeTokens.name, 10);
+    ctx.restore();
+    return;
+  }
+
+  if (el.type === 'question') {
+    const accent = el.resolved ? '#16a34a' : '#d97706';
+    ctx.fillStyle = el.resolved ? '#dcfce7' : '#fef3c7';
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 10);
+    ctx.fill();
+    ctx.stroke();
+    // Pin badge circle
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x + 18, y + 18, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold 12px ${FONT_MAP.sans}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(el.resolved ? '✓' : '?', x + 18, y + 18.5);
+    // Author & target header
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `700 11px ${FONT_MAP.sans}`;
+    ctx.textAlign = 'left';
+    const header = `${el.authorName || 'Student'}${el.targetElementName ? ` → ${el.targetElementName}` : ''}`;
+    ctx.fillText(header.slice(0, 28), x + 34, y + 18);
+    // Question body
+    ctx.font = `500 12px ${FONT_MAP.sans}`;
+    ctx.fillStyle = '#1e293b';
+    const qLines = wrapTextLines(ctx, el.text || 'Question', w - 20).slice(0, 2);
+    qLines.forEach((ln, idx) => ctx.fillText(ln, x + 10, y + 38 + idx * 15));
+    if (el.reply) {
+      ctx.fillStyle = '#15803d';
+      ctx.font = `600 10px ${FONT_MAP.sans}`;
+      ctx.fillText(`↳ ${el.reply.slice(0, 30)}`, x + 10, y + h - 8);
+    }
     ctx.restore();
     return;
   }

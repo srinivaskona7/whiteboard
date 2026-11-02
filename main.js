@@ -4,11 +4,12 @@ import {
   groupElements, ungroupElements, toggleFrameCollapse, reorderElement, extractStyle,
 } from './scene/model.js';
 import {
-  getSelectionBounds, translateElement, alignElements, distributeElements, matchElementSize,
+  getSelectionBounds, translateElement, alignElements, distributeElements, matchElementSize, arrangeElements,
 } from './scene/geometry.js';
 import { hitTestScene } from './scene/hit.js';
 import { HistoryManager } from './scene/history.js';
-import { updateConnectorBindings } from './scene/bindings.js';
+import { bindConnectorEndpoint, updateConnectorBindings } from './scene/bindings.js';
+import { computeNonOverlappingOrigin } from './scene/mermaid.js';
 import {
   loadSceneFromLocalStorage, saveSceneToLocalStorage, createDebouncedAutosave,
   serializeScene, parseSceneJson, loadUserLibrary, saveUserLibrary,
@@ -39,6 +40,7 @@ import { initCommandPalette } from './ui/palette.js';
 import { initPresentUI } from './ui/present.js';
 import { initLayersPanel } from './ui/layers.js';
 import { initTimerUI } from './ui/timer.js';
+import { ClassroomTool, initClassroomUI, parseClassroomHash } from './ui/classroom.js';
 
 export class WhiteboardApp {
   constructor() {
@@ -46,8 +48,8 @@ export class WhiteboardApp {
     this.renderer = new CanvasRenderer(this.canvas);
     this.renderer.onImageLoad = () => this.requestRender();
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const hashScene = decodeSceneFromHash(window.location.hash);
-    this.scene = hashScene || loadSceneFromLocalStorage(prefersDark ? 'dark' : 'light');
+    const clsHash = parseClassroomHash(window.location.hash);
+    this.scene = clsHash?.scene || decodeSceneFromHash(window.location.hash) || loadSceneFromLocalStorage(prefersDark ? 'dark' : 'light');
     applyThemeToDocument(this.scene.theme);
     this.history = new HistoryManager();
     for (const p of this.scene.pages) this.history.initPage(p);
@@ -55,31 +57,34 @@ export class WhiteboardApp {
       userLibrary: loadUserLibrary(), activeTool: 'select', toolLock: false,
       currentStyle: { ...DEFAULT_STYLE }, selectedIds: new Set(), clipboard: [],
       pasteCascade: 0, copiedStyle: null, hoveredElement: null, hoveredPort: null,
-      marqueeBox: null, smartGuides: [], editingElementId: null,
+      marqueeBox: null, smartGuides: [], editingElementId: null, classroomPointers: [],
       annotationMode: false, fadingInk: true, fadingTimer: null,
       spotlight: { active: false, magnifier: false, x: 400, y: 300, radius: 130 },
       presentState: { active: false, slideIndex: 0, revealStep: 0, maxRevealStep: 0 },
       cropState: null, isPseudoFullscreen: false, spacePressed: false,
+      propsDrawerOpen: false, focusMode: false, lastPenTime: 0,
       isPanning: false, panStart: { x: 0, y: 0, camX: 0, camY: 0 }, activeSubInteraction: null,
       selectTool: new SelectTool(this), drawTool: new DrawTool(this),
       connectorTool: new ConnectorTool(this), textTool: new TextTool(this),
-      laserTool: new LaserTool(this), stampTool: new StampTool(this),
+      laserTool: new LaserTool(this), stampTool: new StampTool(this), classroomTool: new ClassroomTool(this),
     });
-    this.scheduleAutosave = createDebouncedAutosave(400, () => {
-      this.dialogs?.showToast('Storage quota exceeded! Please save a .whiteboard.json file.', 'warn');
-    });
+    this.scheduleAutosave = createDebouncedAutosave(
+      450,
+      () => this.dialogs?.showToast('Storage quota exceeded! Please save a .whiteboard.json file.', 'warn'),
+      (state) => this.setSaveStatus(state)
+    );
     Object.assign(this, {
       dialogs: initDialogs(this), toolbarUI: initToolbar(this), propsUI: initPropsPanel(this),
       libraryUI: initLibraryPanel(this), pagesUI: initPagesBar(this), paletteUI: initCommandPalette(this),
       presentUI: initPresentUI(this), layersUI: initLayersPanel(this), timerUI: initTimerUI(this),
+      classroomUI: initClassroomUI(this),
     });
-    this._bindEvents();
-    this._handleResize();
-    this.updateUI();
-    this.requestRender();
+    if (clsHash?.isClassroom) this.classroomUI.open();
+    this._bindEvents(); this._handleResize(); this.updateUI(); this.requestRender();
   }
 
   getPage() { return getActivePage(this.scene); }
+  getSelectedElements() { return this.getPage().elements.filter((e) => this.selectedIds.has(e.id)); }
   screenToWorld(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect(), cam = this.getPage().camera;
     return { x: (clientX - rect.left - cam.x) / cam.zoom, y: (clientY - rect.top - cam.y) / cam.zoom };
@@ -98,13 +103,9 @@ export class WhiteboardApp {
     if (changed) { this.scheduleAutosave(this.scene); this.toolbarUI.update(); this.layersUI.update(); }
     return changed;
   }
-  undo() {
-    if (this.history.undo(this.getPage())) { this.selectedIds.clear(); this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender(); }
-  }
-  redo() {
-    if (this.history.redo(this.getPage())) { this.selectedIds.clear(); this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender(); }
-  }
-  updateUI() { this.toolbarUI.update(); this.propsUI.update(); this.pagesUI.update(); this.layersUI.update(); }
+  undo() { if (this.history.undo(this.getPage())) { this.selectedIds.clear(); this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender(); } }
+  redo() { if (this.history.redo(this.getPage())) { this.selectedIds.clear(); this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender(); } }
+  updateUI() { this.toolbarUI.update(); this.propsUI.update(); this.pagesUI.update(); this.layersUI.update(); this.classroomUI?.update(); }
   requestRender() {
     if (this._rafPending) return;
     this._rafPending = true;
@@ -116,14 +117,11 @@ export class WhiteboardApp {
       hoveredElement: this.hoveredElement, hoveredPort: this.hoveredPort,
       marqueeBox: this.marqueeBox, smartGuides: this.smartGuides,
       laserTrail: this.laserTool.trail, spotlight: this.spotlight,
-      presentState: this.presentState, cropState: this.cropState,
-      editingElementId: this.editingElementId,
+      presentState: this.presentState, cropState: this.cropState, editingElementId: this.editingElementId,
+      classroomPointers: this.classroomPointers,
     });
   }
-
-  zoomBy(factor, cx = this.renderer.width / 2, cy = this.renderer.height / 2) {
-    this.setZoom(this.getPage().camera.zoom * factor, cx, cy);
-  }
+  zoomBy(factor, cx = this.renderer.width / 2, cy = this.renderer.height / 2) { this.setZoom(this.getPage().camera.zoom * factor, cx, cy); }
   setZoom(targetZoom, cx = this.renderer.width / 2, cy = this.renderer.height / 2) {
     const cam = this.getPage().camera, clamped = Math.max(0.1, Math.min(8, targetZoom));
     const worldX = (cx - cam.x) / cam.zoom, worldY = (cy - cam.y) / cam.zoom;
@@ -132,31 +130,21 @@ export class WhiteboardApp {
   }
   fitToContent() {
     const page = this.getPage(), visible = page.elements.filter((e) => !e.hidden);
-    if (visible.length === 0) {
-      page.camera = { x: 0, y: 0, zoom: 1 };
-      this.updateUI(); this.requestRender(); return;
-    }
+    if (!visible.length) { page.camera = { x: 0, y: 0, zoom: 1 }; this.updateUI(); this.requestRender(); return; }
     const b = getSelectionBounds(visible), pad = 80, w = this.renderer.width, h = this.renderer.height;
     const zoom = Math.max(0.1, Math.min(2.5, Math.min(w / (b.w + pad * 2), h / (b.h + pad * 2))));
     page.camera = { zoom, x: w / 2 - (b.x + b.w / 2) * zoom, y: h / 2 - (b.y + b.h / 2) * zoom };
     this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender();
   }
-
   toggleTheme() {
     this.scene.theme = this.scene.theme === 'dark' ? 'light' : 'dark';
-    applyThemeToDocument(this.scene.theme);
-    saveSceneToLocalStorage(this.scene);
-    this.updateUI(); this.requestRender();
+    applyThemeToDocument(this.scene.theme); saveSceneToLocalStorage(this.scene); this.updateUI(); this.requestRender();
   }
-  setBackground(bgType) {
-    this.getPage().background = bgType;
-    this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender();
-  }
+  setBackground(bgType) { this.getPage().background = bgType; this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender(); }
   async toggleFullScreen() {
     try {
       if (!document.fullscreenElement && !this.isPseudoFullscreen) {
-        if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-        else this.isPseudoFullscreen = true;
+        if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); else this.isPseudoFullscreen = true;
       } else {
         if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
         this.isPseudoFullscreen = false;
@@ -165,19 +153,14 @@ export class WhiteboardApp {
     this.toolbarUI.update();
   }
   togglePanel(which) {
-    const lib = document.getElementById('wb-library-panel'), lay = document.getElementById('wb-layers-panel');
-    if (which === 'library') {
-      lay?.classList.add('wb-hidden'); lib?.classList.toggle('wb-hidden'); this.libraryUI.update();
-    } else {
-      lib?.classList.add('wb-hidden'); lay?.classList.toggle('wb-hidden'); this.layersUI.update();
-    }
+    const lib = document.getElementById('wb-library-panel'), lay = document.getElementById('wb-layers-panel'), cls = document.getElementById('wb-classroom-panel');
+    if (which === 'library') { lay?.classList.add('wb-hidden'); cls?.classList.add('wb-hidden'); lib?.classList.toggle('wb-hidden'); this.libraryUI.update(); }
+    else if (which === 'classroom') { lib?.classList.add('wb-hidden'); lay?.classList.add('wb-hidden'); cls?.classList.toggle('wb-hidden'); this.classroomUI.update(); }
+    else { lib?.classList.add('wb-hidden'); cls?.classList.add('wb-hidden'); lay?.classList.toggle('wb-hidden'); this.layersUI.update(); }
   }
   toggleAnnotationMode() {
     this.annotationMode = !this.annotationMode;
-    if (this.annotationMode) {
-      this.setTool('pen');
-      this.dialogs.showToast('Annotation mode enabled (auto-fading ink active).', 'info');
-    }
+    if (this.annotationMode) { this.setTool('pen'); this.dialogs.showToast('Annotation mode enabled (auto-fading ink active).', 'info'); }
     this.updateUI(); this.requestRender();
   }
   scheduleFadingCleanup() {
@@ -192,20 +175,37 @@ export class WhiteboardApp {
     this.fadingTimer = setTimeout(step, 80);
   }
   toggleSpotlight() { this.spotlight.active = !this.spotlight.active; this.updateUI(); this.requestRender(); }
+  togglePropsDrawer() { this.propsDrawerOpen = !this.propsDrawerOpen; this.updateUI(); }
+  toggleFocusMode() {
+    this.focusMode = !this.focusMode;
+    document.body.classList.toggle('wb-focus-mode', this.focusMode);
+    if (this.focusMode) { this.propsDrawerOpen = false; this.setTool('pen'); }
+    this.updateUI();
+  }
+  setSaveStatus(state) {
+    const el = document.getElementById('wb-save-status');
+    if (!el) return;
+    el.dataset.state = state;
+    el.textContent = state === 'saving' ? 'Saving…' : state === 'error' ? 'Save failed' : 'Saved locally';
+  }
+  insertDiagramPack(pack) {
+    const page = this.getPage(), origin = computeNonOverlappingOrigin(page.elements, 40, 20);
+    const clones = cloneElementsWithBindings(pack.elements, origin);
+    page.elements.push(...clones); this.selectedIds = new Set(clones.map((c) => c.id));
+    this.commitChange(); this.fitToContent(); this.dialogs.showToast(`Inserted diagram pack: ${pack.name}`, 'success');
+  }
 
   deleteSelection() {
     if (this.selectedIds.size === 0) return;
     const page = this.getPage();
     page.elements = page.elements.filter((e) => !this.selectedIds.has(e.id) || e.locked);
-    this.selectedIds.clear();
-    updateConnectorBindings(page);
+    this.selectedIds.clear(); updateConnectorBindings(page);
     this.commitChange(); this.updateUI(); this.requestRender();
   }
   copySelection() {
     const sel = this.getPage().elements.filter((e) => this.selectedIds.has(e.id));
-    if (sel.length === 0) return;
-    this.clipboard = cloneElementsWithBindings(sel, { x: 0, y: 0 });
-    this.pasteCascade = 0;
+    if (!sel.length) return;
+    this.clipboard = cloneElementsWithBindings(sel, { x: 0, y: 0 }); this.pasteCascade = 0;
   }
   cutSelection() { this.copySelection(); this.deleteSelection(); }
   pasteSelection() {
@@ -213,115 +213,146 @@ export class WhiteboardApp {
     const page = this.getPage();
     this.pasteCascade += 1;
     const clones = cloneElementsWithBindings(this.clipboard, { x: 24 * this.pasteCascade, y: 24 * this.pasteCascade });
-    page.elements.push(...clones);
-    this.selectedIds = new Set(clones.map((c) => c.id));
+    page.elements.push(...clones); this.selectedIds = new Set(clones.map((c) => c.id));
     updateConnectorBindings(page, clones.map((c) => c.id));
     this.commitChange(); this.updateUI(); this.requestRender();
   }
   duplicateSelection() {
     const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id) && !e.locked);
-    if (sel.length === 0) return;
+    if (!sel.length) return;
     const clones = cloneElementsWithBindings(sel, { x: 24, y: 24 });
-    page.elements.push(...clones);
-    this.selectedIds = new Set(clones.map((c) => c.id));
+    page.elements.push(...clones); this.selectedIds = new Set(clones.map((c) => c.id));
     updateConnectorBindings(page, clones.map((c) => c.id));
     this.commitChange(); this.updateUI(); this.requestRender();
   }
-  groupSelection() {
-    if (groupElements(this.getPage(), Array.from(this.selectedIds))) {
-      this.commitChange(); this.updateUI(); this.requestRender();
-    }
-  }
-  ungroupSelection() {
-    ungroupElements(this.getPage(), Array.from(this.selectedIds));
-    this.commitChange(); this.updateUI(); this.requestRender();
-  }
+  groupSelection() { if (groupElements(this.getPage(), Array.from(this.selectedIds))) { this.commitChange(); this.updateUI(); this.requestRender(); } }
+  ungroupSelection() { ungroupElements(this.getPage(), Array.from(this.selectedIds)); this.commitChange(); this.updateUI(); this.requestRender(); }
   alignSelection(mode) {
     const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id));
-    alignElements(sel, mode);
-    updateConnectorBindings(page, sel.map((e) => e.id));
-    this.commitChange(); this.requestRender();
+    alignElements(sel, mode); updateConnectorBindings(page, sel.map((e) => e.id)); this.commitChange(); this.requestRender();
   }
   distributeSelection(axis) {
     const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id));
-    distributeElements(sel, axis);
-    updateConnectorBindings(page, sel.map((e) => e.id));
-    this.commitChange(); this.requestRender();
+    distributeElements(sel, axis); updateConnectorBindings(page, sel.map((e) => e.id)); this.commitChange(); this.requestRender();
   }
   matchSelectionSize() {
     const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id));
-    matchElementSize(sel, 'both');
-    updateConnectorBindings(page, sel.map((e) => e.id));
-    this.commitChange(); this.requestRender();
+    matchElementSize(sel, 'both'); updateConnectorBindings(page, sel.map((e) => e.id)); this.commitChange(); this.requestRender();
+  }
+  arrangeSelection(mode = 'grid') {
+    const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id));
+    arrangeElements(sel, mode, 56, 44); updateConnectorBindings(page, sel.map((e) => e.id)); this.commitChange(); this.requestRender();
+  }
+  connectSelectionFlow() {
+    const page = this.getPage();
+    const nodes = page.elements
+      .filter((e) => this.selectedIds.has(e.id) && e.type !== 'line' && e.type !== 'arrow' && !e.locked)
+      .sort((a, b) => (Math.abs(a.y - b.y) > 60 ? a.y - b.y : a.x - b.x));
+    if (nodes.length < 2) return;
+    const newIds = [...nodes.map((n) => n.id)];
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const a = nodes[i], b = nodes[i + 1];
+      const conn = createElement('arrow', {
+        x: a.x + a.w, y: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2,
+        stroke: this.currentStyle.stroke, strokeWidth: this.currentStyle.strokeWidth,
+        strokeStyle: this.currentStyle.strokeStyle, routing: this.currentStyle.routing || 'orthogonal',
+        startArrow: this.currentStyle.startArrow || 'none', endArrow: this.currentStyle.endArrow || 'arrow',
+      });
+      bindConnectorEndpoint(conn, 'start', a, 'right'); bindConnectorEndpoint(conn, 'end', b, 'left');
+      page.elements.push(conn); newIds.push(conn.id);
+    }
+    updateConnectorBindings(page, newIds); this.selectedIds = new Set(newIds);
+    this.commitChange(); this.updateUI(); this.requestRender();
   }
   reorderSelection(direction) {
     const page = this.getPage();
     for (const id of this.selectedIds) reorderElement(page, id, direction);
     this.commitChange(); this.updateUI(); this.requestRender();
   }
-  reorderElementById(id, direction) {
-    if (reorderElement(this.getPage(), id, direction)) {
-      this.commitChange(); this.updateUI(); this.requestRender();
-    }
-  }
+  reorderElementById(id, direction) { if (reorderElement(this.getPage(), id, direction)) { this.commitChange(); this.updateUI(); this.requestRender(); } }
   toggleLockSelection() {
     for (const el of this.getPage().elements) if (this.selectedIds.has(el.id)) el.locked = !el.locked;
     this.commitChange(); this.updateUI(); this.requestRender();
   }
-  toggleFrame(frameId) {
-    toggleFrameCollapse(this.getPage(), frameId);
-    this.commitChange(); this.updateUI(); this.requestRender();
-  }
+  toggleFrame(frameId) { toggleFrameCollapse(this.getPage(), frameId); this.commitChange(); this.updateUI(); this.requestRender(); }
   copySelectedStyle() {
     const first = this.getPage().elements.find((e) => this.selectedIds.has(e.id));
-    if (first) {
-      this.copiedStyle = extractStyle(first);
-      this.dialogs.showToast('Style copied! Click any element to apply.', 'info');
-    }
+    if (first) { this.copiedStyle = extractStyle(first); this.dialogs.showToast('Style copied! Click any element to apply.', 'info'); }
   }
   placeStencil(stencilId, worldPos = null) {
     const st = getStencilById(stencilId), pt = worldPos || this.getViewportCenterWorld();
     const el = createElement('stencil', {
       stencilId: st.id, category: st.category, name: st.name,
       x: Math.round(pt.x - st.defaultW / 2), y: Math.round(pt.y - st.defaultH / 2),
-      w: st.defaultW, h: st.defaultH, text: st.defaultText, stroke: this.currentStyle.stroke,
+      w: st.defaultW, h: st.defaultH, text: st.defaultText, stroke: st.color || this.currentStyle.stroke,
       fill: this.currentStyle.fill !== 'transparent' ? this.currentStyle.fill : '#ffffff',
     });
-    this.getPage().elements.push(el);
-    this.selectedIds = new Set([el.id]);
+    this.getPage().elements.push(el); this.selectedIds = new Set([el.id]);
     this.commitChange(); this.setTool('select'); this.updateUI(); this.requestRender();
     return el;
   }
+  placeMultipleStencils(stencilIds = [], layoutMode = 'grid', worldPos = null) {
+    if (!stencilIds.length) return [];
+    const page = this.getPage(), origin = worldPos || computeNonOverlappingOrigin(page.elements, 100, 140);
+    const cols = layoutMode === 'row' || layoutMode === 'flow' ? stencilIds.length : Math.max(2, Math.ceil(Math.sqrt(stencilIds.length)));
+    const created = [], gapX = layoutMode === 'flow' ? 76 : 44, gapY = 40;
+    stencilIds.forEach((id, idx) => {
+      const st = getStencilById(id), c = idx % cols, r = Math.floor(idx / cols);
+      const el = createElement('stencil', {
+        stencilId: st.id, category: st.category, name: st.name,
+        x: Math.round(origin.x + c * (st.defaultW + gapX)), y: Math.round(origin.y + r * (st.defaultH + gapY)),
+        w: st.defaultW, h: st.defaultH, text: st.defaultText, stroke: st.color || this.currentStyle.stroke, fill: '#ffffff',
+      });
+      page.elements.push(el); created.push(el);
+    });
+    const allIds = created.map((e) => e.id);
+    if (layoutMode === 'flow' && created.length > 1) {
+      for (let i = 0; i < created.length - 1; i++) {
+        const a = created[i], b = created[i + 1];
+        const conn = createElement('arrow', {
+          x: a.x + a.w, y: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2,
+          stroke: this.currentStyle.stroke, strokeWidth: 2, routing: 'orthogonal', endArrow: 'arrow',
+        });
+        bindConnectorEndpoint(conn, 'start', a, 'right'); bindConnectorEndpoint(conn, 'end', b, 'left');
+        page.elements.push(conn); allIds.push(conn.id);
+      }
+      updateConnectorBindings(page, allIds);
+    }
+    this.selectedIds = new Set(allIds);
+    this.commitChange(); this.setTool('select'); this.updateUI(); this.requestRender();
+    this.dialogs?.showToast(`Inserted ${created.length} DevOps icon(s)`, 'success');
+    return created;
+  }
   applyTemplate(templateId) {
-    const tpl = getTemplateById(templateId), page = this.getPage(), built = tpl.build();
-    if (templateId === 'tpl-blank') page.elements = []; else page.elements.push(...built);
-    this.selectedIds = new Set(built.map((e) => e.id));
-    this.commitChange(); this.fitToContent();
-    this.dialogs.showToast(`Applied template: ${tpl.name}`, 'success');
+    const tpl = getTemplateById(templateId), page = this.getPage();
+    if (templateId === 'tpl-blank') { page.elements = []; this.selectedIds.clear(); this.commitChange(); this.updateUI(); this.requestRender(); return; }
+    const built = tpl.build();
+    if (page.elements.length > 0 && built.length > 0) {
+      const bBounds = getSelectionBounds(built) || { x: 0, y: 0 }, origin = computeNonOverlappingOrigin(page.elements, bBounds.x, bBounds.y);
+      for (const el of built) translateElement(el, origin.x - bBounds.x, origin.y - bBounds.y);
+    }
+    page.elements.push(...built); this.selectedIds = new Set(built.map((e) => e.id));
+    this.commitChange(); this.fitToContent(); this.dialogs.showToast(`Applied template: ${tpl.name}`, 'success');
   }
   insertMathOverlay(kind) { return insertMathHelper(this, kind); }
 
   addSelectionToLibrary() {
     const sel = this.getPage().elements.filter((e) => this.selectedIds.has(e.id));
-    if (sel.length === 0) { this.dialogs.showToast('Select at least one element first.', 'warn'); return; }
+    if (!sel.length) { this.dialogs.showToast('Select at least one element first.', 'warn'); return; }
     const bounds = getSelectionBounds(sel);
-    const item = {
-      id: uid('lib'),
-      name: sel[0].text ? sel[0].text.slice(0, 20) : `${sel[0].type} (${sel.length})`,
+    this.userLibrary.push({
+      id: uid('lib'), name: sel[0].text ? sel[0].text.slice(0, 20) : `${sel[0].type} (${sel.length})`,
       elements: cloneElementsWithBindings(sel, { x: -bounds.x, y: -bounds.y }),
-    };
-    this.userLibrary.push(item);
-    saveUserLibrary(this.userLibrary);
-    this.libraryUI.update();
-    this.dialogs.showToast(`Saved "${item.name}" to reusable library.`, 'success');
+    });
+    saveUserLibrary(this.userLibrary); this.libraryUI.update();
+    this.dialogs.showToast('Saved selection to reusable library.', 'success');
   }
   insertUserLibraryItem(index) {
     const item = this.userLibrary[index];
     if (!item) return;
-    const center = this.getViewportCenterWorld();
-    const clones = cloneElementsWithBindings(item.elements, { x: Math.round(center.x - 80), y: Math.round(center.y - 60) });
-    this.getPage().elements.push(...clones);
-    this.selectedIds = new Set(clones.map((c) => c.id));
+    const page = this.getPage(), origin = computeNonOverlappingOrigin(page.elements, 120, 120);
+    const clones = cloneElementsWithBindings(item.elements, { x: Math.round(origin.x), y: Math.round(origin.y) });
+    page.elements.push(...clones); this.selectedIds = new Set(clones.map((c) => c.id));
     this.commitChange(); this.updateUI(); this.requestRender();
   }
   deleteUserLibraryItem(index) { this.userLibrary.splice(index, 1); saveUserLibrary(this.userLibrary); }
@@ -335,23 +366,20 @@ export class WhiteboardApp {
   switchPage(pageId) {
     if (!this.scene.pages.some((p) => p.id === pageId)) return;
     if (this.textTool.isOpen()) this.textTool.commitAndClose();
-    this.scene.activePageId = pageId;
-    this.selectedIds.clear();
+    this.scene.activePageId = pageId; this.selectedIds.clear();
     this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender();
   }
   reorderPage(index, delta) {
     const target = index + delta;
     if (target < 0 || target >= this.scene.pages.length) return;
-    const [p] = this.scene.pages.splice(index, 1);
-    this.scene.pages.splice(target, 0, p);
+    const [p] = this.scene.pages.splice(index, 1); this.scene.pages.splice(target, 0, p);
     this.scheduleAutosave(this.scene); this.pagesUI.update();
   }
   duplicatePage(pageId) {
     const src = this.scene.pages.find((p) => p.id === pageId);
     if (!src) return;
     const copy = Object.assign(createPage(`${src.name} (Copy)`), {
-      background: src.background, camera: { ...src.camera },
-      elements: cloneElementsWithBindings(src.elements, { x: 0, y: 0 }),
+      background: src.background, camera: { ...src.camera }, elements: cloneElementsWithBindings(src.elements, { x: 0, y: 0 }),
     });
     this.scene.pages.push(copy); this.history.initPage(copy); this.switchPage(copy.id);
   }
@@ -359,44 +387,33 @@ export class WhiteboardApp {
     if (this.scene.pages.length <= 1) return;
     const idx = this.scene.pages.findIndex((p) => p.id === pageId);
     if (idx === -1) return;
-    this.scene.pages.splice(idx, 1);
-    this.history.removePage(pageId);
+    this.scene.pages.splice(idx, 1); this.history.removePage(pageId);
     if (this.scene.activePageId === pageId) this.scene.activePageId = this.scene.pages[Math.max(0, idx - 1)].id;
-    this.selectedIds.clear();
-    this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender();
+    this.selectedIds.clear(); this.scheduleAutosave(this.scene); this.updateUI(); this.requestRender();
   }
-
   openImageFilePicker() { document.getElementById('wb-file-insert-image')?.click(); }
   insertImageFile(file, worldPos = null) { return insertImgFileHelper(this, file, worldPos); }
   insertImageDataUrl(rawDataUrl, worldPos = null) { return insertImgDataUrlHelper(this, rawDataUrl, worldPos); }
   toggleImageCrop(imgEl) { toggleImgCropHelper(this, imgEl); }
   toggleImageBackgroundLock(imgEl) { toggleImgBgLockHelper(this, imgEl); }
-  saveWhiteboardFile() {
-    this._downloadBlob(new Blob([serializeScene(this.scene)], { type: 'application/json' }), 'classroom-diagram.whiteboard.json');
-  }
+  saveWhiteboardFile() { this._downloadBlob(new Blob([serializeScene(this.scene)], { type: 'application/json' }), 'classroom-diagram.whiteboard.json'); }
   openWhiteboardFilePicker() { document.getElementById('wb-file-open-json')?.click(); }
   loadWhiteboardJsonString(jsonStr) {
-    this.scene = parseSceneJson(jsonStr);
-    this.renderer.imageCache.clear();
-    applyThemeToDocument(this.scene.theme);
-    this.history = new HistoryManager();
-    for (const p of this.scene.pages) this.history.initPage(p);
-    this.selectedIds.clear();
-    saveSceneToLocalStorage(this.scene);
-    this.updateUI(); this.requestRender();
+    this.scene = parseSceneJson(jsonStr); this.renderer.imageCache.clear(); applyThemeToDocument(this.scene.theme);
+    this.history = new HistoryManager(); for (const p of this.scene.pages) this.history.initPage(p);
+    this.selectedIds.clear(); saveSceneToLocalStorage(this.scene); this.updateUI(); this.requestRender();
   }
   exportPng(options = {}) {
     const offscreen = this.renderer.exportToPngCanvas(this.scene, this.getPage(), options);
     offscreen.toBlob((blob) => { if (blob) this._downloadBlob(blob, 'whiteboard-export.png'); }, 'image/png');
   }
+  exportPngDownload(options = {}) { this.exportPng(options); }
+  downloadBlob(blob, filename) { this._downloadBlob(blob, filename); }
   async copyPngToClipboard(options = {}) {
     try {
       const offscreen = this.renderer.exportToPngCanvas(this.scene, this.getPage(), options);
       const blob = await new Promise((r) => offscreen.toBlob(r, 'image/png'));
-      if (navigator.clipboard && window.ClipboardItem && blob) {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        return true;
-      }
+      if (navigator.clipboard && window.ClipboardItem && blob) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); return true; }
     } catch { /* fallback */ }
     return false;
   }
@@ -406,10 +423,8 @@ export class WhiteboardApp {
     return svgStr;
   }
   _downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    const url = URL.createObjectURL(blob), a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
   _handleResize() { this.renderer.resize(window.innerWidth, window.innerHeight); this.requestRender(); }
   _getCurrentToolHandler() {
@@ -419,107 +434,96 @@ export class WhiteboardApp {
     if (this.activeTool === 'text') return this.textTool;
     if (this.activeTool === 'laser') return this.laserTool;
     if (this.activeTool === 'stamp') return this.stampTool;
+    if (this.activeTool === 'pointer' || this.activeTool === 'question') return this.classroomTool;
     return this.drawTool;
   }
 
   _bindEvents() {
-    window.addEventListener('resize', () => this._handleResize());
+    window.addEventListener('resize', () => { this._handleResize(); this.propsUI.update(); });
     document.addEventListener('fullscreenchange', () => this.toolbarUI.update());
+    document.getElementById('wb-doc-title')?.addEventListener('input', (ev) => {
+      this.scene.title = ev.target.value.trim() || 'StudioBoard Lesson';
+      this.scheduleAutosave(this.scene);
+    });
 
     this.canvas.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'pen') this.lastPenTime = Date.now();
+      else if (ev.pointerType === 'touch' && Date.now() - this.lastPenTime < 600) return;
       if (this.presentState.active) { this.presentUI.stepNext(); return; }
       try { this.canvas.setPointerCapture?.(ev.pointerId); } catch {}
       if (ev.button === 1 || this.spacePressed || this.activeTool === 'hand') {
         const cam = this.getPage().camera;
-        this.isPanning = true;
-        this.panStart = { x: ev.clientX, y: ev.clientY, camX: cam.x, camY: cam.y };
-        return;
+        this.isPanning = true; this.panStart = { x: ev.clientX, y: ev.clientY, camX: cam.x, camY: cam.y }; return;
       }
       this._getCurrentToolHandler().onPointerDown(this.screenToWorld(ev.clientX, ev.clientY), ev);
     });
-
     this.canvas.addEventListener('pointermove', (ev) => {
+      if (ev.pointerType === 'pen') this.lastPenTime = Date.now();
+      else if (ev.pointerType === 'touch' && Date.now() - this.lastPenTime < 600) return;
       if (this.spotlight.active) {
         const rect = this.canvas.getBoundingClientRect();
-        this.spotlight.x = ev.clientX - rect.left; this.spotlight.y = ev.clientY - rect.top;
-        this.requestRender();
+        this.spotlight.x = ev.clientX - rect.left; this.spotlight.y = ev.clientY - rect.top; this.requestRender();
       }
       if (this.isPanning) {
         const cam = this.getPage().camera;
-        cam.x = this.panStart.camX + (ev.clientX - this.panStart.x);
-        cam.y = this.panStart.camY + (ev.clientY - this.panStart.y);
+        cam.x = this.panStart.camX + (ev.clientX - this.panStart.x); cam.y = this.panStart.camY + (ev.clientY - this.panStart.y);
         this.requestRender(); return;
       }
       this._getCurrentToolHandler().onPointerMove(this.screenToWorld(ev.clientX, ev.clientY), ev);
     });
-
     this.canvas.addEventListener('pointerup', (ev) => {
       try { this.canvas.releasePointerCapture?.(ev.pointerId); } catch {}
       if (this.isPanning) { this.isPanning = false; this.scheduleAutosave(this.scene); return; }
       this._getCurrentToolHandler().onPointerUp(this.screenToWorld(ev.clientX, ev.clientY), ev);
       this.activeSubInteraction = null;
     });
-
     this.canvas.addEventListener('dblclick', (ev) => {
       if (this.presentState.active) return;
       const world = this.screenToWorld(ev.clientX, ev.clientY);
       const hit = hitTestScene(this.getPage(), world.x, world.y, { includeLocked: false });
       if (hit && hit.type !== 'pen' && hit.type !== 'highlighter' && hit.type !== 'image') {
-        this.selectedIds = new Set([hit.id]);
-        this.textTool.openEditorForElement(hit, world);
+        this.selectedIds = new Set([hit.id]); this.textTool.openEditorForElement(hit, world);
       }
     });
-
     this.canvas.addEventListener('wheel', (ev) => {
       ev.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       this.zoomBy(ev.deltaY < 0 ? 1.1 : 1 / 1.1, ev.clientX - rect.left, ev.clientY - rect.top);
     }, { passive: false });
-
     window.addEventListener('dragover', (ev) => ev.preventDefault());
     window.addEventListener('drop', async (ev) => {
       ev.preventDefault();
       const world = this.screenToWorld(ev.clientX, ev.clientY);
       const textData = ev.dataTransfer?.getData('text/plain');
+      if (textData?.startsWith('stencils:')) { this.placeMultipleStencils(textData.slice(9).split(',').filter(Boolean), 'grid', world); return; }
       if (textData?.startsWith('stencil:')) { this.placeStencil(textData.slice(8), world); return; }
       const file = ev.dataTransfer?.files?.[0];
       if (!file) return;
       if (file.name.endsWith('.json')) this.loadWhiteboardJsonString(await file.text());
       else if (file.type.startsWith('image/')) await this.insertImageFile(file, world);
     });
-
     window.addEventListener('paste', async (ev) => {
       for (const item of ev.clipboardData?.items || []) {
-        if (item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) await this.insertImageFile(file);
-          return;
-        }
+        if (item.type.startsWith('image/')) { const file = item.getAsFile(); if (file) await this.insertImageFile(file); return; }
       }
     });
-
     document.getElementById('wb-file-open-json')?.addEventListener('change', async (ev) => {
-      const f = ev.target.files?.[0];
-      if (f) { this.loadWhiteboardJsonString(await f.text()); ev.target.value = ''; }
+      const f = ev.target.files?.[0]; if (f) { this.loadWhiteboardJsonString(await f.text()); ev.target.value = ''; }
     });
     document.getElementById('wb-file-insert-image')?.addEventListener('change', async (ev) => {
-      const f = ev.target.files?.[0];
-      if (f) { await this.insertImageFile(f); ev.target.value = ''; }
+      const f = ev.target.files?.[0]; if (f) { await this.insertImageFile(f); ev.target.value = ''; }
     });
     document.getElementById('wb-file-import-lib')?.addEventListener('change', async (ev) => {
       const f = ev.target.files?.[0];
       if (f) {
         try {
           const imported = importLibraryJson(await f.text());
-          this.userLibrary.push(...imported);
-          saveUserLibrary(this.userLibrary);
-          this.libraryUI.update();
+          this.userLibrary.push(...imported); saveUserLibrary(this.userLibrary); this.libraryUI.update();
           this.dialogs.showToast(`Imported ${imported.length} library item(s).`, 'success');
         } catch (err) { this.dialogs.showToast(err.message, 'warn'); }
         ev.target.value = '';
       }
     });
-
     window.addEventListener('keydown', (ev) => this._onKeyDown(ev));
     window.addEventListener('keyup', (ev) => { if (ev.code === 'Space') this.spacePressed = false; });
   }
@@ -564,23 +568,17 @@ export class WhiteboardApp {
 
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key) && this.selectedIds.size > 0) {
       ev.preventDefault();
-      const step = ev.shiftKey ? 10 : 2;
-      const dx = ev.key === 'ArrowLeft' ? -step : ev.key === 'ArrowRight' ? step : 0;
-      const dy = ev.key === 'ArrowUp' ? -step : ev.key === 'ArrowDown' ? step : 0;
+      const step = ev.shiftKey ? 10 : 2, dx = ev.key === 'ArrowLeft' ? -step : ev.key === 'ArrowRight' ? step : 0, dy = ev.key === 'ArrowUp' ? -step : ev.key === 'ArrowDown' ? step : 0;
       const page = this.getPage(), sel = page.elements.filter((e) => this.selectedIds.has(e.id) && !e.locked);
       for (const el of sel) translateElement(el, dx, dy);
-      updateConnectorBindings(page, sel.map((e) => e.id));
-      this.commitChange(); this.requestRender(); return;
+      updateConnectorBindings(page, sel.map((e) => e.id)); this.commitChange(); this.requestRender(); return;
     }
 
-    const toolMap = {
-      v: 'select', h: 'hand', p: 'pen', m: 'highlighter', e: 'eraser', r: 'rect', u: 'rounded-rect',
-      o: 'ellipse', d: 'diamond', l: 'line', a: 'arrow', t: 'text', n: 'sticky', b: 'table', j: 'code', k: 'laser', s: 'stamp',
-    };
+    const toolMap = { v: 'select', h: 'hand', p: 'pen', m: 'highlighter', e: 'eraser', r: 'rect', u: 'rounded-rect', o: 'ellipse', d: 'diamond', l: 'line', a: 'arrow', t: 'text', n: 'sticky', b: 'table', j: 'code', k: 'laser', s: 'stamp', w: 'pointer', q: 'question' };
     if (!cmd && ev.key === 'F2') { this.setTool('frame'); return; }
     if (!cmd && toolMap[key]) { this.setTool(toolMap[key]); return; }
     if (!cmd && key === 'i') { this.openImageFilePicker(); return; }
-    if (!cmd && key === 'f') { this.toggleFullScreen(); return; }
+    if (!cmd && key === 'f') { if (ev.shiftKey) this.toggleFocusMode(); else this.toggleFullScreen(); return; }
     if (ev.key === '+' || ev.key === '=') this.zoomBy(1.2);
     else if (ev.key === '-') this.zoomBy(1 / 1.2);
     else if (ev.key === '0') this.setZoom(1);
@@ -588,9 +586,7 @@ export class WhiteboardApp {
     else if (ev.key === ']') this.reorderSelection('front');
     else if (ev.key === '[') this.reorderSelection('back');
     else if (ev.key === '?') this.dialogs.openShortcutsModal();
-    else if (ev.key === 'Escape') {
-      this.selectedIds.clear(); this.cropState = null; this.spotlight.active = false; this.setTool('select');
-    }
+    else if (ev.key === 'Escape') { this.selectedIds.clear(); this.cropState = null; this.spotlight.active = false; this.setTool('select'); }
   }
 }
 

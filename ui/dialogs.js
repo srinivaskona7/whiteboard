@@ -1,311 +1,428 @@
 // ui/dialogs.js
 import { escapeXml, exportToSvgString } from '../render/svg-export.js';
-import { parseMermaidDiagram } from '../scene/mermaid.js';
-import { encodeSceneToHash } from '../scene/storage.js';
+import { parseMermaidDiagram, computeNonOverlappingOrigin } from '../scene/mermaid.js';
+import {
+  encodeSceneToHash,
+  loadRecoverySnapshots,
+  saveRecoverySnapshot,
+  parseSceneJson,
+} from '../scene/storage.js';
+import { SHORTCUT_REFERENCE } from './registry.js';
 
 export function initDialogs(app) {
-  const modalBackdrop = document.getElementById('wb-modal-backdrop');
-  const modalBox = document.getElementById('wb-modal-box');
-  const toastContainer = document.getElementById('wb-toast-container');
+  const backdrop = document.getElementById('wb-modal-backdrop');
+  const box = document.getElementById('wb-modal-box');
+  const toasts = document.getElementById('wb-toast-container');
 
   function isOpen() {
-    return Boolean(modalBackdrop && !modalBackdrop.classList.contains('wb-hidden'));
+    return backdrop && !backdrop.classList.contains('wb-hidden');
   }
 
   function close() {
-    if (!modalBackdrop) return;
-    modalBackdrop.classList.add('wb-hidden');
-    modalBox.innerHTML = '';
+    if (!backdrop) return;
+    backdrop.classList.add('wb-hidden');
+    if (box) box.innerHTML = '';
   }
 
-  modalBackdrop?.addEventListener('click', (ev) => {
-    if (ev.target === modalBackdrop) close();
+  function openHtml(title, bodyHtml, onMount = null) {
+    if (!backdrop || !box) return;
+    backdrop.classList.remove('wb-hidden');
+    box.innerHTML = `
+      <div class="wb-modal-header">
+        <h2 class="wb-modal-title">${escapeXml(title)}</h2>
+        <button type="button" class="wb-icon-btn" id="wb-modal-close" aria-label="Close Dialog" title="Close Dialog">✕</button>
+      </div>
+      <div class="wb-modal-body">${bodyHtml}</div>
+    `;
+    box.querySelector('#wb-modal-close')?.addEventListener('click', close);
+    if (onMount) onMount(box);
+  }
+
+  backdrop?.addEventListener('click', (ev) => {
+    if (ev.target === backdrop) close();
   });
 
-  function showToast(message, kind = 'info', duration = 3200) {
-    if (!toastContainer) return;
+  function showToast(message, type = 'info', duration = 3400) {
+    if (!toasts) return;
     const item = document.createElement('div');
-    item.className = `wb-toast wb-toast-${kind}`;
-    item.setAttribute('role', 'status');
+    item.className = `wb-toast wb-toast-${type}`;
     item.textContent = message;
-    toastContainer.appendChild(item);
+    toasts.appendChild(item);
     setTimeout(() => {
-      item.remove();
+      item.classList.add('wb-toast-fade');
+      setTimeout(() => item.remove(), 260);
     }, duration);
   }
 
   function openShortcutsModal() {
-    const shortcuts = [
-      ['V', 'Select Tool'],
-      ['H / Space+Drag', 'Hand / Pan Canvas'],
-      ['P', 'Freehand Pen'],
-      ['M', 'Highlighter'],
-      ['E', 'Eraser'],
-      ['R / U / O / D', 'Rect / Rounded / Ellipse / Diamond'],
-      ['L / A', 'Line / Smart Arrow'],
-      ['T', 'Text Tool (or Double-click shape)'],
-      ['N', 'Sticky Note'],
-      ['I', 'Insert Image'],
-      ['K', 'Laser Pointer (fading trail)'],
-      ['S', 'Classroom Stamp'],
-      ['Ctrl/Cmd + Z / Y', 'Undo / Redo'],
-      ['Ctrl/Cmd + C / X / V / D', 'Copy / Cut / Paste / Duplicate'],
-      ['Alt + Drag', 'Clone Selection'],
-      ['Ctrl/Cmd + G / Shift+G', 'Group / Ungroup'],
-      ['[ / ]', 'Send to Back / Bring to Front'],
-      ['+ / - / 0 / 1', 'Zoom In / Out / 100% / Fit Content'],
-      ['F', 'Toggle Full Screen'],
-      ['Ctrl/Cmd + K', 'Command Palette'],
-      ['?', 'Keyboard Shortcuts Help'],
-      ['Esc', 'Cancel / Exit Present or Dialog'],
-    ];
-
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>Keyboard Shortcuts</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <div class="wb-shortcuts-grid">
-          ${shortcuts
-            .map(
-              ([k, desc]) => `
-            <div class="wb-shortcut-row">
-              <kbd>${escapeXml(k)}</kbd>
-              <span>${escapeXml(desc)}</span>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
+    openHtml(
+      'Keyboard Shortcuts (?)',
+      `<div class="wb-shortcuts-grid">
+        ${SHORTCUT_REFERENCE.map(
+          (r) =>
+            `<div class="wb-shortcut-row"><kbd>${escapeXml(r.key)}</kbd><span>${escapeXml(r.desc)}</span></div>`
+        ).join('')}
+      </div>`
+    );
   }
 
   function openMermaidModal() {
-    const sample = `flowchart TD
-  A[Start Lesson] --> B{Students Ready?}
-  B -- Yes --> C[Interactive Lab]
-  B -- No --> D(Warmup Quiz)`;
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>Import Mermaid Diagram (Offline Parser)</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <p class="wb-muted">Supports <code>flowchart TD/LR</code> and <code>sequenceDiagram</code> subsets.</p>
-        <textarea id="mermaid-input" class="wb-textarea" rows="8">${escapeXml(sample)}</textarea>
-        <div id="mermaid-warnings" class="wb-warnings"></div>
+    const sample = [
+      'flowchart TD',
+      '  Start[Start Lesson] --> Check{Students Ready?}',
+      '  Check -->|Yes| Lab[Hands-on K8s Lab]',
+      '  Check -->|No| Review[Quick Recap]',
+      '  Review --> Lab',
+    ].join(String.fromCharCode(10));
+
+    const hasExisting = (app.getPage()?.elements || []).some((e) => !e.hidden);
+
+    openHtml(
+      'Import Mermaid Diagram (Offline Parser)',
+      `
+        <p class="wb-muted">Supports <code>flowchart TD/LR</code> and <code>sequenceDiagram</code>. Automatically places in empty space so existing objects are never overlapped.</p>
+        <textarea id="mermaid-input" class="wb-textarea" rows="8" aria-label="Mermaid Diagram Source">${escapeXml(sample)}</textarea>
+        <div class="wb-modal-options" style="margin-top:8px;">
+          <label class="wb-check-row">
+            <input type="checkbox" id="mermaid-new-page" ${hasExisting ? '' : ''} />
+            <span>Create on a new page (instead of placing beside existing elements)</span>
+          </label>
+        </div>
+        <div id="mermaid-warnings" class="wb-warning-box wb-hidden"></div>
         <div class="wb-modal-actions">
-          <button type="button" class="wb-btn" id="btn-mermaid-seq-sample">Load Sequence Sample</button>
+          <button type="button" class="wb-btn" id="btn-mermaid-seq">Load Sequence Sample</button>
           <button type="button" class="wb-btn wb-primary" id="btn-mermaid-insert">Generate Editable Diagram</button>
         </div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
+      `,
+      (modal) => {
+        const input = modal.querySelector('#mermaid-input');
+        const warnEl = modal.querySelector('#mermaid-warnings');
+        const newPageCheck = modal.querySelector('#mermaid-new-page');
 
-    const ta = modalBox.querySelector('#mermaid-input');
-    const warnBox = modalBox.querySelector('#mermaid-warnings');
+        modal.querySelector('#btn-mermaid-seq')?.addEventListener('click', () => {
+          input.value = [
+            'sequenceDiagram',
+            '  participant Client as Web Browser',
+            '  participant API as API Gateway',
+            '  participant DB as Postgres',
+            '  Client->>API: POST /login',
+            '  API->>DB: SELECT user',
+            '  DB-->>API: User row',
+            '  API-->>Client: 200 OK (JWT)',
+          ].join(String.fromCharCode(10));
+        });
 
-    modalBox.querySelector('#btn-mermaid-seq-sample')?.addEventListener('click', () => {
-      ta.value = `sequenceDiagram
-  participant Teacher
-  participant Student
-  Teacher->>Student: Pose Problem
-  Student-->>Teacher: Submit Solution`;
-    });
-
-    modalBox.querySelector('#btn-mermaid-insert')?.addEventListener('click', () => {
-      const center = app.getViewportCenterWorld();
-      const { elements, warnings } = parseMermaidDiagram(
-        ta.value,
-        Math.round(center.x - 200),
-        Math.round(center.y - 140)
-      );
-      if (warnings.length > 0) {
-        warnBox.innerHTML = warnings
-          .map((w) => `<div class="wb-warn-item">⚠️ ${escapeXml(w)}</div>`)
-          .join('');
-      } else {
-        warnBox.innerHTML = '';
+        modal.querySelector('#btn-mermaid-insert')?.addEventListener('click', () => {
+          if (newPageCheck?.checked) {
+            app.addPage(`Mermaid ${app.scene.pages.length + 1}`);
+          }
+          const page = app.getPage();
+          const origin = computeNonOverlappingOrigin(page, app.getViewportCenterWorld());
+          const { elements, warnings } = parseMermaidDiagram(input.value, origin.x, origin.y);
+          if (warnings.length > 0) {
+            warnEl.classList.remove('wb-hidden');
+            warnEl.innerHTML = warnings.map((w) => `<div>⚠️ ${escapeXml(w)}</div>`).join('');
+          } else {
+            warnEl.classList.add('wb-hidden');
+          }
+          if (elements.length > 0) {
+            page.elements.push(...elements);
+            app.selectedIds = new Set(elements.map((e) => e.id));
+            app.commitChange();
+            app.fitToContent();
+            app.updateUI();
+            app.requestRender();
+            if (warnings.length === 0) {
+              close();
+              showToast(`Imported ${elements.length} Mermaid elements without overlapping.`, 'success');
+            } else {
+              showToast(
+                `Imported ${elements.length} elements with ${warnings.length} syntax notice(s).`,
+                'warn'
+              );
+            }
+          }
+        });
       }
-      if (elements.length > 0) {
-        const page = app.getPage();
-        page.elements.push(...elements);
-        app.selectedIds = new Set(elements.map((e) => e.id));
-        app.commitChange();
-        app.updateUI();
-        app.requestRender();
-        showToast(
-          `Imported ${elements.length} Mermaid elements${warnings.length ? ` (${warnings.length} warning)` : ''}.`,
-          warnings.length ? 'warn' : 'success'
-        );
-        if (warnings.length === 0) close();
-      }
-    });
+    );
   }
 
   function openExportModal() {
-    const hasSelection = app.selectedIds.size > 0;
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>Export Whiteboard</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <label class="wb-prop-row">
-          <span>PNG Scale</span>
-          <select id="exp-scale">
-            <option value="1">1x (Standard)</option>
-            <option value="2" selected>2x (HiDPI)</option>
-            <option value="3">3x (Ultra Print)</option>
-          </select>
-        </label>
-        <label class="wb-prop-row">
-          <span>Transparent Background</span>
-          <input type="checkbox" id="exp-transparent"/>
-        </label>
-        <label class="wb-prop-row">
-          <span>Selection Only (${app.selectedIds.size} selected)</span>
-          <input type="checkbox" id="exp-selection" ${hasSelection ? '' : 'disabled'}/>
-        </label>
+    const hasSel = app.selectedIds.size > 0;
+    openHtml(
+      'Export Diagram or Student Handout',
+      `
+        <div class="wb-export-options">
+          <label class="wb-prop-row">
+            <span>PNG Scale</span>
+            <select id="exp-scale" aria-label="Export PNG Scale">
+              <option value="1">1x (Standard)</option>
+              <option value="2" selected>2x (Retina / High-DPI)</option>
+              <option value="3">3x (Ultra Print)</option>
+            </select>
+          </label>
+          <label class="wb-check-row">
+            <input type="checkbox" id="exp-transparent" />
+            <span>Transparent Background</span>
+          </label>
+          <label class="wb-check-row">
+            <input type="checkbox" id="exp-selection" ${hasSel ? '' : 'disabled'} />
+            <span>Selection Only (${app.selectedIds.size} selected)</span>
+          </label>
+        </div>
         <div class="wb-modal-actions">
           <button type="button" class="wb-btn wb-primary" id="btn-exp-png">⬇ Download PNG</button>
-          <button type="button" class="wb-btn" id="btn-exp-copy-png">📋 Copy PNG</button>
-          <button type="button" class="wb-btn wb-primary" id="btn-exp-svg">⬇ Download SVG</button>
-          <button type="button" class="wb-btn" id="btn-exp-preview-svg">👁 Preview SVG</button>
-          <button type="button" class="wb-btn" id="btn-exp-print">🖨 Print / PDF</button>
+          <button type="button" class="wb-btn" id="btn-exp-copy">📋 Copy PNG</button>
+          <button type="button" class="wb-btn" id="btn-exp-svg">⬇ Download SVG</button>
+          <button type="button" class="wb-btn" id="btn-exp-handout">🖨 Student Handout (PDF)</button>
         </div>
-        <div id="exp-svg-preview" class="wb-svg-preview-box wb-hidden"></div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
+      `,
+      (modal) => {
+        const getOpts = () => ({
+          scale: Number(modal.querySelector('#exp-scale').value) || 2,
+          transparent: modal.querySelector('#exp-transparent').checked,
+          selectionOnly: modal.querySelector('#exp-selection').checked,
+          selectedIds: app.selectedIds,
+        });
 
-    const getOpts = () => ({
-      scale: Number(modalBox.querySelector('#exp-scale').value) || 2,
-      transparent: modalBox.querySelector('#exp-transparent').checked,
-      selectionOnly: modalBox.querySelector('#exp-selection').checked,
-      selectedIds: app.selectedIds,
-    });
-
-    modalBox.querySelector('#btn-exp-png')?.addEventListener('click', () => {
-      app.exportPng(getOpts());
-      showToast('PNG downloaded.', 'success');
-    });
-
-    modalBox.querySelector('#btn-exp-copy-png')?.addEventListener('click', async () => {
-      const ok = await app.copyPngToClipboard(getOpts());
-      showToast(ok ? 'PNG copied to clipboard.' : 'Clipboard PNG copy prepared.', 'info');
-    });
-
-    modalBox.querySelector('#btn-exp-svg')?.addEventListener('click', () => {
-      app.exportSvg(getOpts());
-      showToast('SVG downloaded.', 'success');
-    });
-
-    modalBox.querySelector('#btn-exp-preview-svg')?.addEventListener('click', () => {
-      const svgStr = exportToSvgString(app.scene, app.getPage(), getOpts());
-      const preview = modalBox.querySelector('#exp-svg-preview');
-      preview.classList.remove('wb-hidden');
-      preview.innerHTML = svgStr;
-    });
-
-    modalBox.querySelector('#btn-exp-print')?.addEventListener('click', () => {
-      close();
-      window.print();
-    });
+        modal.querySelector('#btn-exp-png')?.addEventListener('click', () => {
+          app.exportPngDownload(getOpts());
+          close();
+        });
+        modal.querySelector('#btn-exp-copy')?.addEventListener('click', async () => {
+          await app.copyPngToClipboard(getOpts());
+          close();
+        });
+        modal.querySelector('#btn-exp-svg')?.addEventListener('click', () => {
+          const opts = getOpts();
+          const svg = exportToSvgString(app.scene, app.getPage(), opts);
+          app.downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${app.getPage().name}.svg`);
+          close();
+        });
+        modal.querySelector('#btn-exp-handout')?.addEventListener('click', () => {
+          close();
+          app.fitToContent();
+          setTimeout(() => window.print(), 120);
+        });
+      }
+    );
   }
 
   function openShareUrlModal() {
     const { hash, length, warnLarge } = encodeSceneToHash(app.scene);
     const fullUrl = `${window.location.origin}${window.location.pathname}${hash}`;
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>Share by URL (No Server)</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <p class="wb-muted">Scene encoded directly in the URL hash (${length.toLocaleString()} chars).</p>
+    openHtml(
+      'Share Scene by URL (No Server)',
+      `
+        <p class="wb-muted">Encodes the scene into the URL hash (<code>#scene=...</code>) for serverless sharing.</p>
         ${
           warnLarge
-            ? `<div class="wb-warn-item">⚠️ Size Warning: This URL is ${length.toLocaleString()} characters long and may exceed some browser/chat URL limits. Consider saving a <code>.whiteboard.json</code> file for large diagrams.</div>`
-            : ''
+            ? `<div class="wb-warning-box">⚠️ Size Warning: This URL is ${length.toLocaleString()} characters long. For large boards or embedded images, use <strong>Save (.whiteboard.json)</strong> instead.</div>`
+            : `<p class="wb-success-note">✓ Compact URL (${length.toLocaleString()} chars) ready to share.</p>`
         }
-        <input type="text" class="wb-input" id="share-url-input" readonly value="${escapeXml(fullUrl)}"/>
+        <input type="text" id="share-url-input" class="wb-input" readonly value="${escapeXml(fullUrl)}" aria-label="Shareable URL" />
         <div class="wb-modal-actions">
-          <button type="button" class="wb-btn wb-primary" id="btn-apply-hash">Copy & Set URL Hash</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-copy-share-url">Copy Share Link</button>
         </div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
-    modalBox.querySelector('#btn-apply-hash')?.addEventListener('click', () => {
-      window.history.replaceState(null, '', hash);
-      navigator.clipboard?.writeText(fullUrl).catch(() => {});
-      showToast('Shareable URL hash applied and copied!', 'success');
-      close();
-    });
+      `,
+      (modal) => {
+        modal.querySelector('#btn-copy-share-url')?.addEventListener('click', async () => {
+          const inp = modal.querySelector('#share-url-input');
+          inp.select();
+          try {
+            await navigator.clipboard.writeText(fullUrl);
+            window.history.replaceState(null, '', hash);
+            showToast('Share URL copied to clipboard!', 'success');
+          } catch {
+            showToast('Updated browser URL bar with #scene hash.', 'info');
+            window.history.replaceState(null, '', hash);
+          }
+          close();
+        });
+      }
+    );
+  }
+
+  function openRevealTimelineModal() {
+    const page = app.getPage();
+    const steps = new Map();
+    for (const el of page.elements) {
+      if (el.hidden) continue;
+      const s = el.revealStep || 0;
+      if (!steps.has(s)) steps.set(s, []);
+      steps.get(s).push(el);
+    }
+    const sortedSteps = [...steps.keys()].sort((a, b) => a - b);
+
+    openHtml(
+      'Step-by-Step Reveal Timeline',
+      `
+        <p class="wb-muted">Preview how elements appear step-by-step in Presentation Mode.</p>
+        <div class="wb-timeline-list">
+          ${sortedSteps
+            .map((stepNum) => {
+              const items = steps.get(stepNum) || [];
+              const label = stepNum === 0 ? 'Always Visible (Step 0)' : `Reveal Step ${stepNum}`;
+              return `
+                <div class="wb-timeline-row">
+                  <div>
+                    <strong>${escapeXml(label)}</strong>
+                    <div class="wb-muted">${items.length} element(s): ${escapeXml(
+                      items
+                        .slice(0, 4)
+                        .map((i) => i.text || i.name || i.type)
+                        .join(', ')
+                    )}</div>
+                  </div>
+                  <button type="button" class="wb-btn wb-sm" data-preview-step="${stepNum}">Preview up to Step ${stepNum}</button>
+                </div>
+              `;
+            })
+            .join('')}
+        </div>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-btn wb-primary" id="btn-timeline-present">▶ Launch Presentation</button>
+        </div>
+      `,
+      (modal) => {
+        modal.querySelectorAll('[data-preview-step]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const s = Number(b.dataset.previewStep);
+            close();
+            app.presentUI.enter();
+            app.presentState.revealStep = s;
+            app.presentUI.renderBar();
+            app.requestRender();
+          });
+        });
+        modal.querySelector('#btn-timeline-present')?.addEventListener('click', () => {
+          close();
+          app.presentUI.enter();
+        });
+      }
+    );
+  }
+
+  function openRecoveryModal() {
+    const renderSnapshots = () => {
+      const snaps = loadRecoverySnapshots();
+      openHtml(
+        'Recovery History & Checkpoints',
+        `
+          <p class="wb-muted">Create a manual checkpoint or restore an earlier board version.</p>
+          <div class="wb-modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
+            <button type="button" class="wb-btn wb-primary" id="btn-create-checkpoint">+ Save Checkpoint Now</button>
+          </div>
+          <div class="wb-timeline-list">
+            ${
+              snaps.length === 0
+                ? `<div class="wb-muted">No recovery snapshots saved yet.</div>`
+                : snaps
+                    .map(
+                      (s, idx) => `
+                  <div class="wb-timeline-row">
+                    <div>
+                      <strong>${escapeXml(s.label)} — ${escapeXml(s.title)}</strong>
+                      <div class="wb-muted">${new Date(s.timestamp).toLocaleTimeString()} · ${s.pageCount} page(s) · ${s.elementCount} objects</div>
+                    </div>
+                    <button type="button" class="wb-btn wb-sm" data-restore-idx="${idx}" aria-label="Restore snapshot ${idx + 1}">Restore</button>
+                  </div>
+                `
+                    )
+                    .join('')
+            }
+          </div>
+        `,
+        (modal) => {
+          modal.querySelector('#btn-create-checkpoint')?.addEventListener('click', () => {
+            saveRecoverySnapshot(app.scene, 'Manual Checkpoint');
+            showToast('Checkpoint saved locally.', 'success');
+            renderSnapshots();
+          });
+          modal.querySelectorAll('[data-restore-idx]').forEach((b) => {
+            b.addEventListener('click', () => {
+              const chosen = snaps[Number(b.dataset.restoreIdx)];
+              if (chosen?.sceneJson) {
+                app.scene = parseSceneJson(chosen.sceneJson);
+                for (const p of app.scene.pages) app.history.initPage(p);
+                app.selectedIds.clear();
+                app.scheduleAutosave(app.scene);
+                app.updateUI();
+                app.requestRender();
+                close();
+                showToast(`Restored "${chosen.label}".`, 'success');
+              }
+            });
+          });
+        }
+      );
+    };
+    renderSnapshots();
   }
 
   function openHyperlinkModal() {
-    const page = app.getPage();
-    const sel = page.elements.find((e) => app.selectedIds.has(e.id));
-    if (!sel) return;
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>Attach Hyperlink</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <label class="wb-prop-row">
-          <span>URL</span>
-          <input type="url" class="wb-input" id="link-url-input" placeholder="https://example.org" value="${escapeXml(sel.link || '')}"/>
-        </label>
-        <p class="wb-muted">Ctrl/Cmd+Click the element or click its ↗ badge to open.</p>
+    const selected = app.getSelectedElements();
+    if (selected.length === 0) return;
+    const current = selected[0].link || '';
+    openHtml(
+      'Attach Hyperlink to Element',
+      `
+        <p class="wb-muted">Ctrl/Cmd+Click the element (or click its top-right ↗ badge) to open the link.</p>
+        <input type="url" id="link-url-input" class="wb-input" placeholder="https://example.com" value="${escapeXml(current)}" aria-label="Hyperlink URL" />
         <div class="wb-modal-actions">
-          <button type="button" class="wb-btn wb-primary" id="btn-save-link">Save Link</button>
+          <button type="button" class="wb-btn" id="btn-link-clear">Remove Link</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-link-save">Save Link</button>
         </div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
-    modalBox.querySelector('#btn-save-link')?.addEventListener('click', () => {
-      sel.link = modalBox.querySelector('#link-url-input').value.trim();
-      app.commitChange();
-      app.requestRender();
-      close();
-    });
+      `,
+      (modal) => {
+        const inp = modal.querySelector('#link-url-input');
+        inp?.focus();
+        modal.querySelector('#btn-link-save')?.addEventListener('click', () => {
+          const val = inp.value.trim();
+          for (const el of selected) el.link = val;
+          app.commitChange();
+          app.requestRender();
+          close();
+        });
+        modal.querySelector('#btn-link-clear')?.addEventListener('click', () => {
+          for (const el of selected) el.link = '';
+          app.commitChange();
+          app.requestRender();
+          close();
+        });
+      }
+    );
   }
 
   function openPromptModal(title, label, initialValue, onConfirm) {
-    modalBox.innerHTML = `
-      <div class="wb-modal-header">
-        <h2>${escapeXml(title)}</h2>
-        <button type="button" class="wb-icon-btn" id="modal-close">✕</button>
-      </div>
-      <div class="wb-modal-body">
-        <label class="wb-prop-row">
+    openHtml(
+      title,
+      `
+        <label class="wb-prop-col">
           <span>${escapeXml(label)}</span>
-          <input type="text" class="wb-input" id="prompt-modal-input" value="${escapeXml(initialValue || '')}"/>
+          <input type="text" id="wb-prompt-input" class="wb-input" value="${escapeXml(initialValue || '')}" />
         </label>
         <div class="wb-modal-actions">
-          <button type="button" class="wb-btn wb-primary" id="btn-prompt-ok">OK</button>
+          <button type="button" class="wb-btn" id="btn-prompt-cancel">Cancel</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-prompt-ok">Confirm</button>
         </div>
-      </div>
-    `;
-    modalBackdrop.classList.remove('wb-hidden');
-    const inp = modalBox.querySelector('#prompt-modal-input');
-    inp?.focus();
-    modalBox.querySelector('#modal-close')?.addEventListener('click', close);
-    modalBox.querySelector('#btn-prompt-ok')?.addEventListener('click', () => {
-      const val = inp.value;
-      close();
-      onConfirm(val);
-    });
+      `,
+      (modal) => {
+        const inp = modal.querySelector('#wb-prompt-input');
+        inp?.focus();
+        inp?.select();
+        const submit = () => {
+          const val = inp.value.trim();
+          close();
+          if (val) onConfirm(val);
+        };
+        modal.querySelector('#btn-prompt-ok')?.addEventListener('click', submit);
+        modal.querySelector('#btn-prompt-cancel')?.addEventListener('click', close);
+        inp?.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submit();
+        });
+      }
+    );
   }
 
   return {
@@ -316,6 +433,8 @@ export function initDialogs(app) {
     openMermaidModal,
     openExportModal,
     openShareUrlModal,
+    openRevealTimelineModal,
+    openRecoveryModal,
     openHyperlinkModal,
     openPromptModal,
   };

@@ -27,9 +27,16 @@ import {
   alignElements,
   distributeElements,
   matchElementSize,
+  arrangeElements,
   computeSmartGuides,
 } from '../scene/geometry.js';
-import { hitTestElement, hitTestScene, hitTestHandle } from '../scene/hit.js';
+import {
+  hitTestElement,
+  hitTestScene,
+  hitTestHandle,
+  getMultiSelectionHandles,
+  hitTestMultiSelectionHandle,
+} from '../scene/hit.js';
 import {
   computeOrthogonalPath,
   getConnectorPoints,
@@ -451,5 +458,129 @@ describe('Stencils, Templates, CanvasRenderer & Full Feature E2E Suite', () => {
     assert.ok(svgStr.startsWith('<svg'));
     assert.ok(svgStr.includes('Sticky note'));
     assert.ok(svgStr.includes('const x = 1;'));
+  });
+});
+
+import { getAllCategories } from '../stencils/index.js';
+import {
+  buildClassroomShareHash,
+  parseClassroomHash,
+  pointAtBoardLocation,
+  attachQuestionToBoard,
+} from '../ui/classroom.js';
+
+describe('DevOps Icon Library, Arrangement, Multi-Resize & Live Classroom', () => {
+  test('provides comprehensive DevOps categories and multi-token search', () => {
+    const categories = getAllCategories();
+    const expected = [
+      'AWS',
+      'Azure',
+      'GCP',
+      'Linux',
+      'Docker & Containers',
+      'Kubernetes',
+      'Networking',
+      'Git & Source Control',
+      'CI/CD & GitOps',
+      'Infrastructure as Code',
+      'Config Management',
+      'Monitoring & Logging',
+      'Security & Secrets',
+      'Databases, Storage & Messaging',
+    ];
+    for (const cat of expected) {
+      assert.ok(categories.includes(cat), `Missing category: ${cat}`);
+    }
+    assert.ok(ALL_STENCILS.length >= 130, `Expected 130+ stencils, got ${ALL_STENCILS.length}`);
+
+    const awsSearch = getStencilsByCategory('aws eks');
+    assert.ok(awsSearch.some((g) => g.items.some((i) => i.id === 'aws-eks')));
+
+    const tfSearch = getStencilsByCategory('terraform hcl');
+    assert.ok(tfSearch.some((g) => g.items.some((i) => i.id === 'iac-terraform')));
+
+    const azureOnly = getStencilsByCategory('', 'Azure');
+    assert.equal(azureOnly.length, 1);
+    assert.equal(azureOnly[0].category, 'Azure');
+  });
+
+  test('arranges multiple components in row, column, and grid and exposes multi-selection resize handles', () => {
+    const a = createElement('stencil', { stencilId: 'aws-ec2', x: 500, y: 400, w: 152, h: 98 });
+    const b = createElement('stencil', { stencilId: 'aws-rds', x: 100, y: 120, w: 152, h: 98 });
+    const c = createElement('stencil', { stencilId: 'aws-s3', x: 300, y: 260, w: 152, h: 98 });
+    const items = [a, b, c];
+
+    arrangeElements(items, 'row', 40, 40);
+    assert.equal(a.y, b.y);
+    assert.equal(b.y, c.y);
+    assert.ok(a.x < b.x && b.x < c.x);
+
+    arrangeElements(items, 'column', 40, 40);
+    assert.equal(a.x, b.x);
+    assert.ok(a.y < b.y && b.y < c.y);
+
+    const handles = getMultiSelectionHandles({ x: 100, y: 120, w: 300, h: 200 });
+    assert.equal(handles.length, 8);
+    const seHit = hitTestMultiSelectionHandle({ x: 100, y: 120, w: 300, h: 200 }, 400, 320, 1);
+    assert.equal(seHit?.id, 'se');
+  });
+
+  test('snaps connectors when hovering anywhere inside a component body', () => {
+    const page = createPage('Snap Page');
+    const eks = createElement('stencil', { stencilId: 'aws-eks', x: 200, y: 200, w: 152, h: 98, text: 'EKS Cluster' });
+    page.elements.push(eks);
+
+    // Hover near right side inside component body
+    const bodySnap = findHoverPort(page, 330, 248, 18);
+    assert.ok(bodySnap, 'Should snap when pointer is inside component body');
+    assert.equal(bodySnap.elementId, eks.id);
+    assert.equal(bodySnap.port, 'right');
+  });
+
+  test('encodes shareable classroom links, points at components, and keeps question pins attached on move', () => {
+    const scene = createScene('light');
+    const page = scene.pages[0];
+    const k8sPod = createElement('stencil', {
+      stencilId: 'k8s-pod',
+      x: 300,
+      y: 250,
+      w: 152,
+      h: 98,
+      text: 'Payment Pod',
+    });
+    page.elements.push(k8sPod);
+
+    // 1. Point at component
+    const ping = pointAtBoardLocation(page, { x: 350, y: 280 }, { authorName: 'Maya Lin' });
+    assert.equal(ping.authorName, 'Maya Lin');
+    assert.equal(ping.targetElementId, k8sPod.id);
+    assert.equal(ping.targetElementName, 'Payment Pod');
+
+    // 2. Attach question pin to component
+    const qPin = attachQuestionToBoard(
+      page,
+      { x: 350, y: 280 },
+      { authorName: 'Maya Lin', questionText: 'How does HPA scale this pod?' }
+    );
+    assert.equal(qPin.type, 'question');
+    assert.equal(qPin.targetElementId, k8sPod.id);
+    assert.equal(qPin.targetElementName, 'Payment Pod');
+
+    // 3. Move component and verify attached question pin moves with it
+    const initialPinX = qPin.x;
+    const initialPinY = qPin.y;
+    k8sPod.x += 120;
+    k8sPod.y += 60;
+    updateConnectorBindings(page, [k8sPod.id]);
+    assert.equal(qPin.x, initialPinX + 120);
+    assert.equal(qPin.y, initialPinY + 60);
+
+    // 4. Shareable classroom link round-trip
+    const { hash } = buildClassroomShareHash(scene, 'K8S-LAB');
+    assert.ok(hash.startsWith('#classroom=1&room=K8S-LAB&scene='));
+    const parsed = parseClassroomHash(hash);
+    assert.equal(parsed.isClassroom, true);
+    assert.equal(parsed.room, 'K8S-LAB');
+    assert.equal(parsed.scene.pages[0].elements.length, 2);
   });
 });

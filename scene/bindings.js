@@ -21,7 +21,8 @@ export function findHoverPort(page, px, py, radius = 16, excludeId = null) {
       el.type === 'line' ||
       el.type === 'arrow' ||
       el.type === 'pen' ||
-      el.type === 'highlighter'
+      el.type === 'highlighter' ||
+      el.type === 'question'
     ) {
       continue;
     }
@@ -41,7 +42,44 @@ export function findHoverPort(page, px, py, radius = 16, excludeId = null) {
       }
     }
   }
-  return best;
+  if (best) return best;
+
+  // Fallback: if pointer is inside or within 10px of a component body, snap to its nearest port
+  const bodyPad = Math.min(10, radius * 0.5);
+  for (let i = page.elements.length - 1; i >= 0; i--) {
+    const el = page.elements[i];
+    if (
+      el.hidden ||
+      el.id === excludeId ||
+      el.type === 'line' ||
+      el.type === 'arrow' ||
+      el.type === 'pen' ||
+      el.type === 'highlighter' ||
+      el.type === 'frame' ||
+      el.type === 'question'
+    ) {
+      continue;
+    }
+    if (
+      px >= el.x - bodyPad &&
+      px <= el.x + el.w + bodyPad &&
+      py >= el.y - bodyPad &&
+      py <= el.y + el.h + bodyPad
+    ) {
+      const nearest = getNearestPort(el, px, py);
+      if (nearest) {
+        return {
+          elementId: el.id,
+          port: nearest.port,
+          portId: nearest.port,
+          x: nearest.x,
+          y: nearest.y,
+          element: el,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export function bindConnectorEndpoint(connector, which, element, port = null) {
@@ -128,5 +166,18 @@ export function updateConnectorBindings(page, changedElementIds = null) {
     el.w = Math.abs(el.x2 - el.x);
     el.h = Math.abs(el.y2 - el.y);
     getConnectorPoints(el, page);
+  }
+
+  // Keep attached student question pins anchored to their target component
+  for (const el of page.elements) {
+    if (el.type === 'question' && el.targetElementId) {
+      const target = findElement(page, el.targetElementId);
+      if (target) {
+        if (!filterSet || filterSet.has(target.id) || filterSet.has(el.id)) {
+          el.x = target.x + (el.offsetX ?? Math.max(0, target.w - 30));
+          el.y = target.y + (el.offsetY ?? -36);
+        }
+      }
+    }
   }
 }

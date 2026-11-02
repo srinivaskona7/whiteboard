@@ -1,5 +1,5 @@
 // ui/palette.js
-import { PRIMARY_TOOLS } from './toolbar.js';
+import { TOOL_REGISTRY } from './registry.js';
 import { ALL_STENCILS } from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { escapeXml } from '../render/svg-export.js';
@@ -15,7 +15,7 @@ export function initCommandPalette(app) {
   function buildCommands() {
     const cmds = [];
 
-    for (const t of PRIMARY_TOOLS) {
+    for (const t of TOOL_REGISTRY) {
       cmds.push({
         id: `tool:${t.id}`,
         title: `Tool: ${t.label}`,
@@ -25,24 +25,29 @@ export function initCommandPalette(app) {
     }
 
     const actions = [
+      { id: 'act:image', title: 'Insert: Image from File', shortcut: 'I', run: () => app.openImageFilePicker() },
       { id: 'act:undo', title: 'Action: Undo', shortcut: '⌘Z', run: () => app.undo() },
       { id: 'act:redo', title: 'Action: Redo', shortcut: '⌘Y', run: () => app.redo() },
       { id: 'act:fit', title: 'View: Fit to Content', shortcut: '1', run: () => app.fitToContent() },
       { id: 'act:zoom100', title: 'View: Reset Zoom 100%', shortcut: '0', run: () => app.setZoom(1) },
       { id: 'act:theme', title: 'Theme: Toggle Light / Dark Mode', shortcut: '', run: () => app.toggleTheme() },
-      { id: 'act:grid', title: 'Background: Grid', shortcut: '', run: () => app.setBackground('grid') },
-      { id: 'act:dots', title: 'Background: Dots', shortcut: '', run: () => app.setBackground('dots') },
+      { id: 'act:dots', title: 'Background: Quiet Dots Grid', shortcut: '', run: () => app.setBackground('dots') },
+      { id: 'act:grid', title: 'Background: Line Grid', shortcut: '', run: () => app.setBackground('grid') },
       { id: 'act:plain', title: 'Background: Plain', shortcut: '', run: () => app.setBackground('plain') },
       { id: 'act:fullscreen', title: 'View: Toggle Full Screen', shortcut: 'F', run: () => app.toggleFullScreen() },
+      { id: 'act:focus', title: 'Teaching: Toggle Teaching Focus Mode', shortcut: '⇧F', run: () => app.toggleFocusMode() },
       { id: 'act:present', title: 'Present: Start Presentation Mode', shortcut: '', run: () => app.presentUI.enter() },
+      { id: 'act:reveal', title: 'Teaching: Open Step-by-Step Reveal Timeline', shortcut: '', run: () => app.dialogs.openRevealTimelineModal() },
       { id: 'act:spotlight', title: 'Teaching: Toggle Spotlight & Magnifier', shortcut: '', run: () => app.toggleSpotlight() },
       { id: 'act:annotate', title: 'Teaching: Toggle Live Annotation Mode', shortcut: '', run: () => app.toggleAnnotationMode() },
       { id: 'act:timer', title: 'Teaching: Open Classroom Timer', shortcut: '', run: () => app.timerUI.toggle() },
       { id: 'act:ruler', title: 'Math: Insert Ruler Overlay', shortcut: '', run: () => app.insertMathOverlay('ruler') },
       { id: 'act:protractor', title: 'Math: Insert Protractor Overlay', shortcut: '', run: () => app.insertMathOverlay('protractor') },
       { id: 'act:mermaid', title: 'Diagram: Import Mermaid Flowchart / Sequence', shortcut: '', run: () => app.dialogs.openMermaidModal() },
-      { id: 'act:export', title: 'File: Export PNG / SVG', shortcut: '', run: () => app.dialogs.openExportModal() },
+      { id: 'act:export', title: 'File: Export PNG / SVG / Student Handout PDF', shortcut: '', run: () => app.dialogs.openExportModal() },
       { id: 'act:save', title: 'File: Save .whiteboard.json', shortcut: '', run: () => app.saveWhiteboardFile() },
+      { id: 'act:open', title: 'File: Open .whiteboard.json', shortcut: '', run: () => app.openWhiteboardFilePicker() },
+      { id: 'act:recovery', title: 'File: Restore Earlier Version (Recovery Snapshots)', shortcut: '', run: () => app.dialogs.openRecoveryModal() },
       { id: 'act:share', title: 'File: Share by URL Hash', shortcut: '', run: () => app.dialogs.openShareUrlModal() },
       { id: 'act:group', title: 'Selection: Group Elements', shortcut: '⌘G', run: () => app.groupSelection() },
       { id: 'act:ungroup', title: 'Selection: Ungroup Elements', shortcut: '⇧⌘G', run: () => app.ungroupSelection() },
@@ -73,8 +78,8 @@ export function initCommandPalette(app) {
   function getFiltered() {
     const all = buildCommands();
     const q = query.trim().toLowerCase();
-    if (!q) return all.slice(0, 30);
-    return all.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 30);
+    if (!q) return all.slice(0, 32);
+    return all.filter((c) => c.title.toLowerCase().includes(q) || c.shortcut.toLowerCase() === q).slice(0, 32);
   }
 
   function isOpen() {
@@ -103,7 +108,7 @@ export function initCommandPalette(app) {
         type="search"
         id="wb-palette-input"
         class="wb-palette-search"
-        placeholder="Type a command, tool, stencil, or template..."
+        placeholder="Search any tool, action, shortcut, stencil, or template..."
         value="${escapeXml(query)}"
         aria-label="Command Palette Search"
       />

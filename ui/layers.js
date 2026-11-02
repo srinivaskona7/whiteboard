@@ -12,7 +12,7 @@ export function initLayersPanel(app) {
     panel.innerHTML = `
       <div class="wb-panel-header">
         <strong>Layers (${page.elements.length})</strong>
-        <button type="button" class="wb-icon-btn" id="btn-close-layers" aria-label="Close Layers Panel">✕</button>
+        <button type="button" class="wb-icon-btn" id="btn-close-layers" aria-label="Close Layers Panel" title="Close Layers Panel">✕</button>
       </div>
       <div class="wb-panel-body">
         ${
@@ -23,18 +23,20 @@ export function initLayersPanel(app) {
                   .map((el) => {
                     const isSel = app.selectedIds.has(el.id);
                     const label = el.text ? `${el.type}: ${el.text.slice(0, 18)}` : el.name || el.type;
+                    const lockLabel = el.locked ? 'Unlock layer' : 'Lock layer';
+                    const hideLabel = el.hidden ? 'Show layer' : 'Hide layer';
                     return `
                       <div class="wb-layer-row ${isSel ? 'active' : ''}" data-layer-id="${escapeXml(el.id)}">
-                        <button type="button" class="wb-layer-select" data-sel-layer="${escapeXml(el.id)}">
+                        <button type="button" class="wb-layer-select" data-sel-layer="${escapeXml(el.id)}" aria-label="Select layer ${escapeXml(label)}" title="Select ${escapeXml(label)}">
                           ${escapeXml(label)}
                         </button>
                         <div class="wb-layer-actions">
-                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:front" title="Bring to Front">⇡</button>
-                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:back" title="Send to Back">⇣</button>
-                          <button type="button" class="wb-icon-btn" data-lock-layer="${escapeXml(el.id)}" title="${el.locked ? 'Unlock' : 'Lock'}">
+                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:front" aria-label="Move layer up" title="Move layer up (Bring to front)">⇡</button>
+                          <button type="button" class="wb-icon-btn" data-z-layer="${escapeXml(el.id)}:back" aria-label="Move layer down" title="Move layer down (Send to back)">⇣</button>
+                          <button type="button" class="wb-icon-btn" data-lock-layer="${escapeXml(el.id)}" aria-label="${lockLabel}" title="${lockLabel}">
                             ${el.locked ? '🔒' : '🔓'}
                           </button>
-                          <button type="button" class="wb-icon-btn" data-hide-layer="${escapeXml(el.id)}" title="${el.hidden ? 'Show' : 'Hide'}">
+                          <button type="button" class="wb-icon-btn" data-hide-layer="${escapeXml(el.id)}" aria-label="${hideLabel}" title="${hideLabel}">
                             ${el.hidden ? '🙈' : '👁'}
                           </button>
                         </div>

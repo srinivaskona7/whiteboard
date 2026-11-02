@@ -18,9 +18,38 @@ export function unrotatePoint(px, py, cx, cy, angle) {
   return rotatePoint(px, py, cx, cy, -angle);
 }
 
+export function syncFreehandBounds(el) {
+  if (!el || (el.type !== 'pen' && el.type !== 'highlighter')) return el;
+  const pts = el.points || [];
+  const pad = Math.max(2, (el.strokeWidth || 2) / 2);
+  if (pts.length === 0) {
+    el.w = Math.max(4, pad * 2);
+    el.h = Math.max(4, pad * 2);
+    return el;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  el.x = minX - pad;
+  el.y = minY - pad;
+  el.w = Math.max(4, maxX - minX + pad * 2);
+  el.h = Math.max(4, maxY - minY + pad * 2);
+  return el;
+}
+
 export function getElementCenter(el) {
   if (el.type === 'line' || el.type === 'arrow') {
     return { x: (el.x + el.x2) / 2, y: (el.y + el.y2) / 2 };
+  }
+  if (el.type === 'pen' || el.type === 'highlighter') {
+    syncFreehandBounds(el);
   }
   return { x: el.x + el.w / 2, y: el.y + el.h / 2 };
 }
@@ -29,25 +58,32 @@ export function getElementBounds(el) {
   if (!el) return { x: 0, y: 0, w: 0, h: 0, minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
   if (el.type === 'pen' || el.type === 'highlighter') {
-    const pts = el.points || [];
-    if (pts.length === 0) {
-      return { x: el.x, y: el.y, w: 4, h: 4, minX: el.x, minY: el.y, maxX: el.x + 4, maxY: el.y + 4 };
+    syncFreehandBounds(el);
+    const x = el.x;
+    const y = el.y;
+    const w = el.w;
+    const h = el.h;
+    if (!el.rotation) {
+      return { x, y, w, h, minX: x, minY: y, maxX: x + w, maxY: y + h };
     }
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const corners = [
+      rotatePoint(x, y, cx, cy, el.rotation),
+      rotatePoint(x + w, y, cx, cy, el.rotation),
+      rotatePoint(x + w, y + h, cx, cy, el.rotation),
+      rotatePoint(x, y + h, cx, cy, el.rotation),
+    ];
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    for (const p of pts) {
-      if (p.x < minX) minX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y > maxY) maxY = p.y;
+    for (const c of corners) {
+      if (c.x < minX) minX = c.x;
+      if (c.y < minY) minY = c.y;
+      if (c.x > maxX) maxX = c.x;
+      if (c.y > maxY) maxY = c.y;
     }
-    const pad = (el.strokeWidth || 2) / 2;
-    minX -= pad;
-    minY -= pad;
-    maxX += pad;
-    maxY += pad;
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, minX, minY, maxX, maxY };
   }
 
@@ -303,6 +339,37 @@ export function matchElementSize(elements, mode = 'both') {
     if (mode === 'width' || mode === 'both') el.w = ref.w;
     if (mode === 'height' || mode === 'both') el.h = ref.h;
   }
+}
+
+export function arrangeElements(elements, mode = 'grid', gapX = 48, gapY = 42) {
+  if (!elements || elements.length < 2) return;
+  const movable = elements.filter(
+    (el) => !el.locked && el.type !== 'line' && el.type !== 'arrow'
+  );
+  if (movable.length < 2) return;
+
+  const overall = getSelectionBounds(movable);
+  if (!overall) return;
+  const startX = overall.minX;
+  const startY = overall.minY;
+
+  const cols =
+    mode === 'row'
+      ? movable.length
+      : mode === 'column'
+        ? 1
+        : Math.max(2, Math.ceil(Math.sqrt(movable.length)));
+
+  const maxW = Math.max(...movable.map((e) => Math.abs(e.w || 140)));
+  const maxH = Math.max(...movable.map((e) => Math.abs(e.h || 90)));
+
+  movable.forEach((el, idx) => {
+    const c = idx % cols;
+    const r = Math.floor(idx / cols);
+    const targetX = startX + c * (maxW + gapX);
+    const targetY = startY + r * (maxH + gapY);
+    translateElement(el, targetX - el.x, targetY - el.y);
+  });
 }
 
 export function translateElement(el, dx, dy) {

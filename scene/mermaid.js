@@ -1,6 +1,25 @@
 // scene/mermaid.js
-import { createElement } from './model.js';
+import { createElement, autoGrowShapeForText } from './model.js';
+import { getSelectionBounds } from './geometry.js';
 import { bindConnectorEndpoint } from './bindings.js';
+
+export function computeNonOverlappingOrigin(page, viewportCenter = { x: 400, y: 260 }) {
+  const visible = (page?.elements || []).filter((e) => !e.hidden);
+  if (visible.length === 0) {
+    return {
+      x: Math.round(viewportCenter.x - 180),
+      y: Math.round(viewportCenter.y - 140),
+    };
+  }
+  const bounds = getSelectionBounds(visible);
+  if (!bounds) {
+    return { x: 120, y: 100 };
+  }
+  return {
+    x: Math.round(bounds.maxX + 96),
+    y: Math.round(bounds.minY),
+  };
+}
 
 export function parseMermaidDiagram(sourceText, startX = 120, startY = 100) {
   const rawLines = String(sourceText || '')
@@ -156,18 +175,19 @@ function parseFlowchart(lines, direction, startX, startY) {
   for (const [rank, ids] of byRank.entries()) {
     ids.forEach((id, idx) => {
       const info = nodes.get(id);
-      const x = isHorizontal ? startX + rank * 240 : startX + idx * 220;
-      const y = isHorizontal ? startY + idx * 140 : startY + rank * 150;
+      const x = isHorizontal ? startX + rank * 260 : startX + idx * 240;
+      const y = isHorizontal ? startY + idx * 160 : startY + rank * 170;
       const el = createElement(info.shape, {
         x,
         y,
-        w: info.shape === 'diamond' ? 160 : 150,
-        h: info.shape === 'diamond' ? 100 : 76,
+        w: info.shape === 'diamond' ? 180 : 156,
+        h: info.shape === 'diamond' ? 114 : 76,
         text: info.label,
         stencilId: info.stencilId || undefined,
         fill: '#f8fafc',
         stroke: '#1e293b',
       });
+      autoGrowShapeForText(el, info.label);
       nodeElementMap.set(id, el);
       elements.push(el);
     });

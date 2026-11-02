@@ -86,6 +86,26 @@ export function createElement(type, props = {}) {
     base.points = Array.isArray(props.points) ? props.points.map((p) => ({ x: p.x, y: p.y })) : [];
     base.fading = Boolean(props.fading);
     base.createdAt = props.createdAt ?? Date.now();
+    if (base.points.length > 0 && props.w === undefined && props.h === undefined) {
+      const pad = Math.max(2, (base.strokeWidth || 2) / 2);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of base.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+      base.x = minX - pad;
+      base.y = minY - pad;
+      base.w = Math.max(4, maxX - minX + pad * 2);
+      base.h = Math.max(4, maxY - minY + pad * 2);
+    } else if (props.w === undefined && props.h === undefined) {
+      base.w = Math.max(4, base.strokeWidth || 4);
+      base.h = Math.max(4, base.strokeWidth || 4);
+    }
   }
 
   if (isConnector) {
@@ -159,6 +179,21 @@ export function createElement(type, props = {}) {
     base.h = props.h ?? (base.mathKind === 'ruler' ? 64 : 140);
   }
 
+  if (type === 'question') {
+    base.authorName = props.authorName ?? 'Student';
+    base.targetElementId = props.targetElementId ?? null;
+    base.targetElementName = props.targetElementName ?? '';
+    base.offsetX = props.offsetX ?? 0;
+    base.offsetY = props.offsetY ?? 0;
+    base.resolved = Boolean(props.resolved);
+    base.reply = props.reply ?? '';
+    base.createdAt = props.createdAt ?? Date.now();
+    base.w = props.w ?? 210;
+    base.h = props.h ?? 74;
+    base.fill = props.fill ?? '#fef3c7';
+    base.stroke = props.stroke ?? '#d97706';
+  }
+
   return base;
 }
 
@@ -168,7 +203,7 @@ export function createPage(name = 'Page 1', id = uid('page')) {
     name,
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
-    background: 'grid', // 'plain' | 'grid' | 'dots'
+    background: 'dots', // 'plain' | 'grid' | 'dots'
   };
 }
 
@@ -176,6 +211,7 @@ export function createScene(preferredTheme = 'light') {
   const firstPage = createPage('Page 1');
   return {
     version: SCHEMA_VERSION,
+    title: 'StudioBoard Lesson',
     theme: preferredTheme === 'dark' ? 'dark' : 'light',
     activePageId: firstPage.id,
     pages: [firstPage],
@@ -403,20 +439,100 @@ export function applyStyle(el, style) {
   }
 }
 
+export function wrapShapeTextLines(el, rawText = el?.text) {
+  const str = String(rawText ?? '');
+  if (!str) return [];
+  const paragraphs = str.split(String.fromCharCode(10));
+  if (!el || el.type === 'text' || el.type === 'code' || el.type === 'frame' || el.type === 'line' || el.type === 'arrow') {
+    return paragraphs;
+  }
+  const fontSize = el.fontSize || 18;
+  const approxCharW = fontSize * 0.52;
+  const usableW =
+    el.type === 'diamond'
+      ? Math.max(76, (el.w || 160) * 0.56)
+      : el.type === 'ellipse'
+        ? Math.max(84, (el.w || 140) * 0.72)
+        : Math.max(88, (el.w || 140) - 16);
+  const maxChars = Math.max(13, Math.floor(usableW / approxCharW));
+
+  const out = [];
+  for (const para of paragraphs) {
+    if (para.length <= maxChars || !para.includes(' ')) {
+      out.push(para);
+      continue;
+    }
+    const words = para.split(/\s+/);
+    let current = '';
+    for (const word of words) {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length > maxChars && current) {
+        out.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (current) out.push(current);
+  }
+  return out;
+}
+
 export function autoGrowShapeForText(el, text) {
   if (!el || !el.autoGrow) return;
   if (el.type === 'line' || el.type === 'arrow' || el.type === 'pen' || el.type === 'highlighter') {
     return;
   }
-  const lines = String(text ?? el.text ?? '').split(String.fromCharCode(10));
+  const rawLines = String(text ?? el.text ?? '').split(String.fromCharCode(10));
   const fontSize = el.fontSize || 18;
   const lineHeight = fontSize * 1.35;
-  const maxChars = lines.reduce((m, l) => Math.max(m, l.length), 0);
   const approxCharWidth = fontSize * 0.62;
-  const paddingX = el.type === 'diamond' ? 56 : 32;
-  const paddingY = el.type === 'diamond' ? 48 : 28;
+
+  if (el.type === 'diamond') {
+    // Wrap long single-line labels at ~15 chars per line for balanced diamond geometry
+    const wrapped = [];
+    for (const line of rawLines) {
+      if (line.length > 15 && line.includes(' ')) {
+        const words = line.split(/\s+/);
+        let cur = '';
+        for (const w of words) {
+          const next = cur ? `${cur} ${w}` : w;
+          if (next.length > 15 && cur) {
+            wrapped.push(cur);
+            cur = w;
+          } else {
+            cur = next;
+          }
+        }
+        if (cur) wrapped.push(cur);
+      } else {
+        wrapped.push(line);
+      }
+    }
+    const maxChars = wrapped.reduce((m, l) => Math.max(m, l.length), 0);
+    const innerW = maxChars * approxCharWidth + 28;
+    const innerH = wrapped.length * lineHeight + 22;
+    // Inscribed rectangle in a diamond satisfies (innerW / W) + (innerH / H) <= 1
+    const neededW = Math.max(168, Math.ceil(innerW * 1.95));
+    const neededH = Math.max(108, Math.ceil(innerH * 1.95));
+    if (neededW > el.w) {
+      const dw = neededW - el.w;
+      el.x -= dw / 2;
+      el.w = neededW;
+    }
+    if (neededH > el.h) {
+      const dh = neededH - el.h;
+      el.y -= dh / 2;
+      el.h = neededH;
+    }
+    return;
+  }
+
+  const maxChars = rawLines.reduce((m, l) => Math.max(m, l.length), 0);
+  const paddingX = el.type === 'ellipse' ? 44 : 32;
+  const paddingY = el.type === 'ellipse' ? 36 : 28;
   const neededW = Math.ceil(maxChars * approxCharWidth + paddingX);
-  const neededH = Math.ceil(lines.length * lineHeight + paddingY);
+  const neededH = Math.ceil(rawLines.length * lineHeight + paddingY);
 
   if (el.type === 'text') {
     el.w = Math.max(40, neededW - 16);
