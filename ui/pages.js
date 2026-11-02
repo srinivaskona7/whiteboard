@@ -1,0 +1,89 @@
+// ui/pages.js
+import { escapeXml } from '../render/svg-export.js';
+
+export function initPagesBar(app) {
+  const bar = document.getElementById('wb-pages-bar');
+  if (!bar) return { update() {} };
+
+  function render() {
+    const pages = app.scene.pages;
+    const activeId = app.scene.activePageId;
+
+    bar.innerHTML = `
+      <div class="wb-page-tabs" role="tablist" aria-label="Whiteboard Pages">
+        ${pages
+          .map(
+            (p, idx) => `
+          <div class="wb-page-tab ${p.id === activeId ? 'active' : ''}" data-page-id="${escapeXml(p.id)}">
+            <button
+              type="button"
+              class="wb-page-select"
+              role="tab"
+              aria-selected="${p.id === activeId}"
+              data-switch-page="${escapeXml(p.id)}"
+              title="Double-click to rename"
+            >
+              ${escapeXml(p.name)}
+            </button>
+            <div class="wb-page-tab-actions">
+              ${idx > 0 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:-1" title="Move Left">‹</button>` : ''}
+              ${idx < pages.length - 1 ? `<button type="button" class="wb-page-mini" data-move-page="${idx}:1" title="Move Right">›</button>` : ''}
+              <button type="button" class="wb-page-mini" data-dup-page="${escapeXml(p.id)}" title="Duplicate Page">⧉</button>
+              ${pages.length > 1 ? `<button type="button" class="wb-page-mini" data-del-page="${escapeXml(p.id)}" title="Delete Page">✕</button>` : ''}
+            </div>
+          </div>
+        `
+          )
+          .join('')}
+        <button type="button" class="wb-btn wb-sm" id="btn-add-page" aria-label="Add Page" title="Add New Page">+ Page</button>
+      </div>
+    `;
+
+    bar.querySelectorAll('[data-switch-page]').forEach((b) => {
+      b.addEventListener('click', () => {
+        app.switchPage(b.dataset.switchPage);
+      });
+      b.addEventListener('dblclick', () => {
+        const pid = b.dataset.switchPage;
+        const p = app.scene.pages.find((pg) => pg.id === pid);
+        if (!p) return;
+        app.dialogs.openPromptModal('Rename Page', 'Page Name:', p.name, (newName) => {
+          if (newName && newName.trim()) {
+            p.name = newName.trim();
+            app.scheduleAutosave();
+            render();
+          }
+        });
+      });
+    });
+
+    bar.querySelectorAll('[data-move-page]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const [idxStr, dirStr] = b.dataset.movePage.split(':');
+        app.reorderPage(Number(idxStr), Number(dirStr));
+      });
+    });
+
+    bar.querySelectorAll('[data-dup-page]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        app.duplicatePage(b.dataset.dupPage);
+      });
+    });
+
+    bar.querySelectorAll('[data-del-page]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        app.deletePage(b.dataset.delPage);
+      });
+    });
+
+    bar.querySelector('#btn-add-page')?.addEventListener('click', () => {
+      app.addPage();
+    });
+  }
+
+  render();
+  return { update: render };
+}

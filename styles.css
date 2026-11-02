@@ -1,0 +1,258 @@
+/* styles.css — CSS variables, Light/Dark themes, Accessibility, Print CSS */
+:root,
+[data-theme="light"] {
+  --bg-surface: rgba(255, 255, 255, 0.94);
+  --bg-elevated: #ffffff;
+  --bg-muted: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #cbd5e1;
+  --accent-color: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --danger-color: #dc2626;
+  --shadow-lg: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 4px 10px -4px rgba(15, 23, 42, 0.08);
+  --focus-ring: 0 0 0 2px #2563eb;
+}
+
+[data-theme="dark"] {
+  --bg-surface: rgba(30, 41, 59, 0.94);
+  --bg-elevated: #1e293b;
+  --bg-muted: #0f172a;
+  --bg-hover: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: #334155;
+  --accent-color: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.22);
+  --danger-color: #ef4444;
+  --shadow-lg: 0 12px 28px -5px rgba(0, 0, 0, 0.5);
+  --focus-ring: 0 0 0 2px #60a5fa;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text-primary); background: var(--bg-muted);
+  user-select: none; -webkit-user-select: none;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, canvas:focus-visible {
+  outline: none; box-shadow: var(--focus-ring);
+}
+.wb-hidden { display: none !important; }
+.wb-app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+.wb-canvas-wrap { width: 100%; height: 100%; }
+#wb-canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
+
+/* Top Bar */
+.wb-topbar {
+  position: fixed; top: 10px; left: 12px; right: 12px; height: 44px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 12px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); z-index: 20;
+}
+.wb-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.wb-brand-logo { color: var(--accent-color); font-size: 18px; }
+.wb-topbar-actions { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; overflow-x: auto; }
+.wb-divider { width: 1px; height: 22px; background: var(--border-color); margin: 0 4px; }
+
+/* Floating Left Toolbar */
+.wb-toolbar {
+  position: fixed; top: 64px; left: 12px; bottom: 58px; width: 52px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); overflow-y: auto; z-index: 20;
+}
+.wb-tool-btn {
+  position: relative; width: 40px; height: 36px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.wb-tool-btn:hover { background: var(--bg-hover); }
+.wb-tool-btn.active { background: var(--accent-soft); border-color: var(--accent-color); color: var(--accent-color); }
+.wb-tool-icon { font-size: 16px; line-height: 1; }
+.wb-tool-key { position: absolute; right: 3px; bottom: 2px; font-size: 9px; opacity: 0.65; }
+
+/* Side Panels */
+.wb-side-panel {
+  position: fixed; top: 64px; bottom: 58px; background: var(--bg-surface);
+  border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); overflow-y: auto; z-index: 22;
+}
+.wb-left-panel { left: 72px; width: 280px; }
+.wb-right-panel { right: 12px; width: 244px; padding: 10px; }
+.wb-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-size: 13px;
+}
+.wb-panel-body { padding: 10px; }
+.wb-prop-section { border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 10px; }
+.wb-prop-section:last-child { border-bottom: none; margin-bottom: 0; }
+.wb-prop-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: 8px;
+}
+.wb-prop-subtitle { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin: 8px 0 5px; }
+.wb-prop-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; margin: 6px 0; gap: 8px; }
+.wb-color-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; align-items: center; }
+.wb-color-swatch { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--border-color); cursor: pointer; }
+.wb-color-swatch.active { border-color: var(--accent-color); transform: scale(1.12); }
+.wb-swatch-clear {
+  background-image: linear-gradient(45deg, #cbd5e1 25%, transparent 25%),
+    linear-gradient(-45deg, #cbd5e1 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #cbd5e1 75%),
+    linear-gradient(-45deg, transparent 75%, #cbd5e1 75%);
+  background-size: 8px 8px;
+}
+
+/* Buttons & Inputs */
+.wb-btn {
+  padding: 5px 9px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  background: var(--bg-elevated); cursor: pointer; white-space: nowrap;
+}
+.wb-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.wb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.wb-btn.active, .wb-btn.wb-primary { background: var(--accent-color); border-color: var(--accent-color); color: #ffffff; }
+.wb-btn.wb-danger { color: var(--danger-color); border-color: var(--danger-color); }
+.wb-btn.wb-sm { padding: 4px 7px; font-size: 11px; }
+.wb-btn-group { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.wb-icon-btn { background: transparent; border: none; cursor: pointer; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
+.wb-icon-btn:hover { background: var(--bg-hover); }
+.wb-input, .wb-textarea, select {
+  padding: 5px 8px; border: 1px solid var(--border-color);
+  border-radius: 6px; background: var(--bg-elevated); font-size: 12px;
+}
+.wb-input, .wb-textarea { width: 100%; }
+
+/* Stencil & Template Lists */
+.wb-tabs-row { display: flex; border-bottom: 1px solid var(--border-color); }
+.wb-tab-btn {
+  flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 600;
+  border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.wb-tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
+.wb-stencil-cat { margin-top: 8px; }
+.wb-cat-header {
+  width: 100%; text-align: left; padding: 5px 6px; font-size: 12px; font-weight: 600;
+  background: var(--bg-muted); border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer;
+}
+.wb-stencil-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.wb-stencil-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-elevated); cursor: pointer;
+}
+.wb-stencil-item:hover { border-color: var(--accent-color); background: var(--accent-soft); }
+.wb-stencil-icon { width: 44px; height: 32px; }
+.wb-stencil-icon svg { width: 100%; height: 100%; }
+.wb-stencil-name { font-size: 10px; text-align: center; line-height: 1.1; }
+.wb-template-list, .wb-reusable-list, .wb-layers-list { display: flex; flex-direction: column; gap: 6px; }
+.wb-template-card, .wb-reusable-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 10px;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-elevated);
+  cursor: pointer; text-align: left; font-size: 12px;
+}
+.wb-reusable-card { flex-direction: row; align-items: center; justify-content: space-between; }
+.wb-reusable-insert { background: none; border: none; text-align: left; cursor: pointer; display: flex; flex-direction: column; }
+.wb-template-card span, .wb-reusable-insert span, .wb-muted { font-size: 11px; color: var(--text-secondary); }
+.wb-layer-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px;
+}
+.wb-layer-row.active { border-color: var(--accent-color); background: var(--accent-soft); }
+.wb-layer-select {
+  background: none; border: none; cursor: pointer; text-align: left;
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Bottom Bar */
+.wb-bottombar {
+  position: fixed; left: 12px; right: 12px; bottom: 8px; height: 40px;
+  display: flex; align-items: center; justify-content: space-between; pointer-events: none; z-index: 20;
+}
+.wb-pages-bar, .wb-zoom-bar {
+  pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 9px; box-shadow: var(--shadow-lg);
+}
+.wb-page-tabs { display: flex; align-items: center; gap: 4px; max-width: 62vw; overflow-x: auto; }
+.wb-page-tab {
+  display: flex; align-items: center; gap: 2px; padding: 2px 6px;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-elevated); font-size: 12px;
+}
+.wb-page-tab.active { border-color: var(--accent-color); background: var(--accent-soft); font-weight: 600; }
+.wb-page-select { background: none; border: none; cursor: pointer; padding: 2px 4px; }
+.wb-page-mini { background: none; border: none; cursor: pointer; font-size: 11px; padding: 0 3px; opacity: 0.7; }
+.wb-page-mini:hover { opacity: 1; }
+
+/* Inline Text Editor & Timer */
+.wb-inline-text-editor {
+  position: fixed; z-index: 40; background: rgba(255, 255, 255, 0.95); color: #0f172a;
+  border: 2px solid var(--accent-color); border-radius: 6px; padding: 6px; resize: both; box-shadow: var(--shadow-lg);
+}
+.wb-timer-widget {
+  position: fixed; top: 64px; right: 268px; width: 210px; padding: 10px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: var(--shadow-lg); z-index: 25;
+}
+.wb-timer-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.wb-timer-display { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; margin: 6px 0; }
+.wb-timer-controls { display: flex; gap: 4px; margin-top: 6px; }
+
+/* Presentation Mode */
+body.wb-presenting .wb-topbar, body.wb-presenting .wb-toolbar, body.wb-presenting .wb-side-panel, body.wb-presenting .wb-bottombar {
+  display: none !important;
+}
+.wb-present-bar {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); padding: 8px 14px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); z-index: 35; display: flex; flex-direction: column; gap: 6px; align-items: center;
+}
+.wb-present-controls { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+.wb-slide-strip { display: flex; gap: 5px; max-width: 80vw; overflow-x: auto; }
+.wb-slide-pill { padding: 3px 8px; font-size: 11px; border-radius: 99px; border: 1px solid var(--border-color); background: var(--bg-elevated); cursor: pointer; }
+.wb-slide-pill.active { background: var(--accent-color); color: #ffffff; }
+
+/* Modals & Command Palette */
+.wb-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.wb-modal-box, .wb-palette-box {
+  width: min(540px, 92vw); max-height: 85vh; background: var(--bg-elevated);
+  border: 1px solid var(--border-color); border-radius: 12px; box-shadow: var(--shadow-lg); overflow-y: auto;
+}
+.wb-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
+.wb-modal-header h2 { font-size: 16px; }
+.wb-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.wb-modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.wb-shortcuts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px; }
+.wb-shortcut-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; background: var(--bg-muted); border-radius: 5px; }
+kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 4px; }
+.wb-palette-search { width: 100%; padding: 12px 14px; border: none; border-bottom: 1px solid var(--border-color); font-size: 14px; background: transparent; }
+.wb-palette-list { max-height: 320px; overflow-y: auto; padding: 6px; }
+.wb-palette-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px;
+  border: none; border-radius: 6px; background: transparent; cursor: pointer; font-size: 13px; text-align: left;
+}
+.wb-palette-item.active, .wb-palette-item:hover { background: var(--accent-soft); color: var(--accent-color); }
+.wb-warn-item { padding: 8px 10px; border-radius: 6px; background: rgba(234, 179, 8, 0.16); border: 1px solid #ca8a04; font-size: 12px; }
+.wb-svg-preview-box { max-height: 240px; overflow: auto; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; background: var(--bg-muted); }
+.wb-svg-preview-box svg { max-width: 100%; height: auto; }
+
+/* Toasts & Media Queries */
+.wb-toast-container { position: fixed; bottom: 58px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 60; }
+.wb-toast { padding: 8px 14px; border-radius: 8px; background: var(--bg-elevated); border: 1px solid var(--border-color); box-shadow: var(--shadow-lg); font-size: 12px; font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  .wb-topbar, .wb-toolbar, .wb-side-panel, .wb-bottombar, .wb-present-bar, .wb-timer-widget, .wb-toast-container {
+    display: none !important;
+  }
+  html, body, .wb-app, .wb-canvas-wrap, #wb-canvas {
+    width: 100% !important; height: 100% !important; background: #ffffff !important; page-break-after: always;
+  }
+}

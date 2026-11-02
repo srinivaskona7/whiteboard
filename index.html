@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Classroom Whiteboard + Diagramming Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="wb-app" class="wb-app">
+      <!-- Top Action Bar -->
+      <header class="wb-topbar" role="banner">
+        <div class="wb-brand">
+          <span class="wb-brand-logo" aria-hidden="true">◈</span>
+          <span class="wb-brand-title">StudioBoard</span>
+        </div>
+        <div id="wb-topbar-actions" class="wb-topbar-actions" role="toolbar" aria-label="Document and Teaching Actions"></div>
+      </header>
+
+      <!-- Floating Left Primary Tool Dock -->
+      <nav id="wb-toolbar" class="wb-toolbar" role="toolbar" aria-label="Drawing Tools"></nav>
+
+      <!-- Left Drawer: Stencils, Reusable Library & Templates -->
+      <aside id="wb-library-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Stencil Library and Templates"></aside>
+
+      <!-- Left Drawer: Layers Panel -->
+      <aside id="wb-layers-panel" class="wb-side-panel wb-left-panel wb-hidden" aria-label="Layers Panel"></aside>
+
+      <!-- Right Contextual Properties Panel -->
+      <aside id="wb-props-panel" class="wb-side-panel wb-right-panel" aria-label="Properties Panel"></aside>
+
+      <!-- Classroom Timer Overlay -->
+      <div id="wb-timer-widget" class="wb-timer-widget wb-hidden" role="region" aria-label="Classroom Countdown Timer"></div>
+
+      <!-- Main Interactive Canvas -->
+      <main class="wb-canvas-wrap">
+        <canvas id="wb-canvas" tabindex="0" aria-label="Whiteboard Canvas"></canvas>
+      </main>
+
+      <!-- Bottom Bar: Pages Tabs + Zoom/Undo Controls -->
+      <footer class="wb-bottombar">
+        <div id="wb-pages-bar" class="wb-pages-bar"></div>
+        <div id="wb-zoom-bar" class="wb-zoom-bar" role="toolbar" aria-label="Undo Redo and Zoom Controls"></div>
+      </footer>
+
+      <!-- Presentation Mode Bar -->
+      <div id="wb-present-bar" class="wb-present-bar wb-hidden" role="region" aria-label="Presentation Controls"></div>
+
+      <!-- Command Palette Modal (Ctrl/Cmd+K) -->
+      <div id="wb-palette-backdrop" class="wb-backdrop wb-hidden" role="dialog" aria-modal="true" aria-label="Command Palette">
+        <div id="wb-palette-box" class="wb-palette-box"></div>
+      </div>
+
+      <!-- Dialog Modal -->
+      <div id="wb-modal-backdrop" class="wb-backdrop wb-hidden" role="dialog" aria-modal="true" aria-label="Dialog">
+        <div id="wb-modal-box" class="wb-modal-box"></div>
+      </div>
+
+      <!-- Toast Notifications -->
+      <div id="wb-toast-container" class="wb-toast-container" aria-live="polite"></div>
+
+      <!-- Hidden File Inputs -->
+      <input type="file" id="wb-file-open-json" accept=".json,.whiteboard.json" class="wb-hidden" />
+      <input type="file" id="wb-file-insert-image" accept="image/*" class="wb-hidden" />
+      <input type="file" id="wb-file-import-lib" accept=".json,.library.json" class="wb-hidden" />
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
