@@ -542,6 +542,93 @@ function decodeWsFrames(buffer) {
   return { messages, remaining: buffer.subarray(offset) };
 }
 
+export function connectNodeWsClient(wsUrl) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(wsUrl.replace(/^ws:/, 'http:'));
+    const key = crypto.randomBytes(16).toString('base64');
+    const req = http.request({
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: `${parsed.pathname}${parsed.search}`,
+      method: 'GET',
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': key,
+      },
+    });
+    req.on('error', reject);
+    req.on('upgrade', (_res, socket, head) => {
+      const inbox = [];
+      const waiters = [];
+      let recvBuf = head && head.length > 0 ? Buffer.from(head) : Buffer.alloc(0);
+
+      const processBuffer = () => {
+        const { messages, remaining } = decodeWsFrames(recvBuf);
+        recvBuf = remaining;
+        for (const m of messages) {
+          if (m.type === 'text') {
+            try {
+              const msg = JSON.parse(m.text);
+              inbox.push(msg);
+              for (let i = waiters.length - 1; i >= 0; i--) {
+                if (waiters[i].pred(msg)) {
+                  const w = waiters.splice(i, 1)[0];
+                  w.resolve(msg);
+                }
+              }
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      };
+
+      if (recvBuf.length > 0) processBuffer();
+      socket.on('error', () => {});
+      socket.on('data', (chunk) => {
+        recvBuf = Buffer.concat([recvBuf, chunk]);
+        processBuffer();
+      });
+
+      const waitFor = (pred, timeoutMs = 2500) => {
+        const found = inbox.find(pred);
+        if (found) return Promise.resolve(found);
+        return new Promise((res, rej) => {
+          const t = setTimeout(() => rej(new Error('WebSocket waitFor timeout')), timeoutMs);
+          waiters.push({
+            pred,
+            resolve: (m) => {
+              clearTimeout(t);
+              res(m);
+            },
+          });
+        });
+      };
+
+      const wsAdapter = {
+        send(strOrObj) {
+          if (!socket.destroyed) socket.write(encodeWsFrame(strOrObj));
+        },
+        close() {
+          try {
+            if (!socket.destroyed) {
+              socket.write(Buffer.from([0x88, 0x00]));
+              socket.end();
+            }
+          } catch {
+            // Ignore
+          }
+        },
+      };
+
+      resolve({ ws: wsAdapter, inbox, waitFor });
+    });
+    req.end();
+  });
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];

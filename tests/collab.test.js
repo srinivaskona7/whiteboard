@@ -53,7 +53,7 @@ import {
   getIconProvenance,
 } from '../stencils/index.js';
 import { parseShareRoute } from '../scene/collab-client.js';
-import { createStandaloneCollabServer } from '../server/collab-server.js';
+import { createStandaloneCollabServer, connectNodeWsClient } from '../server/collab-server.js';
 
 describe('1. Invisible Icon Insertion Fix, Geometry Validation & Single-Step Undo', () => {
   test('EC2 and S3 Connected Flow inserts visibly with finite coordinates, serializes cleanly, and undoes in one step', () => {
@@ -674,39 +674,10 @@ describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Brea
       assert.equal(createRes.status, 201);
       const room = await createRes.json();
 
-      const connectClient = (queryObj) =>
-        new Promise((resolve, reject) => {
-          const qs = new URLSearchParams(queryObj).toString();
-          const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?${qs}`);
-          const inbox = [];
-          const waiters = [];
-          ws.addEventListener('message', (ev) => {
-            const msg = JSON.parse(String(ev.data));
-            inbox.push(msg);
-            for (let i = waiters.length - 1; i >= 0; i--) {
-              if (waiters[i].pred(msg)) {
-                const w = waiters.splice(i, 1)[0];
-                w.resolve(msg);
-              }
-            }
-          });
-          const waitFor = (pred, timeoutMs = 2000) => {
-            const found = inbox.find(pred);
-            if (found) return Promise.resolve(found);
-            return new Promise((res, rej) => {
-              const t = setTimeout(() => rej(new Error('WebSocket waitFor timeout')), timeoutMs);
-              waiters.push({
-                pred,
-                resolve: (m) => {
-                  clearTimeout(t);
-                  res(m);
-                },
-              });
-            });
-          };
-          ws.addEventListener('open', () => resolve({ ws, inbox, waitFor }));
-          ws.addEventListener('error', reject);
-        });
+      const connectClient = (queryObj) => {
+        const qs = new URLSearchParams(queryObj).toString();
+        return connectNodeWsClient(`ws://127.0.0.1:${port}/ws?${qs}`);
+      };
 
       const teacher = await connectClient({
         roomId: room.roomId,
