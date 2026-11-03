@@ -1,6 +1,7 @@
 // tools/connector.js
 import { createElement } from '../scene/model.js';
 import { snapAngle } from '../scene/geometry.js';
+import { applyArrowQuickPreset } from '../scene/arrow-presets.js';
 import {
   findHoverPort,
   bindConnectorEndpoint,
@@ -13,6 +14,14 @@ export class ConnectorTool {
     this.app = app;
     this.activeConnector = null;
     this.startedFromPort = null;
+  }
+
+  // Apply a quick preset chosen from the palette/context menu to the next arrow.
+  applyPendingPreset(conn) {
+    const presetId = this.app.pendingArrowPreset;
+    if (!presetId || !conn || conn.type !== 'arrow') return;
+    applyArrowQuickPreset(conn, presetId);
+    this.app.pendingArrowPreset = null;
   }
 
   cancel() {
@@ -41,6 +50,7 @@ export class ConnectorTool {
       startArrow: style.startArrow || 'none',
       endArrow: style.endArrow || 'arrow',
     });
+    this.applyPendingPreset(conn);
     bindConnectorEndpoint(conn, 'start', portInfo.element, portInfo.port);
     page.elements.push(conn);
     this.activeConnector = conn;
@@ -69,6 +79,7 @@ export class ConnectorTool {
       startArrow: style.startArrow || 'none',
       endArrow: type === 'line' ? 'none' : style.endArrow || 'arrow',
     });
+    this.applyPendingPreset(conn);
 
     if (portHit) {
       bindConnectorEndpoint(

@@ -2,6 +2,8 @@
 import { TOOL_REGISTRY, getShortcutLabel } from './registry.js';
 import { ALL_STENCILS } from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
+import { BRUSH_PRESETS } from '../scene/brushes.js';
+import { ARROW_QUICK_PRESETS } from '../scene/arrow-presets.js';
 import { escapeXml } from '../render/svg-export.js';
 
 export function initCommandPalette(app) {
@@ -44,6 +46,8 @@ export function initCommandPalette(app) {
 
     const actions = [
       { id: 'act:image', title: 'Insert: Image from File', shortcut: 'I', run: () => app.openImageFilePicker() },
+      { id: 'act:tablet-test', title: 'Drawing: Tablet Test & Pressure Calibration…', shortcut: '', run: () => app.dialogs.openTabletTestModal() },
+      { id: 'act:table-insert', title: 'Insert: Table… (rows, columns, TSV paste)', shortcut: 'B', run: () => app.dialogs.openTableInsertModal() },
       { id: 'act:undo', title: 'Action: Undo', shortcut: undoKey, run: () => app.undo() },
       { id: 'act:redo', title: 'Action: Redo', shortcut: redoKey, run: () => app.redo() },
       { id: 'act:fit', title: 'View: Fit to Content', shortcut: '1', run: () => app.fitToContent() },
@@ -72,8 +76,38 @@ export function initCommandPalette(app) {
       { id: 'act:share', title: 'File: Share by URL Hash', shortcut: '', run: () => app.dialogs.openShareUrlModal() },
       { id: 'act:group', title: 'Selection: Group Elements', shortcut: groupKey, run: () => app.groupSelection() },
       { id: 'act:ungroup', title: 'Selection: Ungroup Elements', shortcut: ungroupKey, run: () => app.ungroupSelection() },
+      {
+        id: 'act:code-editor',
+        title: 'Edit: Open Expanded Code Editor for Selected Block',
+        shortcut: '',
+        run: () => {
+          const page = app.getPage();
+          const el = page.elements.find((e) => app.selectedIds.has(e.id) && e.type === 'code');
+          if (el) app.dialogs?.openCodeEditorModal(el);
+          else app.dialogs?.showToast('Select a code block first.');
+        },
+      },
+      { id: 'act:select-all', title: 'Selection: Select All Objects', shortcut: 'Ctrl/⌘A', run: () => app.selectAll() },
     ];
     cmds.push(...actions);
+
+    for (const preset of BRUSH_PRESETS) {
+      cmds.push({
+        id: `brush:${preset.id}`,
+        title: `Drawing Preset: ${preset.name}`,
+        shortcut: '',
+        run: () => app.setBrushPreset(preset.id),
+      });
+    }
+
+    for (const arrowPreset of ARROW_QUICK_PRESETS) {
+      cmds.push({
+        id: `arrow:${arrowPreset.id}`,
+        title: `Arrow Preset: ${arrowPreset.name}`,
+        shortcut: '',
+        run: () => app.applyArrowPresetToSelection(arrowPreset.id),
+      });
+    }
 
     for (const st of ALL_STENCILS) {
       cmds.push({

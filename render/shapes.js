@@ -279,12 +279,139 @@ export function drawMathTool(ctx, el) {
   ctx.restore();
 }
 
+// Wraps a cell value to the available width. Long unbroken tokens (commands, URLs)
+// are hard-broken rather than squashed by canvas fillText's maxWidth behaviour.
+export function wrapCellLines(ctx, text, maxWidth) {
+  const raw = String(text ?? '');
+  if (!raw) return [''];
+  const lines = [];
+  for (const paragraph of raw.split(String.fromCharCode(10))) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push('');
+      continue;
+    }
+    let cur = '';
+    for (const word of words) {
+      const candidate = cur ? `${cur} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        cur = candidate;
+        continue;
+      }
+      if (cur) {
+        lines.push(cur);
+        cur = '';
+      }
+      if (ctx.measureText(word).width <= maxWidth) {
+        cur = word;
+      } else {
+        // Hard-break an over-long token across as many lines as it needs.
+        let chunk = '';
+        for (const ch of word) {
+          if (ctx.measureText(chunk + ch).width > maxWidth && chunk) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk += ch;
+          }
+        }
+        cur = chunk;
+      }
+    }
+    if (cur) lines.push(cur);
+  }
+  return lines;
+}
+
+// Resolves the column widths and row heights of a table into absolute spans.
+// `colWidths` / `rowHeights` hold optional relative weights; anything missing,
+// non-numeric or non-positive falls back to an equal share so a partially
+// hand-edited document can never render a zero-width cell.
+export function tableGeometry(el) {
+  const rows = Math.max(1, el.rows || 1);
+  const cols = Math.max(1, el.cols || 1);
+  const w = Math.max(1, el.w || 1);
+  const h = Math.max(1, el.h || 1);
+  const span = (weights, n, total) => {
+    const usable =
+      Array.isArray(weights) &&
+      weights.length === n &&
+      weights.every((v) => Number.isFinite(v) && v > 0);
+    const values = usable ? weights.map(Number) : Array(n).fill(1);
+    const sum = values.reduce((a, b) => a + b, 0) || 1;
+    const sizes = values.map((v) => (v / sum) * total);
+    const offsets = [0];
+    for (let i = 0; i < n; i++) offsets.push(offsets[i] + sizes[i]);
+    return { sizes, offsets };
+  };
+  const colSpan = span(el.colWidths, cols, w);
+  const rowSpan = span(el.rowHeights, rows, h);
+  return {
+    rows,
+    cols,
+    cellW: colSpan.sizes,
+    cellH: rowSpan.sizes,
+    xs: colSpan.offsets.map((v) => el.x + v),
+    ys: rowSpan.offsets.map((v) => el.y + v),
+  };
+}
+
+export function tableCellPadding(el) {
+  const p = Number(el.cellPadding);
+  return Number.isFinite(p) ? Math.min(24, Math.max(0, p)) : 6;
+}
+
+// Grows the table so no cell content is clipped. Uses the real canvas metrics,
+// so it agrees with what the renderer measured rather than estimating.
+export function fitTableToContent(ctx, el, { maxWidth = 1600, maxHeight = 1200 } = {}) {
+  const geo = tableGeometry(el);
+  const fontSize = el.fontSize || 15;
+  const lineH = fontSize * 1.25;
+  const pad = tableCellPadding(el);
+  ctx.save();
+  const hasHeader = el.headerRow !== false;
+  const fontFor = (r) => `${hasHeader && r === 0 ? '600' : '400'} ${fontSize}px ${FONT_MAP.sans}`;
+  const colWidths = [];
+  for (let c = 0; c < geo.cols; c++) {
+    let widest = 24;
+    for (let r = 0; r < geo.rows; r++) {
+      ctx.font = fontFor(r);
+      const val = String(el.cells?.[r]?.[c] ?? '');
+      for (const line of val.split(String.fromCharCode(10))) {
+        widest = Math.max(widest, ctx.measureText(line).width);
+      }
+    }
+    colWidths.push(Math.min(maxWidth, widest + pad * 2 + 2));
+  }
+  const rowHeights = [];
+  for (let r = 0; r < geo.rows; r++) {
+    // The renderer budgets (cellH - 8) / lineH lines, so a fitted row must leave
+    // that 8px headroom or Fit to content would immediately ellipsise its own text.
+    let tallest = lineH + 8 + pad * 2;
+    ctx.font = fontFor(r);
+    for (let c = 0; c < geo.cols; c++) {
+      const val = String(el.cells?.[r]?.[c] ?? '');
+      const lines = wrapCellLines(ctx, val, Math.max(8, colWidths[c] - pad * 2));
+      const explicitBreaks = val.split(String.fromCharCode(10)).length;
+      tallest = Math.max(tallest, Math.max(lines.length, explicitBreaks) * lineH + 8 + pad * 2);
+    }
+    rowHeights.push(Math.min(maxHeight, tallest));
+  }
+  ctx.restore();
+  el.colWidths = colWidths;
+  el.rowHeights = rowHeights;
+  el.w = Math.max(40, Math.round(colWidths.reduce((a, b) => a + b, 0)));
+  el.h = Math.max(32, Math.round(rowHeights.reduce((a, b) => a + b, 0)));
+  return { w: el.w, h: el.h };
+}
+
 export function drawTableElement(ctx, el, themeName) {
-  const { x, y, w, h, rows = 3, cols = 3, cells = [] } = el;
+  const { x, y, w, h, cells = [] } = el;
+  const geo = tableGeometry(el);
+  const { rows, cols, xs, ys } = geo;
   const stroke = resolveThemeColor(el.stroke || '#1e293b', themeName, 'stroke');
   const fill = resolveThemeColor(el.fill || '#ffffff', themeName, 'fill');
-  const cellW = w / cols;
-  const cellH = h / rows;
+  const hasHeader = el.headerRow !== false;
 
   ctx.save();
   ctx.fillStyle = fill === 'transparent' ? (themeName === 'dark' ? '#1e293b' : '#ffffff') : fill;
@@ -295,30 +422,78 @@ export function drawTableElement(ctx, el, themeName) {
   ctx.fill();
   ctx.stroke();
 
-  // Header tint
-  ctx.fillStyle = themeName === 'dark' ? 'rgba(148, 163, 184, 0.16)' : 'rgba(226, 232, 240, 0.7)';
-  ctx.fillRect(x, y, w, cellH);
+  // Alternate-row tint before the grid lines so the rules stay crisp.
+  if (el.striped) {
+    ctx.fillStyle = themeName === 'dark' ? 'rgba(148, 163, 184, 0.09)' : 'rgba(241, 245, 249, 0.85)';
+    for (let r = hasHeader ? 1 : 0; r < rows; r += 2) {
+      ctx.fillRect(x + 1, ys[r], w - 2, geo.cellH[r] - 1);
+    }
+  }
+
+  // Header tint (only when the table actually has a header row).
+  if (hasHeader) {
+    ctx.fillStyle = themeName === 'dark' ? 'rgba(148, 163, 184, 0.16)' : 'rgba(226, 232, 240, 0.7)';
+    ctx.fillRect(x, y, w, geo.cellH[0]);
+  }
 
   ctx.beginPath();
   for (let r = 1; r < rows; r++) {
-    ctx.moveTo(x, y + r * cellH);
-    ctx.lineTo(x + w, y + r * cellH);
+    ctx.moveTo(x, ys[r]);
+    ctx.lineTo(x + w, ys[r]);
   }
   for (let c = 1; c < cols; c++) {
-    ctx.moveTo(x + c * cellW, y);
-    ctx.lineTo(x + c * cellW, y + h);
+    ctx.moveTo(xs[c], y);
+    ctx.lineTo(xs[c], y + h);
   }
   ctx.stroke();
 
   ctx.fillStyle = resolveThemeColor(el.textColor || '#1e293b', themeName, 'text');
   const fontSize = el.fontSize || 15;
+  const lineH = fontSize * 1.25;
+  const padX = tableCellPadding(el);
+  const align = el.textAlign || 'center';
+  const valign = el.valign || 'middle';
+
   for (let r = 0; r < rows; r++) {
-    ctx.font = `${r === 0 ? '600' : '400'} ${fontSize}px ${FONT_MAP.sans}`;
+    ctx.font = `${hasHeader && r === 0 ? '600' : '400'} ${fontSize}px ${FONT_MAP.sans}`;
     for (let c = 0; c < cols; c++) {
       const val = cells[r]?.[c] ?? '';
-      ctx.textAlign = 'center';
+      const cellX = xs[c];
+      const cellY = ys[r];
+      const cellW = geo.cellW[c];
+      const cellH = geo.cellH[r];
+      const innerW = Math.max(8, cellW - padX * 2);
+      const lines = wrapCellLines(ctx, val, innerW);
+      const maxLines = Math.max(1, Math.floor((cellH - 8) / lineH));
+      const visible = lines.slice(0, maxLines);
+      if (lines.length > maxLines && visible.length > 0) {
+        let last = visible[visible.length - 1];
+        while (last.length > 1 && ctx.measureText(`${last}…`).width > innerW) {
+          last = last.slice(0, -1);
+        }
+        visible[visible.length - 1] = `${last}…`;
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(cellX + 1, cellY + 1, cellW - 2, cellH - 2);
+      ctx.clip();
+      ctx.textAlign = align;
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(val), x + c * cellW + cellW / 2, y + r * cellH + cellH / 2, cellW - 8);
+      const totalH = visible.length * lineH;
+      let startY;
+      if (valign === 'top') startY = cellY + 8 + lineH / 2;
+      else if (valign === 'bottom') startY = cellY + cellH - 6 - totalH + lineH / 2;
+      else startY = cellY + cellH / 2 - totalH / 2 + lineH / 2;
+      const tx =
+        align === 'left'
+          ? cellX + padX
+          : align === 'right'
+            ? cellX + cellW - padX
+            : cellX + cellW / 2;
+      visible.forEach((line, idx) => {
+        ctx.fillText(line, tx, startY + idx * lineH);
+      });
+      ctx.restore();
     }
   }
   ctx.restore();
@@ -388,11 +563,41 @@ export function parseHighlightSet(spec = '') {
   return set;
 }
 
+// Roughness is a presentation-only property of a connector: 0 clean, 1 sketch,
+// 2 rough. It never changes the route handed to hit testing or bindings.
+export function connectorRoughness(el) {
+  if (Number.isFinite(el?.roughness)) {
+    return Math.max(0, Math.min(2, Math.round(el.roughness)));
+  }
+  return el?.sloppy ? 1 : 0;
+}
+
+export function roughenConnectorPoints(el, pts) {
+  const level = connectorRoughness(el);
+  if (level === 0 || !Array.isArray(pts) || pts.length < 3) return pts;
+  const amp = level >= 2 ? 3.2 : 1.4;
+  const seed = hashId(el.id || '');
+  return pts.map((p, i) => {
+    if (i === 0 || i === pts.length - 1) return p;
+    const prev = pts[i - 1];
+    const next = pts[i + 1];
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const offset = seededOffset(seed + i * 17, i, amp);
+    return {
+      x: p.x + (-dy / len) * offset,
+      y: p.y + (dx / len) * offset,
+    };
+  });
+}
+
 export function drawConnectorElement(ctx, el, page, themeTokens) {
   const stroke = resolveThemeColor(el.stroke || '#1e293b', themeTokens.name, 'stroke');
   const sw = el.strokeWidth || 2;
   const pts = getConnectorPoints(el, page);
   if (pts.length < 2) return;
+  const sketchPts = roughenConnectorPoints(el, pts);
 
   ctx.save();
   ctx.strokeStyle = stroke;
@@ -402,19 +607,32 @@ export function drawConnectorElement(ctx, el, page, themeTokens) {
   ctx.setLineDash(getDashArray(el.strokeStyle, sw));
 
   ctx.beginPath();
-  if (el.routing === 'curved' && pts.length === 3) {
-    ctx.moveTo(pts[0].x, pts[0].y);
-    ctx.quadraticCurveTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y);
-  } else if (el.routing === 'rounded-elbow' && pts.length >= 3) {
-    strokeRoundedElbowCanvasPath(ctx, pts, Number(el.cornerRadius) || 14);
+  if (el.routing === 'curved' && sketchPts.length === 3) {
+    ctx.moveTo(sketchPts[0].x, sketchPts[0].y);
+    ctx.quadraticCurveTo(sketchPts[1].x, sketchPts[1].y, sketchPts[2].x, sketchPts[2].y);
+  } else if (el.routing === 'rounded-elbow' && sketchPts.length >= 3) {
+    strokeRoundedElbowCanvasPath(ctx, sketchPts, Number(el.cornerRadius) || 14);
   } else {
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.moveTo(sketchPts[0].x, sketchPts[0].y);
+    for (let i = 1; i < sketchPts.length; i++) {
+      ctx.lineTo(sketchPts[i].x, sketchPts[i].y);
     }
   }
   ctx.stroke();
   ctx.setLineDash([]);
+
+  // Rough strokes get a second, lighter pass so the line reads as ink rather
+  // than a wobbling rectangle. Endpoints stay anchored.
+  if (connectorRoughness(el) >= 2 && el.routing !== 'curved') {
+    ctx.save();
+    ctx.globalAlpha *= 0.55;
+    ctx.beginPath();
+    const second = roughenConnectorPoints({ ...el, id: `${el.id}-b` }, pts);
+    ctx.moveTo(second[0].x, second[0].y);
+    for (let i = 1; i < second.length; i++) ctx.lineTo(second[i].x, second[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Arrowheads calculated from non-zero segment or curve tangent
   if (el.startArrow && el.startArrow !== 'none') {

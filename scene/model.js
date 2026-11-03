@@ -21,9 +21,11 @@ export const DEFAULT_STYLE = {
   roundness: 0,
   sloppy: false,
   autoGrow: true,
+  brush: null, // drawing-preset id for pen/highlighter strokes
+  smoothing: 'adaptive', // 'off' | 'adaptive' | 'stabilizer'
   startArrow: 'none', // 'none' | 'arrow' | 'triangle' | 'diamond' | 'circle' | 'bar'
   endArrow: 'arrow',
-  routing: 'orthogonal', // 'straight' | 'orthogonal' | 'curved'
+  routing: 'orthogonal', // 'straight' | 'orthogonal' | 'curved' | 'rounded-elbow' | 'auto'
 };
 
 export function createElement(type, props = {}) {
@@ -74,6 +76,8 @@ export function createElement(type, props = {}) {
     textAlign: props.textAlign ?? (type === 'text' || isCode ? 'left' : DEFAULT_STYLE.textAlign),
     textColor: props.textColor ?? (isCode ? '#f8fafc' : DEFAULT_STYLE.textColor),
     autoGrow: props.autoGrow ?? DEFAULT_STYLE.autoGrow,
+    brush: props.brush ?? (isFreehand ? (type === 'highlighter' ? 'highlighter' : 'technical') : null),
+    smoothing: props.smoothing ?? DEFAULT_STYLE.smoothing,
     groupId: props.groupId ?? null,
     containerId: props.containerId ?? null,
     locked: Boolean(props.locked),
@@ -173,8 +177,15 @@ export function createElement(type, props = {}) {
   }
 
   if (isTable) {
-    const rows = props.rows ?? 3;
-    const cols = props.cols ?? 3;
+    // A document can contain anything; rows/cols must be whole numbers in range or
+    // Array.from throws / OOMs and the canvas stops rendering entirely.
+    const dim = (v, fallback) => {
+      const n = Math.floor(Number(v));
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(1, Math.min(200, n));
+    };
+    const rows = dim(props.rows, 3);
+    const cols = dim(props.cols, 3);
     base.rows = rows;
     base.cols = cols;
     base.cells =
@@ -182,6 +193,12 @@ export function createElement(type, props = {}) {
       Array.from({ length: rows }, (_, r) =>
         Array.from({ length: cols }, (__, c) => (r === 0 ? `Header ${c + 1}` : `Cell ${r},${c + 1}`))
       );
+    base.headerRow = props.headerRow !== false;
+    base.striped = Boolean(props.striped);
+    base.valign = props.valign ?? 'middle';
+    if (Number.isFinite(props.cellPadding)) base.cellPadding = props.cellPadding;
+    if (Array.isArray(props.colWidths)) base.colWidths = props.colWidths.map(Number);
+    if (Array.isArray(props.rowHeights)) base.rowHeights = props.rowHeights.map(Number);
   }
 
   if (isCode) {
@@ -220,7 +237,9 @@ export function createElement(type, props = {}) {
   }
 
   base.updatedAt = props.updatedAt ?? Date.now();
-  return base;
+  // Unknown-but-stored fields (code language/wrap, raw pressure samples, future
+  // additions) must survive a load/save cycle; normalised fields still win.
+  return { ...props, ...base };
 }
 
 export function getConnectorDirectionPreset(el) {
@@ -757,6 +776,16 @@ export function autoGrowShapeForText(el, text) {
   if (el.type === 'text') {
     el.w = Math.max(40, neededW - 16);
     el.h = Math.max(28, neededH - 12);
+    return;
+  }
+
+  // Code blocks keep a fixed top-left anchor. Growing symmetrically used to push the
+  // block left, underneath the tool rail, where the content could not be reached.
+  if (el.type === 'code') {
+    const codeW = Math.ceil(maxChars * fontSize * 0.62 + 64);
+    const codeH = Math.ceil(rawLines.length * lineHeight + 52);
+    el.w = Math.max(el.w, codeW);
+    el.h = Math.max(el.h, codeH);
     return;
   }
 

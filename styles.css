@@ -87,6 +87,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .wb-save-status[data-state="saving"], .wb-status-pill[data-state="saving"] { color: #ca8a04; border-color: #eab308; }
 .wb-save-status[data-state="error"], .wb-status-pill[data-state="error"] { color: var(--danger-color); border-color: var(--danger-color); }
+.wb-save-status[data-state="conflict"], .wb-status-pill[data-state="conflict"] { color: #b45309; border-color: #f59e0b; }
 .wb-preset-selector {
   display: inline-flex; align-items: center; gap: 2px; padding: 2px;
   background: var(--bg-muted); border: 1px solid var(--border-color); border-radius: 8px;
@@ -312,6 +313,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: 11px; font-weight: 700; background: var(--bg-muted); border-radius: 5px;
 }
 .wb-insert-wrap { position: relative; }
+.wb-split-wrap { position: relative; display: flex; align-items: stretch; gap: 0; }
+.wb-split-wrap .wb-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.wb-split-wrap .wb-split-caret {
+  min-width: 14px; padding: 0 2px; border-top-left-radius: 0; border-bottom-left-radius: 0;
+  border-left: 1px solid var(--border-subtle); font-size: 9px; line-height: 1;
+}
+.wb-arrow-popover { width: 252px; }
+.wb-arrow-card { gap: 8px; align-items: center; }
+.wb-arrow-preview { width: 58px; height: 26px; flex: 0 0 auto; color: currentColor; }
+.wb-arrow-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 4px 0 6px; }
+.wb-arrow-preset-grid .wb-arrow-card {
+  justify-content: flex-start; text-align: left; font-size: 11px; padding: 3px 5px; gap: 6px; min-height: 32px;
+}
+.wb-arrow-preset-grid .wb-arrow-preview { width: 44px; height: 22px; }
+.wb-tablet-stage { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; margin: 8px 0; }
+.wb-tablet-stage canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+.wb-tablet-readout {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12px;
+  color: var(--text-secondary); margin-bottom: 6px;
+}
+.wb-tablet-readout strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .wb-insert-popover {
   position: fixed; left: 68px; bottom: 56px; width: 224px; padding: 8px;
   background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px;
@@ -427,7 +449,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .wb-timer-controls, .wb-timer-presets, .wb-timer-custom { display: flex; gap: 4px; margin-top: 6px; justify-content: center; }
 
 /* Presentation Mode & Teaching Focus Mode */
-body.wb-presenting .wb-topbar, body.wb-presenting .wb-toolbar, body.wb-presenting .wb-side-panel, body.wb-presenting .wb-bottombar, body.wb-presenting .wb-pages-bar {
+body.wb-presenting .wb-topbar, body.wb-presenting .wb-toolbar, body.wb-presenting .wb-side-panel, body.wb-presenting .wb-bottombar, body.wb-presenting .wb-pages-bar, body.wb-presenting .wb-canvas-settings-chip {
   display: none !important;
 }
 body.wb-focus-mode .wb-side-panel,
@@ -595,6 +617,68 @@ kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var
   width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px; line-height: 1.45; white-space: pre; overflow: auto; tab-size: 4; resize: vertical;
 }
+
+/* Drawing presets & eraser context */
+.wb-brush-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 6px; }
+.wb-brush-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-elevated);
+  cursor: pointer; color: var(--text-primary);
+}
+.wb-brush-card:hover { border-color: var(--accent-color); }
+.wb-brush-card.active { border-color: var(--accent-color); background: var(--accent-soft); }
+.wb-brush-preview { width: 72px; height: 26px; pointer-events: none; }
+.wb-brush-name { font-size: 9px; line-height: 1.1; text-align: center; }
+.wb-eraser-preview-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.wb-eraser-dot {
+  display: inline-block; flex: 0 0 auto; border-radius: 50%;
+  border: 1px dashed var(--text-secondary); background: var(--bg-muted); max-width: 44px; max-height: 44px;
+}
+.wb-canvas-settings-chip {
+  position: absolute; top: 74px; right: 16px; z-index: 14;
+  padding: 6px 10px; border-radius: 18px; border: 1px solid var(--border-color);
+  background: var(--bg-elevated); color: var(--text-primary); font-size: 12px;
+  box-shadow: var(--shadow-md); cursor: pointer;
+}
+.wb-canvas-settings-chip:hover { border-color: var(--accent-color); }
+
+/* Right-click context menu */
+.wb-context-menu {
+  position: fixed; z-index: 80; min-width: 220px; max-width: 280px; max-height: 70vh;
+  overflow-y: auto; padding: 4px; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-elevated); box-shadow: var(--shadow-lg); outline: none;
+}
+.wb-context-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+  border: 0; border-radius: 5px; background: transparent; color: var(--text-primary);
+  font-size: 12px; text-align: left; cursor: pointer;
+}
+.wb-context-item:hover, .wb-context-item.active { background: var(--accent-soft); }
+.wb-context-item.disabled { opacity: 0.48; cursor: not-allowed; }
+.wb-context-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-context-shortcut { font-size: 10px; color: var(--text-secondary); }
+.wb-context-arrow { color: var(--text-secondary); font-size: 14px; line-height: 1; }
+.wb-context-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
+
+/* Expanded code editor */
+.wb-code-editor-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.wb-code-editor-shell {
+  display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden;
+  background: #0f172a; max-height: 46vh;
+}
+.wb-code-gutter {
+  margin: 0; padding: 10px 8px; min-width: 38px; text-align: right; overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+  color: #64748b; background: #0b1220; user-select: none;
+}
+.wb-code-source {
+  flex: 1; margin: 0; padding: 10px; border: 0; resize: none; min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+  color: #f8fafc; background: transparent; white-space: pre; tab-size: 2; outline: none;
+}
+.wb-code-editor-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+
 
 @media print {
   .wb-topbar, .wb-toolbar, .wb-side-panel, .wb-bottombar, .wb-present-bar, .wb-timer-widget, .wb-toast-container, .wb-notebook {

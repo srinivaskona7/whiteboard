@@ -3,6 +3,25 @@ import { createElement, handleAnchorDeletion } from '../scene/model.js';
 import { simplifyFreehandPoints, snapPointToGrid, syncFreehandBounds } from '../scene/geometry.js';
 import { hitTestScene } from '../scene/hit.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
+import { getBrushPreset, resolveBrush } from '../scene/brushes.js';
+
+const MAX_RAW_POINTS = 1500;
+
+// Speed-aware jitter filter. Corners (large direction change) pass through unfiltered
+// so handwriting keeps its sharp turns.
+function smoothPoint(previous, raw, mode) {
+  if (mode === 'off' || !previous) return { x: raw.x, y: raw.y };
+  const dx = raw.x - previous.x;
+  const dy = raw.y - previous.y;
+  const dist = Math.hypot(dx, dy);
+  if (mode === 'stabilizer') {
+    const alpha = 0.34;
+    return { x: previous.x + dx * alpha, y: previous.y + dy * alpha };
+  }
+  // adaptive: fast movement follows closely, slow movement is filtered more
+  const alpha = Math.max(0.32, Math.min(0.92, 0.32 + dist / 28));
+  return { x: previous.x + dx * alpha, y: previous.y + dy * alpha };
+}
 
 export class DrawTool {
   constructor(app) {
@@ -12,6 +31,25 @@ export class DrawTool {
     this.startWorld = { x: 0, y: 0 };
     this.isErasing = false;
     this.erasedAny = false;
+    this.lastFiltered = null;
+    this.rawPoints = [];
+  }
+
+  brushForCurrentTool() {
+    const tool = this.app.activeTool;
+    const presetId =
+      this.app.currentBrush && this.app.currentBrush !== 'eraser'
+        ? this.app.currentBrush
+        : tool === 'highlighter'
+          ? 'highlighter'
+          : 'technical';
+    return getBrushPreset(presetId) || resolveBrush({ type: tool });
+  }
+
+  eraserSettings() {
+    return (
+      this.app.eraserSettings || { size: 12, mode: 'object', scope: 'all' }
+    );
   }
 
   onPointerDown(world, ev = {}) {
@@ -26,20 +64,36 @@ export class DrawTool {
     if (tool === 'eraser') {
       this.isErasing = true;
       this.erasedAny = false;
+      this.app.eraserCursor = { x: world.x, y: world.y, active: true };
       this.eraseAt(world);
       return;
     }
 
     if (tool === 'pen' || tool === 'highlighter') {
       const isFading = Boolean(this.app.annotationMode || this.app.fadingInk);
-      const pressure = Number.isFinite(ev?.pressure) && ev.pressure > 0 ? ev.pressure : 0.5;
+      const preset = this.brushForCurrentTool();
+      const isPenInput = ev?.pointerType === 'pen';
+      const pressure =
+        isPenInput && Number.isFinite(ev?.pressure) && ev.pressure > 0 ? ev.pressure : undefined;
+      const smoothing = this.app.brushSmoothing || preset.smoothing || 'adaptive';
+      const overrides = this.app.brushOverrides || {};
+      const brushWidth = overrides.strokeWidth ?? preset.strokeWidth;
+      const brushOpacity = overrides.opacity ?? preset.opacity;
+      const pressureRange = {};
+      if (Number.isFinite(overrides.minWidthRatio)) pressureRange.minWidthRatio = overrides.minWidthRatio;
+      if (Number.isFinite(overrides.maxWidthRatio)) pressureRange.maxWidthRatio = overrides.maxWidthRatio;
+      this.lastFiltered = { x: world.x, y: world.y };
+      this.rawPoints = [{ x: world.x, y: world.y, ...(pressure !== undefined ? { p: pressure } : {}) }];
       const el = createElement(tool, {
         x: world.x,
         y: world.y,
         stroke: tool === 'highlighter' ? '#facc15' : style.stroke,
-        strokeWidth: tool === 'highlighter' ? 20 : style.strokeWidth,
-        opacity: tool === 'highlighter' ? 0.42 : style.opacity,
-        points: [{ x: world.x, y: world.y, p: pressure }],
+        strokeWidth: brushWidth,
+        opacity: brushOpacity,
+        brush: preset.id,
+        smoothing,
+        ...pressureRange,
+        points: [{ x: world.x, y: world.y, ...(pressure !== undefined ? { p: pressure } : {}) }],
         fading: isFading,
         createdAt: Date.now(),
       });
@@ -101,8 +155,11 @@ export class DrawTool {
     const tool = this.app.activeTool;
 
     if (tool === 'eraser') {
+      this.app.eraserCursor = { x: world.x, y: world.y, active: true };
       if (this.isErasing) {
         this.eraseAt(world);
+      } else {
+        this.app.requestRender();
       }
       return;
     }
@@ -110,14 +167,41 @@ export class DrawTool {
     if (!this.activeElement) return;
 
     if (tool === 'pen' || tool === 'highlighter') {
+      const mode = this.activeElement.smoothing || 'adaptive';
+      const isPenInput = ev?.pointerType === 'pen';
+      const addSample = (raw, pressure) => {
+        const point = smoothPoint(this.lastFiltered, raw, mode);
+        if (mode === 'stabilizer' && this.lastFiltered) {
+          const d = Math.hypot(point.x - this.lastFiltered.x, point.y - this.lastFiltered.y);
+          if (d < 0.35) return;
+        }
+        this.lastFiltered = point;
+        this.activeElement.points.push({
+          x: point.x,
+          y: point.y,
+          ...(pressure !== undefined ? { p: pressure } : {}),
+        });
+        if (this.rawPoints.length < MAX_RAW_POINTS) {
+          this.rawPoints.push({
+            x: raw.x,
+            y: raw.y,
+            ...(pressure !== undefined ? { p: pressure } : {}),
+          });
+        }
+      };
+
       const coalesced = typeof ev?.getCoalescedEvents === 'function' ? ev.getCoalescedEvents() : null;
       if (coalesced && coalesced.length > 1) {
         for (const ce of coalesced) {
           const cw = this.app.screenToWorld(ce.clientX, ce.clientY);
-          this.activeElement.points.push({ x: cw.x, y: cw.y });
+          const cp =
+            isPenInput && Number.isFinite(ce.pressure) && ce.pressure > 0 ? ce.pressure : undefined;
+          addSample(cw, cp);
         }
       } else {
-        this.activeElement.points.push({ x: world.x, y: world.y });
+        const p =
+          isPenInput && Number.isFinite(ev?.pressure) && ev.pressure > 0 ? ev.pressure : undefined;
+        addSample(world, p);
       }
       syncFreehandBounds(this.activeElement);
       this.app.requestRender();
@@ -156,10 +240,12 @@ export class DrawTool {
 
     if (tool === 'eraser') {
       this.isErasing = false;
+      this.app.eraserCursor = { ...(this.app.eraserCursor || {}), active: false };
       if (this.erasedAny) {
         this.app.commitChange();
       }
       this.erasedAny = false;
+      this.app.requestRender();
       return;
     }
 
@@ -169,6 +255,13 @@ export class DrawTool {
 
     if (tool === 'pen' || tool === 'highlighter') {
       el.points = simplifyFreehandPoints(el.points, 1.5);
+      // Keep a bounded copy of the pre-simplification samples so a stroke can be
+      // inspected or re-filtered without changing what is rendered.
+      if (this.rawPoints.length > el.points.length && this.rawPoints.length <= MAX_RAW_POINTS) {
+        el.rawPoints = this.rawPoints.slice(0, MAX_RAW_POINTS);
+      }
+      this.rawPoints = [];
+      this.lastFiltered = null;
       syncFreehandBounds(el);
       if (!el.fading) {
         this.app.commitChange();
@@ -223,8 +316,70 @@ export class DrawTool {
 
   eraseAt(world) {
     const page = this.app.getPage();
-    const hit = hitTestScene(page, world.x, world.y, { includeLocked: false, tolerance: 10 });
-    if (hit && !hit.locked) {
+    const { size = 12, mode = 'object', scope = 'all' } = this.eraserSettings();
+    const radius = Math.max(3, Number(size) || 12) / 2;
+
+    const touches = (el) => {
+      const pad = Math.max(0, (Number(el.strokeWidth) || 2) / 2);
+      return (el.points || []).some(
+        (p) => Math.hypot(p.x - world.x, p.y - world.y) <= radius + pad
+      );
+    };
+
+    // Ink is trimmed only in Trim-Ink mode; Whole Object mode deletes the stroke
+    // outright, which is what the mode name promises.
+    const trimInk = scope !== 'objects' && mode === 'stroke';
+    if (trimInk) {
+      let changed = false;
+      const inkEls = page.elements.filter(
+        (e) => (e.type === 'pen' || e.type === 'highlighter') && !e.locked && !e.hidden
+      );
+      for (const el of inkEls) {
+        if (!touches(el)) continue;
+        const runs = [];
+        let run = [];
+        for (const p of el.points || []) {
+          if (Math.hypot(p.x - world.x, p.y - world.y) <= radius + (Number(el.strokeWidth) || 2) / 2) {
+            if (run.length > 1) runs.push(run);
+            run = [];
+          } else {
+            run.push(p);
+          }
+        }
+        if (run.length > 1) runs.push(run);
+        page.elements = page.elements.filter((x) => x.id !== el.id);
+        runs.forEach((pts, idx) => {
+          const piece = createElement(el.type, {
+            ...el,
+            id: idx === 0 ? el.id : undefined,
+            points: pts,
+            rawPoints: undefined,
+          });
+          syncFreehandBounds(piece);
+          page.elements.push(piece);
+        });
+        changed = true;
+      }
+      if (changed) {
+        updateConnectorBindings(page);
+        this.erasedAny = true;
+        this.app.requestRender();
+      }
+    }
+
+    if (trimInk) return;
+
+    const hit = hitTestScene(page, world.x, world.y, {
+      includeLocked: false,
+      tolerance: Math.max(8, radius),
+    });
+    const isInk = hit && (hit.type === 'pen' || hit.type === 'highlighter');
+    const scopeAllows =
+      !hit ||
+      scope === 'all' ||
+      (scope === 'ink' && isInk) ||
+      (scope === 'objects' && !isInk);
+    if (hit && !hit.locked && scopeAllows) {
       handleAnchorDeletion(page, [hit.id]);
       page.elements = page.elements.filter((e) => e.id !== hit.id);
       this.app.selectedIds.delete(hit.id);

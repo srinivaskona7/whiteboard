@@ -2,6 +2,8 @@
 import { TOOL_REGISTRY, ICONS, getShortcutLabel } from './registry.js';
 import { WORKSPACE_PRESETS } from '../scene/storage.js';
 import { escapeXml } from '../render/svg-export.js';
+import { ARROW_QUICK_PRESETS } from '../scene/arrow-presets.js';
+import { arrowPresetPreview } from './arrow-preview.js';
 
 export const PRIMARY_TOOL_IDS = [
   'select',
@@ -239,6 +241,42 @@ export function initToolbar(app) {
           )
           .join('')}
         ${
+          canEdit
+            ? `<div class="wb-split-wrap">
+                <button
+                  type="button"
+                  class="wb-tool-btn wb-split-main ${app.activeTool === 'arrow' ? 'active' : ''}"
+                  id="btn-quick-arrow"
+                  data-quick-arrow="simple-sketch"
+                  aria-label="Insert a simple one-way arrow"
+                  title="Insert a simple one-way arrow at the centre (Alt: choose a preset)"
+                >
+                  <span class="wb-tool-icon">${(TOOL_REGISTRY.find((t) => t.id === 'arrow') || {}).icon || '↗'}</span>
+                  <span class="wb-tool-key">↗</span>
+                </button>
+                <button
+                  type="button"
+                  class="wb-tool-btn wb-split-caret"
+                  id="btn-quick-arrow-more"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                  aria-label="Arrow presets"
+                  title="Arrow presets"
+                >▾</button>
+                <div class="wb-insert-popover wb-arrow-popover wb-hidden" id="wb-arrow-popover" role="menu" aria-label="Arrow quick presets">
+                  <div class="wb-prop-title" style="margin-bottom:4px;">Arrow presets</div>
+                  ${ARROW_QUICK_PRESETS.map(
+                    (p, i) => `
+                      <button type="button" class="wb-menu-item wb-arrow-card" data-arrow-preset="${p.id}" title="${escapeXml(p.description)}">
+                        ${arrowPresetPreview(p, i)}
+                        <span>${escapeXml(p.name)}</span>
+                      </button>`
+                  ).join('')}
+                </div>
+              </div>`
+            : ''
+        }
+        ${
           !canEdit
             ? `<button type="button" class="wb-tool-btn" id="btn-focus-qa" aria-label="Classroom Participation" title="Open Classroom Participation & Questions">${ICONS.classroom}<span class="wb-tool-key">QA</span></button>`
             : !app.focusMode
@@ -320,6 +358,45 @@ export function initToolbar(app) {
       ev.stopPropagation();
       insertPop?.classList.toggle('wb-hidden');
     });
+
+    const arrowPop = dock.querySelector('#wb-arrow-popover');
+    const arrowCaret = dock.querySelector('#btn-quick-arrow-more');
+    const toggleArrowPop = (open) => {
+      const next = open ?? arrowPop?.classList.contains('wb-hidden');
+      arrowPop?.classList.toggle('wb-hidden', !next);
+      arrowCaret?.setAttribute('aria-expanded', String(Boolean(next)));
+    };
+    dock.querySelector('#btn-quick-arrow')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (ev.altKey) {
+        toggleArrowPop();
+        return;
+      }
+      toggleArrowPop(false);
+      app.insertSimpleArrow();
+      renderDock();
+    });
+    arrowCaret?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleArrowPop();
+    });
+    dock.querySelectorAll('[data-arrow-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        toggleArrowPop(false);
+        app.insertSimpleArrow(btn.dataset.arrowPreset);
+        renderDock();
+      });
+    });
+    if (!dock.dataset.arrowDismissBound) {
+      dock.dataset.arrowDismissBound = '1';
+      document.addEventListener('pointerdown', (ev) => {
+        const pop = document.getElementById('wb-arrow-popover');
+        if (!pop || pop.classList.contains('wb-hidden')) return;
+        if (ev.target.closest?.('.wb-split-wrap')) return;
+        pop.classList.add('wb-hidden');
+        document.getElementById('btn-quick-arrow-more')?.setAttribute('aria-expanded', 'false');
+      });
+    }
 
     dock.querySelectorAll('[data-insert-tool]').forEach((btn) => {
       btn.addEventListener('click', () => {

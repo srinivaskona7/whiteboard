@@ -4,6 +4,7 @@ import { FONT_MAP } from '../render/themes.js';
 import { getPointAlongConnector } from '../scene/routing.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
 import { getTableCellAtPoint } from '../scene/hit.js';
+import { tableGeometry } from '../render/shapes.js';
 
 export class TextTool {
   constructor(app) {
@@ -42,6 +43,24 @@ export class TextTool {
       if (ev.key === 'Escape') {
         ev.preventDefault();
         this.commitAndClose();
+      } else if (ev.key === 'Tab' && this.editingTableCell) {
+        // Commit and move cell-to-cell, wrapping across rows. This is the
+        // spreadsheet habit the teacher already has.
+        ev.preventDefault();
+        const el = this.editingElement;
+        const { row, col } = this.editingTableCell;
+        const rows = Math.max(1, el.rows || 1);
+        const cols = Math.max(1, el.cols || 1);
+        const total = rows * cols;
+        const from = row * cols + col;
+        const to = ((from + (ev.shiftKey ? -1 : 1)) % total + total) % total;
+        const geo = tableGeometry(el);
+        const center = {
+          x: (geo.xs[to % cols] + geo.xs[(to % cols) + 1]) / 2,
+          y: (geo.ys[Math.floor(to / cols)] + geo.ys[Math.floor(to / cols) + 1]) / 2,
+        };
+        this.commitAndClose();
+        this.openEditorForElement(el, center);
       } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
         ev.preventDefault();
         this.commitAndClose();
@@ -124,6 +143,7 @@ export class TextTool {
       const cell = getTableCellAtPoint(el, worldPoint.x, worldPoint.y);
       if (cell) {
         this.editingTableCell = cell;
+        this.app.lastTableCell = { elId: el.id, row: cell.row, col: cell.col };
         screenX = rect.left + cell.x * cam.zoom + cam.x;
         screenY = rect.top + cell.y * cam.zoom + cam.y;
         width = Math.max(60, cell.w * cam.zoom);

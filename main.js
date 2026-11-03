@@ -25,6 +25,9 @@ import {
   validateElementsBatch,
 } from './scene/geometry.js';
 import { bindConnectorEndpoint, updateConnectorBindings } from './scene/bindings.js';
+import { getBrushPreset, BRUSH_PRESETS } from './scene/brushes.js';
+import { ARROW_QUICK_PRESETS, applyArrowQuickPreset } from './scene/arrow-presets.js';
+import { pasteTsvIntoTable, fitTable } from './scene/table.js';
 import { hitTestScene } from './scene/hit.js';
 import { HistoryManager } from './scene/history.js';
 import {
@@ -41,6 +44,7 @@ import {
   saveWorkspacePreferences,
   DEFAULT_PRESET_TOOLS,
   WORKSPACE_PRESETS,
+  STORAGE_KEY,
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
@@ -67,6 +71,7 @@ import { initPresentUI } from './ui/present.js';
 import { initTimerUI } from './ui/timer.js';
 import { initCommandPalette } from './ui/palette.js';
 import { initNotebookView } from './ui/notebook.js';
+import { initContextMenu, buildContextItems } from './ui/context-menu.js';
 import { initDialogs } from './ui/dialogs.js';
 import { ClassroomTool, initClassroomUI, parseClassroomHash } from './ui/classroom.js';
 
@@ -112,6 +117,17 @@ export class WhiteboardApp {
     this.panStart = { x: 0, y: 0 };
     this.minimapOpen = Boolean(this.workspacePrefs.minimapOpen);
     this.propsDrawerOpen = true;
+    this.propsPinned = Boolean(this.workspacePrefs.inspectorPinned);
+    this.propsCanvasMode = false;
+    this.currentBrush = this.workspacePrefs.brush || 'technical';
+    this.brushSmoothing = this.workspacePrefs.brushSmoothing || 'adaptive';
+    this.brushOverrides = { ...(this.workspacePrefs.brushOverrides || {}) };
+    this.eraserSettings = {
+      size: Number(this.workspacePrefs.eraserSize) || 12,
+      mode: this.workspacePrefs.eraserMode || 'object',
+      scope: this.workspacePrefs.eraserScope || 'all',
+    };
+    this.eraserCursor = { x: 0, y: 0, active: false };
 
     // 4. Ephemeral teaching & presentation state
     this.annotationMode = false;
@@ -163,6 +179,7 @@ export class WhiteboardApp {
     this.timerUI = initTimerUI(this);
     this.notebookView = initNotebookView(this);
     this.paletteUI = initCommandPalette(this);
+    this.contextMenu = initContextMenu(this);
 
     this.scheduleAutosave = createDebouncedAutosave(
       350,
@@ -246,6 +263,14 @@ export class WhiteboardApp {
   setWorkspacePreset(presetId, { applyDefaultPanels = true, silent = false } = {}) {
     if (!WORKSPACE_PRESETS[presetId]) return false;
     this.activePreset = presetId;
+    // Workshops start from a sensible arrow look: hand-drawn while teaching,
+    // crisp while diagramming. An explicit choice by the teacher is kept.
+    const defaults = new Set(
+      Object.values(WORKSPACE_PRESETS).map((p) => p.defaultArrowPreset).filter(Boolean)
+    );
+    if (!this.pendingArrowPreset || defaults.has(this.pendingArrowPreset)) {
+      this.pendingArrowPreset = WORKSPACE_PRESETS[presetId].defaultArrowPreset || null;
+    }
     if (typeof document !== 'undefined' && document.body) {
       document.body.dataset.preset = presetId;
     }
@@ -481,9 +506,18 @@ export class WhiteboardApp {
     if (this.selectTool?.isActive()) {
       this.selectTool.cancel();
     }
-    if (this.drawTool?.drawingEl || this.drawTool?.erasing) {
-      this.drawTool.drawingEl = null;
-      this.drawTool.erasing = false;
+    if (this.drawTool?.activeElement || this.drawTool?.isErasing) {
+      // Drop the in-progress stroke rather than leaving a half-finished element live.
+      const el = this.drawTool.activeElement;
+      const page = this.getPage();
+      if (el && page.elements.includes(el)) {
+        page.elements.splice(page.elements.indexOf(el), 1);
+        this.history?.commit?.(page);
+      }
+      this.drawTool.activeElement = null;
+      this.drawTool.isErasing = false;
+      this.drawTool.rawPoints = [];
+      this.requestRender();
     }
     if (this.laserTool?.isDown) {
       this.laserTool.onPointerUp();
@@ -507,6 +541,15 @@ export class WhiteboardApp {
     if (this.textTool.isOpen()) this.textTool.commit();
     this.cancelActiveInteractions();
     this.activeTool = toolId;
+    // Each ink tool keeps its own natural preset instead of inheriting whichever
+    // brush was last used by the other one (Highlighter must not draw Technical).
+    const brushKind = getBrushPreset(this.currentBrush)?.kind;
+    if (toolId === 'highlighter' && brushKind !== 'highlighter') {
+      this.currentBrush = 'highlighter';
+    } else if (toolId === 'pen' && brushKind === 'highlighter') {
+      const preferred = getBrushPreset(this.workspacePrefs.brush);
+      this.currentBrush = preferred && preferred.kind !== 'highlighter' ? preferred.id : 'technical';
+    }
     this.hoveredPort = null;
     this._updateCanvasCursor();
     this.toolbarUI.update();
@@ -571,6 +614,18 @@ export class WhiteboardApp {
   }
 
   updateUI() {
+    // An explicit selection is context, not a pinned token: once the user selects an
+    // object the Inspector follows that selection and collapses again when it is cleared.
+    if (this.selectedIds.size > 0) this.propsCanvasMode = false;
+    const chip = document.getElementById('wb-canvas-settings-chip');
+    if (chip) {
+      const showChip =
+        !this.propsContextVisible() &&
+        (this.activeTool === 'select' || this.activeTool === 'hand') &&
+        !this.presentState?.active &&
+        this.viewMode !== 'notebook';
+      chip.classList.toggle('wb-hidden', !showChip);
+    }
     this.toolbarUI.update();
     this.propsUI.update();
     this.pagesUI.update();
@@ -653,6 +708,8 @@ export class WhiteboardApp {
       spotlight: this.spotlight,
       presentState: this.presentState,
       cropState: this.cropState,
+      eraserCursor: this.activeTool === 'eraser' ? this.eraserCursor : null,
+      eraserSize: this.eraserSettings?.size || 12,
       editingElementId: this.textTool.editingEl?.id || null,
       minimapOpen: this.minimapOpen,
       now,
@@ -1054,6 +1111,64 @@ export class WhiteboardApp {
     this.activateFormatPainter();
   }
 
+  selectAll() {
+    const page = this.getPage();
+    this.selectedIds = new Set(
+      page.elements.filter((e) => !e.locked && !e.hidden).map((e) => e.id)
+    );
+    this.updateUI();
+    this.requestRender();
+  }
+
+  toggleSnapToGrid() {
+    if (!this.collab.canEditBoard()) return;
+    this.scene.settings.snapToGrid = !this.scene.settings.snapToGrid;
+    this.scheduleAutosave(this.scene);
+    this.updateUI();
+    this.dialogs?.showToast(
+      `Snap to grid ${this.scene.settings.snapToGrid ? 'enabled' : 'disabled'}.`
+    );
+  }
+
+  toggleSmartGuides() {
+    if (!this.collab.canEditBoard()) return;
+    this.scene.settings.snapToObjects = !this.scene.settings.snapToObjects;
+    this.scheduleAutosave(this.scene);
+    this.updateUI();
+    this.dialogs?.showToast(
+      `Smart guides ${this.scene.settings.snapToObjects ? 'enabled' : 'disabled'}.`
+    );
+  }
+
+  pasteSelectedStyle() {
+    if (!this.formatPainterStyle) return;
+    const page = this.getPage();
+    const targets = page.elements.filter((e) => this.selectedIds.has(e.id) && !e.locked);
+    for (const el of targets) {
+      const style = this.formatPainterStyle;
+      for (const key of ['stroke', 'fill', 'strokeWidth', 'strokeStyle', 'opacity', 'fontFamily', 'fontSize', 'textColor', 'textAlign', 'roundness', 'sloppy', 'routing', 'startArrow', 'endArrow']) {
+        if (style[key] !== undefined) el[key] = style[key];
+      }
+    }
+    if (targets.length > 0) this.commitChange();
+    this.updateUI();
+    this.requestRender();
+  }
+
+  brushPresetItems() {
+    return BRUSH_PRESETS.map((p) => ({
+      label: `${this.currentBrush === p.id ? '✓ ' : ''}${p.name}`,
+      action: () => this.setBrushPreset(p.id),
+    }));
+  }
+
+  arrowPresetItems() {
+    return ARROW_QUICK_PRESETS.map((p) => ({
+      label: p.name,
+      action: () => this.applyArrowPresetToSelection(p.id),
+    }));
+  }
+
   setBackground(bg = 'dots') {
     if (!this.collab.canEditBoard()) return;
     const page = this.getPage();
@@ -1333,11 +1448,23 @@ export class WhiteboardApp {
     this.updateUI();
   }
 
+  propsContextVisible() {
+    if (!this.propsDrawerOpen) return false;
+    if (this.propsPinned) return true;
+    if (this.selectedIds.size > 0) return true;
+    if (this.activeTool !== 'select' && this.activeTool !== 'hand') return true;
+    return Boolean(this.propsCanvasMode);
+  }
+
   setPropsDrawerOpen(open) {
     this.propsDrawerOpen = Boolean(open);
+    this.propsCanvasMode =
+      this.propsDrawerOpen &&
+      this.selectedIds.size === 0 &&
+      (this.activeTool === 'select' || this.activeTool === 'hand');
     const p = document.getElementById('wb-props-panel');
     if (p) {
-      p.classList.toggle('wb-hidden', !this.propsDrawerOpen);
+      p.classList.toggle('wb-hidden', !this.propsContextVisible());
     }
     this.workspacePrefs = {
       ...this.workspacePrefs,
@@ -1350,6 +1477,133 @@ export class WhiteboardApp {
 
   togglePropsDrawer() {
     this.setPropsDrawerOpen(!this.propsDrawerOpen);
+  }
+
+  togglePropsPinned() {
+    this.propsPinned = !this.propsPinned;
+    this.workspacePrefs = { ...this.workspacePrefs, inspectorPinned: this.propsPinned };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.propsUI?.update();
+    this.toolbarUI?.update();
+  }
+
+  setBrushPreset(presetId, options = {}) {
+    const preset = getBrushPreset(presetId);
+    if (!preset) return;
+    this.currentBrush = preset.id;
+    this.brushSmoothing = preset.smoothing || this.brushSmoothing;
+    this.brushOverrides = {};
+    this.currentStyle = {
+      ...this.currentStyle,
+      brush: preset.id,
+      strokeWidth: preset.strokeWidth,
+      opacity: preset.opacity,
+    };
+    if (options.applyToSelection) {
+      const page = this.getPage();
+      const targets = page.elements.filter(
+        (e) => this.selectedIds.has(e.id) && (e.type === 'pen' || e.type === 'highlighter')
+      );
+      for (const el of targets) {
+        el.brush = preset.id;
+        el.strokeWidth = preset.strokeWidth;
+        el.opacity = preset.opacity;
+        el.smoothing = preset.smoothing;
+      }
+      if (targets.length > 0) this.commitChange();
+    }
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      brush: preset.id,
+      brushSmoothing: this.brushSmoothing,
+      // Picking a preset discards any tuning from the previous one; persist that
+      // so reloading does not resurrect stale overrides.
+      brushOverrides: {},
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.updateUI();
+    this.requestRender();
+  }
+
+  applyArrowPresetToSelection(presetId) {
+    const page = this.getPage();
+    const targets = page.elements.filter(
+      (e) => this.selectedIds.has(e.id) && (e.type === 'line' || e.type === 'arrow') && !e.locked
+    );
+    if (targets.length === 0) {
+      // Nothing selected: make the preset the default for the next arrow drawn.
+      this.pendingArrowPreset = presetId;
+      this.setTool('arrow');
+      this.dialogs?.showToast(
+        `Arrow preset ready: ${ARROW_QUICK_PRESETS.find((p) => p.id === presetId)?.name || presetId}.`
+      );
+      return false;
+    }
+    for (const el of targets) applyArrowQuickPreset(el, presetId);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    return true;
+  }
+
+  // Direct dock action: drop a plain one-way arrow at the viewport centre
+  // without having to pick the connector tool or configure routing first.
+  insertSimpleArrow(presetId = null) {
+    const chosen = presetId || this.pendingArrowPreset || 'simple-sketch';
+    if (!this.collab.canEditBoard()) {
+      this.dialogs?.showToast?.('Viewers cannot insert elements onto the board.');
+      return null;
+    }
+    const page = this.getPage();
+    const c = this.getViewportCenterWorld();
+    const el = createElement('arrow', {
+      x: Math.round(c.x - 90),
+      y: Math.round(c.y),
+      x2: Math.round(c.x + 90),
+      y2: Math.round(c.y),
+    });
+    applyArrowQuickPreset(el, chosen);
+    page.elements.push(el);
+    this.selectedIds = new Set([el.id]);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    return el;
+  }
+
+  setBrushOverrides(next = {}, { silent = false } = {}) {
+    const clean = { ...(this.brushOverrides || {}) };
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null) delete clean[key];
+      else if (Number.isFinite(value)) clean[key] = value;
+    }
+    this.brushOverrides = clean;
+    this.workspacePrefs = { ...this.workspacePrefs, brushOverrides: clean };
+    saveWorkspacePreferences(this.workspacePrefs);
+    if (!silent) this.updateUI();
+    this.requestRender();
+  }
+
+  setBrushSmoothing(mode) {
+    if (!['off', 'adaptive', 'stabilizer'].includes(mode)) return;
+    this.brushSmoothing = mode;
+    this.workspacePrefs = { ...this.workspacePrefs, brushSmoothing: mode };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.updateUI();
+  }
+
+  setEraserSetting(key, value, options = {}) {
+    if (!['size', 'mode', 'scope'].includes(key)) return;
+    this.eraserSettings = { ...this.eraserSettings, [key]: value };
+    this.workspacePrefs = {
+      ...this.workspacePrefs,
+      eraserSize: this.eraserSettings.size,
+      eraserMode: this.eraserSettings.mode,
+      eraserScope: this.eraserSettings.scope,
+    };
+    saveWorkspacePreferences(this.workspacePrefs);
+    if (!options.silent) this.updateUI();
+    this.requestRender();
   }
 
   toggleSpotlight(magnifier = false) {
@@ -1604,9 +1858,16 @@ export class WhiteboardApp {
 
     this.canvas.addEventListener('pointerdown', (ev) => this._onPointerDown(ev));
     this.canvas.addEventListener('dblclick', (ev) => this._onDoubleClick(ev));
+    this.canvas.addEventListener('contextmenu', (ev) => this._onContextMenu(ev));
+    document.getElementById('wb-canvas-settings-chip')?.addEventListener('click', () => {
+      this.propsCanvasMode = true;
+      this.propsDrawerOpen = true;
+      this.updateUI();
+    });
     window.addEventListener('pointermove', (ev) => this._onPointerMove(ev));
     window.addEventListener('pointerup', (ev) => this._onPointerUp(ev));
-    window.addEventListener('pointercancel', () => {
+    window.addEventListener('pointercancel', (ev) => {
+      this._releasePointerCapture(ev);
       this.cancelActiveInteractions();
       this.requestRender();
     });
@@ -1705,6 +1966,53 @@ export class WhiteboardApp {
     });
 
     window.addEventListener('keydown', (ev) => this._onKeyDown(ev));
+    // Another tab wrote the board. Never overwrite silently: surface it and let
+    // the teacher decide, while keeping this tab's work in memory.
+    window.addEventListener('storage', (ev) => {
+      if (ev.key !== STORAGE_KEY || !ev.newValue) return;
+      const stillSaved = ev.newValue === ev.oldValue;
+      if (stillSaved) return;
+      const el = document.getElementById('wb-autosave-status');
+      if (el) {
+        el.textContent = 'Changed in another tab';
+        el.dataset.state = 'conflict';
+        el.title = 'Another browser tab saved this board. Reload to take their version, or export yours first.';
+      }
+      if (!this._conflictToastAt || Date.now() - this._conflictToastAt > 8000) {
+        this._conflictToastAt = Date.now();
+        this.dialogs?.showToast?.(
+          'This board changed in another tab. Export or reload before editing further.',
+          'warn'
+        );
+      }
+    });
+    // Spreadsheet paste: tab/newline-separated text fills the selected table
+    // instead of being ignored. Text fields keep the native paste behaviour.
+    window.addEventListener('paste', (ev) => {
+      const t = ev.target;
+      const inField =
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.isContentEditable ||
+          t.closest?.('.wb-modal-box, .wb-props-panel, .wb-context-menu'));
+      if (inField) return;
+      if (this.editingElementId) return;
+      if (!this.collab.canEditBoard()) return;
+      const selected = this.getPage().elements.filter((e) => this.selectedIds.has(e.id));
+      if (selected.length !== 1 || selected[0].type !== 'table' || selected[0].locked) return;
+      const text = ev.clipboardData?.getData('text/plain') || '';
+      if (!/[\t\n]/.test(text)) return;
+      ev.preventDefault();
+      const start = this.lastTableCell?.elId === selected[0].id ? this.lastTableCell : { row: 0, col: 0 };
+      const res = pasteTsvIntoTable(selected[0], text, start.row, start.col);
+      // Grow the table to fit the pasted content rather than clipping it.
+      fitTable(this.renderer?.ctx, selected[0]);
+      this.commitChange();
+      this.updateUI();
+      this.requestRender();
+      this.dialogs?.showToast?.(`Pasted ${res.filled} cell(s) into the table.`, 'success');
+    });
     window.addEventListener('keyup', (ev) => {
       if (ev.code === 'Space') {
         this.spacePressed = false;
@@ -1734,6 +2042,16 @@ export class WhiteboardApp {
     this.spotlight.y = ev.clientY - rect.top;
 
     if (this.textTool.isOpen()) this.textTool.commit();
+
+    // Capture so a stroke still receives moves/up when the pointer leaves the canvas.
+    if (typeof ev.pointerId === 'number' && this.canvas.setPointerCapture) {
+      try {
+        this.canvas.setPointerCapture(ev.pointerId);
+        this._capturedPointerId = ev.pointerId;
+      } catch {
+        // Capture is best-effort; window-level listeners remain the fallback.
+      }
+    }
 
     if (ev.button === 1 || this.spacePressed || this.activeTool === 'hand') {
       if (this.collab.followingTeacher) this.collab.setFollowTeacher(false);
@@ -1783,7 +2101,19 @@ export class WhiteboardApp {
     this._getToolHandler().onPointerMove(world, ev);
   }
 
+  _releasePointerCapture(ev = {}) {
+    const id = ev.pointerId ?? this._capturedPointerId;
+    if (id == null) return;
+    try {
+      if (this.canvas.hasPointerCapture?.(id)) this.canvas.releasePointerCapture(id);
+    } catch {
+      // Already released by the browser.
+    }
+    this._capturedPointerId = null;
+  }
+
   _onPointerUp(ev) {
+    this._releasePointerCapture(ev);
     if (this.isPanning) {
       this.isPanning = false;
       this._canvasPointerActive = false;
@@ -1801,6 +2131,27 @@ export class WhiteboardApp {
 
   // Double-click a shape/connector/label/table cell/code block to edit its text in place.
   // Enter/Edit Text in the Inspector is the keyboard-accessible equivalent.
+  _onContextMenu(ev) {
+    if (this.presentState.active) return;
+    ev.preventDefault();
+    const world = this.screenToWorld(ev.clientX, ev.clientY);
+    const page = this.getPage();
+    const hit = hitTestScene(page, world.x, world.y, { includeLocked: true, tolerance: 10 });
+    if (hit && !this.selectedIds.has(hit.id)) {
+      this.selectedIds = new Set([hit.id]);
+      this.textTool?.commit?.();
+      this.updateUI();
+      this.requestRender();
+    }
+    const items = buildContextItems(this, hit, world);
+    this.contextMenu?.open(items, {
+      x: ev.clientX,
+      y: ev.clientY,
+      // The canvas itself has no tabindex, so restore focus to its wrapper.
+      returnFocus: this.canvasWrap || this.canvas,
+    });
+  }
+
   _onDoubleClick(ev) {
     if (this.presentState.active) return;
     if (this.collab && !this.collab.canEditBoard()) return;
@@ -1856,6 +2207,25 @@ export class WhiteboardApp {
         else if (this.dialogs.isOpen()) this.dialogs.close();
         else if (this.textTool.isOpen()) this.textTool.commit();
       }
+      return;
+    }
+
+    // Keyboard route to the context menu for devices without a usable secondary button.
+    if ((ev.key === 'F10' && ev.shiftKey) || ev.key === 'ContextMenu') {
+      ev.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const sel = this.getPage().elements.filter((e) => this.selectedIds.has(e.id));
+      let clientX = rect.left + rect.width / 2;
+      let clientY = rect.top + rect.height / 2;
+      if (sel.length > 0) {
+        const b = getSelectionBounds(sel);
+        const cam = this.getCamera();
+        if (b) {
+          clientX = rect.left + (b.minX + b.w / 2) * cam.zoom + cam.x;
+          clientY = rect.top + (b.minY + b.h / 2) * cam.zoom + cam.y;
+        }
+      }
+      this._onContextMenu({ preventDefault() {}, clientX, clientY });
       return;
     }
 

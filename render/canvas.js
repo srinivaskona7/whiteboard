@@ -18,6 +18,12 @@ import {
   getConnectionPorts,
 } from '../scene/geometry.js';
 import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
+import {
+  resolveBrush,
+  buildStrokeSegments,
+  buildGrainPoints,
+  buildNibOffsets,
+} from '../scene/brushes.js';
 
 export class CanvasRenderer {
   constructor(canvas, minimapCanvas = null) {
@@ -98,6 +104,8 @@ export class CanvasRenderer {
       spotlight = null,
       presentState = null,
       cropState = null,
+      eraserCursor = null,
+      eraserSize = 12,
       editingElementId = null,
       minimapOpen = false,
     } = appState;
@@ -320,6 +328,21 @@ export class CanvasRenderer {
       }
     }
 
+    if (eraserCursor && eraserCursor.active) {
+      try {
+        ctx.save();
+        ctx.strokeStyle = theme.selectionStroke;
+        ctx.lineWidth = Math.max(1, 1.2 / cam.zoom);
+        ctx.setLineDash([4 / cam.zoom, 3 / cam.zoom]);
+        ctx.beginPath();
+        ctx.arc(eraserCursor.x, eraserCursor.y, Math.max(2, eraserSize / 2), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      } catch (err) {
+        this._reportRenderError('eraserCursor', err);
+      }
+    }
+
     ctx.restore();
 
     if (spotlight && (spotlight.active || spotlight.magnifierOnly)) {
@@ -390,33 +413,81 @@ export class CanvasRenderer {
   drawFreehand(ctx, el, theme) {
     const pts = el.points || [];
     if (pts.length === 0) return;
+    const preset = resolveBrush(el);
     const stroke =
-      el.type === 'highlighter'
+      el.type === 'highlighter' || preset.id === 'highlighter'
         ? el.stroke || '#facc15'
         : resolveThemeColor(el.stroke || '#1e293b', theme.name, 'stroke');
 
     ctx.save();
     ctx.strokeStyle = stroke;
     ctx.fillStyle = stroke;
-    ctx.lineWidth = el.strokeWidth || 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.setLineDash(getDashArray(el.strokeStyle, el.strokeWidth || 3));
+    // Element opacity is already applied by drawSingleElement; keep it as the base.
+    const baseAlpha = ctx.globalAlpha;
 
     if (pts.length === 1) {
+      const w = el.strokeWidth || preset.strokeWidth || 3;
       ctx.beginPath();
-      ctx.arc(pts[0].x, pts[0].y, (el.strokeWidth || 3) / 2, 0, Math.PI * 2);
+      ctx.arc(pts[0].x, pts[0].y, w / 2, 0, Math.PI * 2);
       ctx.fill();
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length - 1; i++) {
-        const mx = (pts[i].x + pts[i + 1].x) / 2;
-        const my = (pts[i].y + pts[i + 1].y) / 2;
-        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+      ctx.restore();
+      return;
+    }
+
+    const segments = buildStrokeSegments(el);
+    const nibOffsets = buildNibOffsets(el);
+
+    if (nibOffsets.length === 0) {
+      // Highlighter and monoline presets draw a single path: a continuous stroke cannot
+      // re-darken itself at self-overlaps, which is the within-stroke guarantee.
+      if (!preset.pressure) {
+        ctx.lineWidth = el.strokeWidth || preset.strokeWidth || 3;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const mx = (pts[i].x + pts[i + 1].x) / 2;
+          const my = (pts[i].y + pts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+        ctx.stroke();
+      } else {
+        for (const s of segments) {
+          ctx.lineWidth = s.width;
+          ctx.beginPath();
+          ctx.moveTo(s.x1, s.y1);
+          ctx.lineTo(s.x2, s.y2);
+          ctx.stroke();
+        }
       }
-      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-      ctx.stroke();
+    } else {
+      // Chisel nib: two parallel offsets approximate an angled rectangular tip.
+      for (const off of nibOffsets) {
+        for (const s of segments) {
+          const dx = s.x2 - s.x1;
+          const dy = s.y2 - s.y1;
+          const len = Math.hypot(dx, dy) || 1;
+          const ox = (-dy / len) * off;
+          const oy = (dx / len) * off;
+          ctx.lineWidth = Math.max(1, s.width * (preset.nib?.aspect ?? 0.42));
+          ctx.beginPath();
+          ctx.moveTo(s.x1 + ox, s.y1 + oy);
+          ctx.lineTo(s.x2 + ox, s.y2 + oy);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Deterministic texture: same seed, same speckles on every redraw and export.
+    const grains = buildGrainPoints(el, segments);
+    for (const g of grains) {
+      ctx.globalAlpha = baseAlpha * g.a;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }

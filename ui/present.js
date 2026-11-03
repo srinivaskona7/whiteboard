@@ -81,6 +81,7 @@ export function initPresentUI(app) {
     }
     overlay.classList.remove('wb-hidden');
     renderBar();
+    app.updateUI();
     app.requestRender();
   }
 

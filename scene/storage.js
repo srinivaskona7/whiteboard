@@ -115,6 +115,7 @@ export const WORKSPACE_PRESETS = {
     defaultTools: DEFAULT_PRESET_TOOLS.teach,
     defaultInspectorOpen: false,
     defaultLeftPanel: null,
+    defaultArrowPreset: 'simple-sketch',
   },
   diagram: {
     id: 'diagram',
@@ -124,6 +125,7 @@ export const WORKSPACE_PRESETS = {
     defaultTools: DEFAULT_PRESET_TOOLS.diagram,
     defaultInspectorOpen: true,
     defaultLeftPanel: null,
+    defaultArrowPreset: 'clean-technical',
   },
   collaborate: {
     id: 'collaborate',
@@ -133,6 +135,7 @@ export const WORKSPACE_PRESETS = {
     defaultTools: DEFAULT_PRESET_TOOLS.collaborate,
     defaultInspectorOpen: false,
     defaultLeftPanel: 'wb-classroom-panel',
+    defaultArrowPreset: 'simple-sketch',
   },
 };
 
@@ -181,6 +184,25 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
       rightPanelWidth: Math.max(220, Math.min(440, Number(parsed.rightPanelWidth) || 268)),
       minimapOpen: Boolean(parsed.minimapOpen),
       inspectorOpen: parsed.inspectorOpen !== false,
+      // Tool, brush, eraser and inspector state are part of the workspace too;
+      // dropping them here made every setting revert on reload.
+      inspectorPinned: Boolean(parsed.inspectorPinned),
+      brush: typeof parsed.brush === 'string' ? parsed.brush : 'technical',
+      brushSmoothing: ['off', 'adaptive', 'stabilizer'].includes(parsed.brushSmoothing)
+        ? parsed.brushSmoothing
+        : 'adaptive',
+      brushOverrides:
+        parsed.brushOverrides && typeof parsed.brushOverrides === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.brushOverrides).filter(([, v]) => Number.isFinite(v))
+            )
+          : {},
+      eraserSize: Number(parsed.eraserSize) || 12,
+      eraserMode: parsed.eraserMode === 'stroke' ? 'stroke' : 'object',
+      eraserScope: ['all', 'ink', 'objects'].includes(parsed.eraserScope)
+        ? parsed.eraserScope
+        : 'all',
+      activeTool: typeof parsed.activeTool === 'string' ? parsed.activeTool : null,
     };
   } catch {
     return defaults;

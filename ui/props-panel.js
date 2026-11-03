@@ -9,7 +9,25 @@ import {
   isFrameIncludedInPresentation,
 } from '../scene/model.js';
 import { resetConnectorRoute } from '../scene/routing.js';
+import { ARROW_QUICK_PRESETS, applyArrowQuickPreset } from '../scene/arrow-presets.js';
+import { arrowPresetPreview, arrowPresetMatches } from './arrow-preview.js';
+import {
+  insertTableRow,
+  insertTableCol,
+  deleteTableRow,
+  deleteTableCol,
+  equalizeTableSpans,
+  fitTable,
+} from '../scene/table.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
+import {
+  BRUSH_PRESETS,
+  getBrushPreset,
+  resolveBrush,
+  buildStrokeSegments,
+  buildGrainPoints,
+  strokeOpacity,
+} from '../scene/brushes.js';
 
 function getSharedProp(elements, getter, fallback) {
   if (!elements || elements.length === 0) {
@@ -36,12 +54,233 @@ export function initPropsPanel(app) {
     );
   }
 
+  function activeBrushId(selected) {
+    const freehand = selected.filter((e) => e.type === 'pen' || e.type === 'highlighter');
+    if (freehand.length > 0) return resolveBrush(freehand[0]).id;
+    return app.currentBrush || 'technical';
+  }
+
+  function brushContextSection(selected) {
+    const isInkTool = app.activeTool === 'pen' || app.activeTool === 'highlighter';
+    const freehand = selected.filter((e) => e.type === 'pen' || e.type === 'highlighter');
+    if (!isInkTool && freehand.length === 0) return '';
+    const brushId = activeBrushId(selected);
+    const preset = getBrushPreset(brushId) || BRUSH_PRESETS[0];
+    const ref = freehand[0];
+    const width = ref?.strokeWidth ?? app.brushOverrides?.strokeWidth ?? preset.strokeWidth;
+    const opacity = Math.round(
+      (ref?.opacity ?? app.brushOverrides?.opacity ?? preset.opacity) * 100
+    );
+    const smoothing = app.brushSmoothing || preset.smoothing || 'adaptive';
+    return `
+      <div class="wb-prop-section">
+        <div class="wb-prop-row" style="margin-top:0;">
+          <span class="wb-prop-title" style="margin:0;">Drawing Preset</span>
+          <span class="wb-muted" style="font-size:10px;">${freehand.length ? 'selected stroke' : 'new strokes'}</span>
+        </div>
+        <div class="wb-brush-grid" role="radiogroup" aria-label="Drawing Preset">
+          ${BRUSH_PRESETS.map(
+            (p) => `
+            <button type="button" class="wb-brush-card ${p.id === brushId ? 'active' : ''}"
+              data-brush="${p.id}" role="radio" aria-checked="${p.id === brushId}"
+              title="${escapeXml(p.description)}">
+              <canvas class="wb-brush-preview" data-brush-preview="${p.id}" width="72" height="26" aria-hidden="true"></canvas>
+              <span class="wb-brush-name">${escapeXml(p.name)}</span>
+            </button>`
+          ).join('')}
+        </div>
+        <label class="wb-prop-row">
+          <span>Size (${Math.round(width)}px)</span>
+          <input type="range" id="prop-brush-size" min="1" max="40" value="${Math.round(width)}"/>
+        </label>
+        <label class="wb-prop-row">
+          <span>Opacity (${opacity}%)</span>
+          <input type="range" id="prop-brush-opacity" min="5" max="100" value="${opacity}"/>
+        </label>
+        <label class="wb-prop-row">
+          <span>Stabilization</span>
+          <select id="prop-brush-smoothing" aria-label="Stroke Stabilization">
+            <option value="off" ${smoothing === 'off' ? 'selected' : ''}>Off</option>
+            <option value="adaptive" ${smoothing === 'adaptive' ? 'selected' : ''}>Adaptive</option>
+            <option value="stabilizer" ${smoothing === 'stabilizer' ? 'selected' : ''}>Stabilizer</option>
+          </select>
+        </label>
+        <div class="wb-btn-group">
+          <button type="button" class="wb-btn wb-sm" id="btn-brush-apply" ${freehand.length ? '' : 'disabled'} title="Apply this preset to the selected strokes">Apply to Selected</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-brush-reset" title="Reset the tool to this preset's tuning">Reset Tool</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-tablet-test" title="Test pen pressure and calibrate the width curve">Tablet Test…</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function eraserContextSection() {
+    if (app.activeTool !== 'eraser') return '';
+    const s = app.eraserSettings || { size: 12, mode: 'object', scope: 'all' };
+    return `
+      <div class="wb-prop-section">
+        <div class="wb-prop-title">Eraser</div>
+        <label class="wb-prop-row">
+          <span>Size (${Math.round(s.size)}px)</span>
+          <input type="range" id="prop-eraser-size" min="4" max="60" value="${Math.round(s.size)}"/>
+        </label>
+        <label class="wb-prop-row">
+          <span>Mode</span>
+          <select id="prop-eraser-mode" aria-label="Eraser Mode">
+            <option value="object" ${s.mode === 'object' ? 'selected' : ''}>Whole Object</option>
+            <option value="stroke" ${s.mode === 'stroke' ? 'selected' : ''}>Trim Ink</option>
+          </select>
+        </label>
+        <label class="wb-prop-row">
+          <span>Scope</span>
+          <select id="prop-eraser-scope" aria-label="Eraser Scope">
+            <option value="all" ${s.scope === 'all' ? 'selected' : ''}>All Objects</option>
+            <option value="ink" ${s.scope === 'ink' ? 'selected' : ''}>Freehand Ink Only</option>
+            <option value="objects" ${s.scope === 'objects' ? 'selected' : ''}>Objects Only</option>
+          </select>
+        </label>
+        <div class="wb-eraser-preview-row">
+          <span class="wb-eraser-dot" style="width:${Math.round(s.size)}px;height:${Math.round(s.size)}px;" aria-hidden="true"></span>
+          <span class="wb-muted">Erase radius shown at 100% zoom</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function drawBrushPreviews() {
+    container.querySelectorAll('[data-brush-preview]').forEach((canvas) => {
+      const preset = getBrushPreset(canvas.dataset.brushPreview);
+      if (!preset) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const sample = {
+        id: `preview-${preset.id}`,
+        createdAt: 1,
+        type: preset.kind,
+        brush: preset.id,
+        strokeWidth: Math.min(preset.strokeWidth, 10),
+        opacity: preset.opacity,
+        points: Array.from({ length: 14 }, (_, i) => ({
+          x: 5 + (i / 13) * (w - 10),
+          y: h / 2 + Math.sin(i / 2.1) * 5,
+          p: 0.3 + (i / 13) * 0.7,
+        })),
+      };
+      const stroke = preset.kind === 'highlighter' ? '#facc15' : '#1e293b';
+      ctx.save();
+      ctx.strokeStyle = stroke;
+      ctx.fillStyle = stroke;
+      ctx.globalAlpha = strokeOpacity(sample);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const segments = buildStrokeSegments(sample);
+      for (const s of segments) {
+        ctx.lineWidth = preset.nib ? Math.max(1, s.width * preset.nib.aspect) : s.width;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+      for (const g of buildGrainPoints(sample, segments)) {
+        ctx.globalAlpha = strokeOpacity(sample) * g.a;
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  function bindToolContext() {
+    drawBrushPreviews();
+    container.querySelector('#btn-pin-props')?.addEventListener('click', () => {
+      app.togglePropsPinned();
+    });
+    container.querySelectorAll('[data-brush]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const hasInk = app
+          .getPage()
+          .elements.some(
+            (el) =>
+              app.selectedIds.has(el.id) && (el.type === 'pen' || el.type === 'highlighter')
+          );
+        app.setBrushPreset(btn.dataset.brush, { applyToSelection: hasInk });
+      });
+    });
+    container.querySelector('#prop-brush-size')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value) || 2;
+      app.setBrushOverrides?.({ strokeWidth: v }, { silent: true });
+      const freehand = app.getPage().elements.filter(
+        (el) => app.selectedIds.has(el.id) && (el.type === 'pen' || el.type === 'highlighter')
+      );
+      if (freehand.length > 0 && !freehand[0].locked) {
+        for (const el of freehand) el.strokeWidth = v;
+        app.commitChange();
+      }
+      const label = e.target.closest('.wb-prop-row')?.querySelector('span');
+      if (label) label.textContent = `Size (${Math.round(v)}px)`;
+      app.requestRender();
+    });
+    container.querySelector('#prop-brush-opacity')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 100;
+      const v = Math.max(0.05, pct / 100);
+      app.setBrushOverrides?.({ opacity: v }, { silent: true });
+      const freehand = app.getPage().elements.filter(
+        (el) => app.selectedIds.has(el.id) && (el.type === 'pen' || el.type === 'highlighter')
+      );
+      if (freehand.length > 0 && !freehand[0].locked) {
+        for (const el of freehand) el.opacity = v;
+        app.commitChange();
+      }
+      const label = e.target.closest('.wb-prop-row')?.querySelector('span');
+      if (label) label.textContent = `Opacity (${pct}%)`;
+      app.requestRender();
+    });
+    container.querySelector('#prop-brush-smoothing')?.addEventListener('change', (e) => {
+      app.setBrushSmoothing(e.target.value);
+    });
+    container.querySelector('#btn-brush-apply')?.addEventListener('click', () => {
+      // Apply the preset currently shown as active in the panel, not the one the
+      // selection already had (which would make the button a no-op).
+      app.setBrushPreset(app.currentBrush || 'technical', { applyToSelection: true });
+    });
+    container.querySelector('#btn-brush-reset')?.addEventListener('click', () => {
+      app.setBrushOverrides({ strokeWidth: null, opacity: null, minWidthRatio: null, maxWidthRatio: null }, { silent: true });
+      app.setBrushPreset(activeBrushId([]));
+    });
+    container.querySelector('#btn-tablet-test')?.addEventListener('click', () => {
+      app.dialogs?.openTabletTestModal?.();
+    });
+    container.querySelector('#prop-eraser-size')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value) || 12;
+      app.setEraserSetting('size', v, { silent: true });
+      const label = e.target.closest('.wb-prop-row')?.querySelector('span');
+      if (label) label.textContent = `Size (${Math.round(v)}px)`;
+      const dot = container.querySelector('.wb-eraser-dot');
+      if (dot) {
+        dot.style.width = `${Math.round(v)}px`;
+        dot.style.height = `${Math.round(v)}px`;
+      }
+    });
+    container.querySelector('#prop-eraser-mode')?.addEventListener('change', (e) => {
+      app.setEraserSetting('mode', e.target.value);
+    });
+    container.querySelector('#prop-eraser-scope')?.addEventListener('change', (e) => {
+      app.setEraserSetting('scope', e.target.value);
+    });
+  }
+
   function render() {
     const page = app.getPage();
     const selected = page.elements.filter((e) => app.selectedIds.has(e.id));
     const tool = app.activeTool;
 
-    const shouldShow = Boolean(app.propsDrawerOpen);
+    const shouldShow = app.propsContextVisible
+      ? app.propsContextVisible()
+      : Boolean(app.propsDrawerOpen);
 
     if (!shouldShow) {
       container.classList.add('wb-hidden');
@@ -148,8 +387,13 @@ export function initPropsPanel(app) {
     const sections = [
       `<div class="wb-panel-header" style="padding:0 0 8px 0;margin-bottom:8px;">
         <strong>${selected.length > 0 ? `Inspector (${selected.length})` : 'Canvas & Tool Style'}</strong>
-        <button type="button" class="wb-icon-btn" id="btn-close-props" aria-label="Close Inspector Panel" title="Close Inspector Panel">✕</button>
+        <span style="display:flex;gap:2px;">
+          <button type="button" class="wb-icon-btn ${app.propsPinned ? 'active' : ''}" id="btn-pin-props" aria-pressed="${Boolean(app.propsPinned)}" aria-label="Pin Inspector" title="${app.propsPinned ? 'Unpin Inspector' : 'Pin Inspector open'}">📌</button>
+          <button type="button" class="wb-icon-btn" id="btn-close-props" aria-label="Close Inspector Panel" title="Close Inspector Panel">✕</button>
+        </span>
       </div>`,
+      brushContextSection(selected),
+      eraserContextSection(),
     ];
 
     // 1. Page & Canvas Context when nothing is selected and Select/Hand tool is active
@@ -192,6 +436,7 @@ export function initPropsPanel(app) {
         `);
       }
       container.innerHTML = sections.join('');
+      bindToolContext();
       bindEvents(selected);
       return;
     }
@@ -325,6 +570,8 @@ export function initPropsPanel(app) {
     const swMeta = getSharedProp(selected, (e) => e.strokeWidth || 2, ref.strokeWidth || 2);
     const ssMeta = getSharedProp(selected, (e) => e.strokeStyle || 'solid', ref.strokeStyle || 'solid');
     const fillMeta = getSharedProp(selected, (e) => e.fill || 'transparent', ref.fill || 'transparent');
+    const opacityMeta = getSharedProp(selected, (e) => e.opacity ?? 1, ref.opacity ?? 1);
+    const opacityPct = Math.round((Number.isFinite(opacityMeta.value) ? opacityMeta.value : 1) * 100);
 
     // Table controls placed at top of Inspector when a table is selected
     if (types.has('table') && selected.length === 1) {
@@ -337,6 +584,39 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" id="btn-table-del-row">− Row</button>
             <button type="button" class="wb-btn wb-sm" id="btn-table-add-col">+ Col</button>
             <button type="button" class="wb-btn wb-sm" id="btn-table-del-col">− Col</button>
+          </div>
+          <label class="wb-check-row">
+            <input type="checkbox" id="prop-table-header" ${tbl.headerRow === false ? '' : 'checked'}/>
+            <span>Header row (bold, tinted)</span>
+          </label>
+          <label class="wb-check-row">
+            <input type="checkbox" id="prop-table-striped" ${tbl.striped ? 'checked' : ''}/>
+            <span>Alternate row shading</span>
+          </label>
+          <label class="wb-prop-row">
+            <span>Cell alignment</span>
+            <select id="prop-table-align" aria-label="Table Cell Alignment">
+              <option value="left" ${tbl.textAlign === 'left' ? 'selected' : ''}>Left</option>
+              <option value="center" ${!tbl.textAlign || tbl.textAlign === 'center' ? 'selected' : ''}>Center</option>
+              <option value="right" ${tbl.textAlign === 'right' ? 'selected' : ''}>Right</option>
+            </select>
+          </label>
+          <label class="wb-prop-row">
+            <span>Vertical alignment</span>
+            <select id="prop-table-valign" aria-label="Table Cell Vertical Alignment">
+              <option value="top" ${tbl.valign === 'top' ? 'selected' : ''}>Top</option>
+              <option value="middle" ${!tbl.valign || tbl.valign === 'middle' ? 'selected' : ''}>Middle</option>
+              <option value="bottom" ${tbl.valign === 'bottom' ? 'selected' : ''}>Bottom</option>
+            </select>
+          </label>
+          <label class="wb-prop-row">
+            <span>Cell padding (${Math.round(tbl.cellPadding ?? 6)}px)</span>
+            <input type="range" id="prop-table-padding" min="0" max="20" value="${Math.round(tbl.cellPadding ?? 6)}" aria-label="Table Cell Padding"/>
+          </label>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" id="btn-table-fit">⤢ Fit to content</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-table-equal">Equal columns</button>
+            <button type="button" class="wb-btn wb-sm" id="btn-table-structure">⋯ Structure / TSV…</button>
           </div>
         </div>
       `);
@@ -352,6 +632,7 @@ export function initPropsPanel(app) {
             <span>Lines (e.g. 1,3-4)</span>
             <input type="text" id="prop-code-hl" value="${escapeXml(cd.highlightLines || '')}" style="width:90px"/>
           </label>
+          <button type="button" class="wb-btn wb-sm" id="btn-open-code-editor">⤢ Open Expanded Editor</button>
         </div>
       `);
     }
@@ -423,6 +704,10 @@ export function initPropsPanel(app) {
               )
               .join('')}
           </div>
+          <label class="wb-prop-row">
+            <span>Opacity (${opacityMeta.mixed ? 'Mixed' : `${opacityPct}%`})</span>
+            <input type="range" id="prop-opacity" min="5" max="100" value="${opacityMeta.mixed ? 100 : opacityPct}"/>
+          </label>
         </div>
       `);
     }
@@ -509,6 +794,21 @@ export function initPropsPanel(app) {
           </div>
           ${
             selected.length === 1
+              ? `<div class="wb-prop-title" style="margin-top:6px;">Arrow Quick Presets</div>
+                 <div class="wb-arrow-preset-grid" role="group" aria-label="Arrow Quick Presets">
+                   ${ARROW_QUICK_PRESETS.map(
+                     (p, i) => `<button type="button"
+                        class="wb-btn wb-sm wb-arrow-card ${arrowPresetMatches(ref, p) ? 'active' : ''}"
+                        data-arrow-quick="${p.id}"
+                        title="${escapeXml(p.description)}">
+                        ${arrowPresetPreview(p, i)}<span>${escapeXml(p.name)}</span>
+                      </button>`
+                   ).join('')}
+                 </div>`
+              : ''
+          }
+          ${
+            selected.length === 1
               ? `<label class="wb-prop-row">
                   <span>Source Label</span>
                   <input type="text" id="prop-start-label" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="e.g. client / out" value="${escapeXml(ref.startLabel || '')}" aria-label="Connector Source Label"/>
@@ -535,6 +835,21 @@ export function initPropsPanel(app) {
                 </label>`
               : ''
           }
+          <label class="wb-prop-row">
+            <span>Line roughness</span>
+            <div class="wb-btn-group" role="group" aria-label="Connector Roughness">
+              ${[
+                [0, 'Clean'],
+                [1, 'Sketch'],
+                [2, 'Rough'],
+              ]
+                .map(
+                  ([n, label]) =>
+                    `<button type="button" class="wb-btn wb-sm ${(Number.isFinite(ref.roughness) ? Math.round(ref.roughness) : ref.sloppy ? 1 : 0) === n ? 'active' : ''}" data-roughness="${n}">${label}</button>`
+                )
+                .join('')}
+            </div>
+          </label>
           <label class="wb-prop-row">
             <span>Start Cap</span>
             <select id="prop-start-arrow" aria-label="Start Arrowhead">
@@ -740,6 +1055,7 @@ export function initPropsPanel(app) {
 
     container.innerHTML = sections.join('');
     container.scrollTop = prevScroll;
+    bindToolContext();
     bindEvents(selected);
   }
 
@@ -822,6 +1138,9 @@ export function initPropsPanel(app) {
       });
     });
     container.querySelector('#prop-stroke-width')?.addEventListener('change', (e) => applyProp((t) => (t.strokeWidth = Number(e.target.value))));
+    container.querySelector('#prop-opacity')?.addEventListener('input', (e) =>
+      applyProp((t) => (t.opacity = Math.max(0.05, Math.min(1, Number(e.target.value) / 100))))
+    );
     container.querySelectorAll('[data-stroke-style]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.strokeStyle = b.dataset.strokeStyle))));
     container.querySelectorAll('[data-fill]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.fill = b.dataset.fill))));
     container.querySelector('#prop-fill-custom')?.addEventListener('input', (e) => applyProp((t) => (t.fill = e.target.value)));
@@ -845,6 +1164,21 @@ export function initPropsPanel(app) {
       b.addEventListener('click', () =>
         applyProp((t) => applyConnectorDirectionPreset(t, b.dataset.dirPreset))
       )
+    );
+    container.querySelectorAll('[data-arrow-quick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.arrowQuick;
+        applyProp((t) => applyArrowQuickPreset(t, id));
+      })
+    );
+    container.querySelectorAll('[data-roughness]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const level = Math.max(0, Math.min(2, Number(b.dataset.roughness) || 0));
+        applyProp((t) => {
+          t.roughness = level;
+          t.sloppy = level >= 1;
+        });
+      })
     );
     container.querySelector('#prop-start-label')?.addEventListener('change', (e) => {
       if (selected[0] && !selected[0].locked) {
@@ -944,19 +1278,75 @@ export function initPropsPanel(app) {
     // Table actions
     if (selected.length === 1 && selected[0].type === 'table') {
       const tbl = selected[0];
-      container.querySelector('#btn-table-add-row')?.addEventListener('click', () => {
-        tbl.rows += 1; tbl.cells.push(Array.from({ length: tbl.cols }, () => '')); tbl.h += 36;
-        app.commitChange(); app.requestRender(); render();
+      const lockedToast = () => {
+        app.dialogs?.showToast?.('Unlock the table before changing its structure.');
+        render();
+      };
+      const applyTable = () => {
+        if (tbl.locked) return lockedToast();
+        app.commitChange();
+        app.updateUI();
+        app.requestRender();
+      };
+      const restructure = (fn) => {
+        if (tbl.locked) return lockedToast();
+        fn();
+        // Re-measure so a new row/column never clips existing content.
+        fitTable(app.renderer?.ctx, tbl);
+        applyTable();
+        render();
+      };
+      container.querySelector('#btn-table-add-row')?.addEventListener('click', () => restructure(() => insertTableRow(tbl, 1)));
+      container.querySelector('#btn-table-del-row')?.addEventListener('click', () => restructure(() => deleteTableRow(tbl, 1)));
+      container.querySelector('#btn-table-add-col')?.addEventListener('click', () => restructure(() => insertTableCol(tbl, 1)));
+      container.querySelector('#btn-table-del-col')?.addEventListener('click', () => restructure(() => deleteTableCol(tbl, 1)));
+      container.querySelector('#prop-table-header')?.addEventListener('change', (e) => {
+        if (tbl.locked) return lockedToast();
+        tbl.headerRow = e.target.checked;
+        applyTable();
       });
-      container.querySelector('#btn-table-del-row')?.addEventListener('click', () => {
-        if (tbl.rows > 1) { tbl.rows -= 1; tbl.cells.pop(); app.commitChange(); app.requestRender(); render(); }
+      container.querySelector('#prop-table-striped')?.addEventListener('change', (e) => {
+        if (tbl.locked) return lockedToast();
+        tbl.striped = e.target.checked;
+        applyTable();
       });
-      container.querySelector('#btn-table-add-col')?.addEventListener('click', () => {
-        tbl.cols += 1; tbl.cells.forEach((r) => r.push('')); tbl.w += 90;
-        app.commitChange(); app.requestRender(); render();
+      container.querySelector('#prop-table-align')?.addEventListener('change', (e) => {
+        if (tbl.locked) { render(); return; }
+        tbl.textAlign = e.target.value;
+        applyTable();
       });
-      container.querySelector('#btn-table-del-col')?.addEventListener('click', () => {
-        if (tbl.cols > 1) { tbl.cols -= 1; tbl.cells.forEach((r) => r.pop()); app.commitChange(); app.requestRender(); render(); }
+      container.querySelector('#prop-table-valign')?.addEventListener('change', (e) => {
+        if (tbl.locked) { render(); return; }
+        tbl.valign = e.target.value;
+        applyTable();
+      });
+      container.querySelector('#prop-table-padding')?.addEventListener('input', (e) => {
+        if (tbl.locked) { render(); return; }
+        tbl.cellPadding = Number(e.target.value);
+        const label = e.target.closest('.wb-prop-row')?.querySelector('span');
+        if (label) label.textContent = `Cell padding (${tbl.cellPadding}px)`;
+        app.requestRender();
+      });
+      container.querySelector('#prop-table-padding')?.addEventListener('change', () => applyTable());
+      container.querySelector('#btn-table-fit')?.addEventListener('click', () => {
+        if (tbl.locked) return lockedToast();
+        fitTable(app.renderer?.ctx, tbl);
+        applyTable();
+      });
+      container.querySelector('#btn-table-equal')?.addEventListener('click', () => {
+        if (tbl.locked) return lockedToast();
+        equalizeTableSpans(tbl);
+        applyTable();
+      });
+      container.querySelector('#btn-table-structure')?.addEventListener('click', () => {
+        if (tbl.locked) return lockedToast();
+        app.dialogs?.openTableInsertModal(tbl);
+      });
+    }
+
+    if (selected.length === 1 && selected[0].type === 'code') {
+      container.querySelector('#btn-open-code-editor')?.addEventListener('click', () => {
+        app.dialogs?.openCodeEditorModal(selected[0]);
       });
     }
 

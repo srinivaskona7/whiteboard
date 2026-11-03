@@ -8,6 +8,8 @@ import {
   parseSceneJson,
 } from '../scene/storage.js';
 import { renderUrlQrSvg } from './qr.js';
+import { autoGrowShapeForText, createElement } from '../scene/model.js';
+import { pasteTsvIntoTable, fitTable, ensureCellGrid } from '../scene/table.js';
 import { TOOL_REGISTRY, SHORTCUT_REFERENCE, formatShortcut } from './registry.js';
 
 export function initDialogs(app) {
@@ -142,6 +144,277 @@ export function initDialogs(app) {
                 'warn'
               );
             }
+          }
+        });
+      }
+    );
+  }
+
+  function openTableInsertModal(existing = null) {
+    const target = existing && existing.type === 'table' ? existing : null;
+    if (target?.locked) {
+      showToast('Unlock the table before editing its structure.', 'info');
+      return;
+    }
+    const rows0 = target ? target.rows || 3 : 3;
+    const cols0 = target ? target.cols || 3 : 3;
+    openHtml(
+      target ? 'Edit Table Structure' : 'Insert Table',
+      `
+        <p class="wb-muted">${target ? 'Resize or refill the selected table.' : 'Creates an editable table. Paste tab-separated values from a spreadsheet to fill it in one step.'}</p>
+        <div class="wb-modal-options" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <label class="wb-prop-row" style="width:120px;"><span>Rows</span>
+            <input type="number" id="tbl-rows" min="1" max="${Math.max(50, rows0)}" value="${rows0}" class="wb-input" style="width:64px"/>
+          </label>
+          <label class="wb-prop-row" style="width:120px;"><span>Columns</span>
+            <input type="number" id="tbl-cols" min="1" max="${Math.max(20, cols0)}" value="${cols0}" class="wb-input" style="width:64px"/>
+          </label>
+          <label class="wb-prop-row" style="width:140px;"><span>Alignment</span>
+            <select id="tbl-align">
+              <option value="left">Left</option>
+              <option value="center" selected>Center</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+        </div>
+        <label class="wb-check-row"><input type="checkbox" id="tbl-header" ${!target || target.headerRow !== false ? 'checked' : ''}/> <span>Header row</span></label>
+        <label class="wb-check-row"><input type="checkbox" id="tbl-striped" ${target && target.striped ? 'checked' : ''}/> <span>Alternate row shading</span></label>
+        <label class="wb-check-row"><input type="checkbox" id="tbl-fit" checked/> <span>Size columns to fit content</span></label>
+        <label class="wb-prop-row" style="align-items:flex-start;margin-top:8px;">
+          <span>Paste TSV</span>
+          <textarea id="tbl-tsv" class="wb-textarea" rows="6" placeholder="name&#9;status&#10;api&#9;running" aria-label="Tab-separated table data"></textarea>
+        </label>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-btn wb-primary" id="btn-table-apply">${target ? 'Apply' : 'Insert Table'}</button>
+        </div>
+      `,
+      (modal) => {
+        modal.querySelector('#btn-table-apply')?.addEventListener('click', () => {
+          // Never clamp a table smaller than it already is: doing so silently
+          // deleted rows that a previous paste had legitimately grown.
+          const maxRows = Math.max(50, target ? target.rows || 1 : 1);
+          const maxCols = Math.max(20, target ? target.cols || 1 : 1);
+          const rows = Math.min(maxRows, Math.max(1, parseInt(modal.querySelector('#tbl-rows')?.value, 10) || 3));
+          const cols = Math.min(maxCols, Math.max(1, parseInt(modal.querySelector('#tbl-cols')?.value, 10) || 3));
+          const headerRow = modal.querySelector('#tbl-header')?.checked !== false;
+          const striped = !!modal.querySelector('#tbl-striped')?.checked;
+          const textAlign = modal.querySelector('#tbl-align')?.value || 'center';
+          const tsv = modal.querySelector('#tbl-tsv')?.value || '';
+          const shouldFit = modal.querySelector('#tbl-fit')?.checked !== false;
+
+          let el = target;
+          if (!el) {
+            const page = app.getPage();
+            const origin = computeNonOverlappingOrigin(page, app.getViewportCenterWorld());
+            el = createElement('table', {
+              x: origin.x,
+              y: origin.y,
+              w: cols * 120,
+              h: rows * 36,
+              rows,
+              cols,
+              headerRow,
+              striped,
+              textAlign,
+            });
+            page.elements.push(el);
+            app.selectedIds = new Set([el.id]);
+          }
+          el.rows = rows;
+          el.cols = cols;
+          el.headerRow = headerRow;
+          el.striped = striped;
+          el.textAlign = textAlign;
+          const { cells } = ensureCellGrid(el);
+          while (cells.length > el.rows) cells.pop();
+          if (tsv.trim()) {
+            // The pasted grid may be larger than the stated size; growing is
+            // better than silently dropping the extra cells.
+            pasteTsvIntoTable(el, tsv, 0, 0);
+          }
+          if (shouldFit) fitTable(app.renderer?.ctx, el);
+          else {
+            el.colWidths = null;
+            el.rowHeights = null;
+          }
+          app.commitChange();
+          app.updateUI();
+          app.requestRender();
+          close();
+          showToast(target ? 'Table updated.' : `Inserted a ${rows} × ${cols} table.`, 'success');
+        });
+      }
+    );
+  }
+
+  // Tablet test / calibration. Reports the real pointer stream so a pen that
+  // lies about pressure is visible, and states plainly when no pen is attached.
+  function openTabletTestModal() {
+    openHtml(
+      'Tablet Test & Pressure Calibration',
+      `
+        <p class="wb-muted">Draw in the box with your pen. This reads the browser's pointer stream directly — pressure, tilt and coalesced samples — without altering your board.</p>
+        <div class="wb-tablet-stage">
+          <canvas id="tablet-test-canvas" width="560" height="260" aria-label="Tablet pressure test area"></canvas>
+        </div>
+        <div class="wb-tablet-readout" aria-live="polite">
+          <span>Input: <strong id="tablet-input-type">waiting</strong></span>
+          <span>Pressure: <strong id="tablet-pressure">—</strong></span>
+          <span>Range: <strong id="tablet-range">—</strong></span>
+          <span>Samples: <strong id="tablet-samples">0</strong></span>
+          <span>Tilt: <strong id="tablet-tilt">—</strong></span>
+        </div>
+        <div id="tablet-status" class="wb-warning-box">No pen has been detected yet. Hardware validation for a specific tablet (for example Huion) is <strong>BLOCKED</strong> until a real device is attached to this machine; the software pressure path is what is being exercised here.</div>
+        <div class="wb-modal-options" style="margin-top:8px;">
+          <label class="wb-prop-row"><span>Min width <strong id="tablet-min-label">${Math.round((app.brushOverrides?.minWidthRatio ?? 0.45) * 100)}%</strong></span>
+            <input type="range" id="tablet-min" min="10" max="90" value="${Math.round((app.brushOverrides?.minWidthRatio ?? 0.45) * 100)}"/>
+          </label>
+          <label class="wb-prop-row"><span>Max width <strong id="tablet-max-label">${Math.round((app.brushOverrides?.maxWidthRatio ?? 1.35) * 100)}%</strong></span>
+            <input type="range" id="tablet-max" min="80" max="200" value="${Math.round((app.brushOverrides?.maxWidthRatio ?? 1.35) * 100)}"/>
+          </label>
+        </div>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-btn" id="btn-tablet-clear">Clear</button>
+          <button type="button" class="wb-btn wb-primary" id="btn-tablet-apply">Apply to Pressure Ink</button>
+        </div>
+      `,
+      (modal) => {
+        const canvas = modal.querySelector('#tablet-test-canvas');
+        const ctx = canvas.getContext('2d');
+        const typeEl = modal.querySelector('#tablet-input-type');
+        const pressureEl = modal.querySelector('#tablet-pressure');
+        const rangeEl = modal.querySelector('#tablet-range');
+        const samplesEl = modal.querySelector('#tablet-samples');
+        const tiltEl = modal.querySelector('#tablet-tilt');
+        const statusEl = modal.querySelector('#tablet-status');
+        const minEl = modal.querySelector('#tablet-min');
+        const maxEl = modal.querySelector('#tablet-max');
+        let drawing = false;
+        let last = null;
+        let samples = 0;
+        let lo = Infinity;
+        let hi = -Infinity;
+        let lastPressure = 0.5;
+
+        const paintBackground = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = 'rgba(148,163,184,0.35)';
+          ctx.lineWidth = 1;
+          for (let x = 20; x < canvas.width; x += 20) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+          }
+        };
+        paintBackground();
+
+        const updateReadout = (ev) => {
+          const p = typeof ev.pressure === 'number' ? ev.pressure : 0;
+          lastPressure = p;
+          if (drawing) {
+            lo = Math.min(lo, p);
+            hi = Math.max(hi, p);
+          }
+          typeEl.textContent = ev.pointerType || 'unknown';
+          pressureEl.textContent = p.toFixed(2);
+          rangeEl.textContent = Number.isFinite(lo) ? `${lo.toFixed(2)} – ${hi.toFixed(2)}` : '—';
+          samplesEl.textContent = String(samples);
+          tiltEl.textContent =
+            Number.isFinite(ev.tiltX) && (ev.tiltX || ev.tiltY)
+              ? `${ev.tiltX}° / ${ev.tiltY}°`
+              : '—';
+          if (ev.pointerType === 'pen') {
+            statusEl.classList.add('wb-hidden');
+          }
+        };
+
+        const strokeTo = (x, y, pressure) => {
+          const width = 2 + pressure * 16;
+          ctx.strokeStyle = '#0ea5e9';
+          ctx.lineWidth = width;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          if (last) {
+            ctx.moveTo(last.x, last.y);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.arc(x, y, width / 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#0ea5e9';
+            ctx.fill();
+          }
+          last = { x, y };
+        };
+
+        const localPoint = (ev) => {
+          const rect = canvas.getBoundingClientRect();
+          return {
+            x: ((ev.clientX - rect.left) / rect.width) * canvas.width,
+            y: ((ev.clientY - rect.top) / rect.height) * canvas.height,
+          };
+        };
+
+        canvas.addEventListener('pointerdown', (ev) => {
+          canvas.setPointerCapture?.(ev.pointerId);
+          drawing = true;
+          samples = 0;
+          lo = Infinity;
+          hi = -Infinity;
+          last = null;
+          const pt = localPoint(ev);
+          strokeTo(pt.x, pt.y, ev.pointerType === 'pen' ? ev.pressure : 0.5);
+          updateReadout(ev);
+        });
+        canvas.addEventListener('pointermove', (ev) => {
+          if (!drawing) return;
+          const events =
+            typeof ev.getCoalescedEvents === 'function' ? ev.getCoalescedEvents() : [];
+          const batch = events.length > 0 ? events : [ev];
+          samples += batch.length;
+          for (const e of batch) {
+            const pt = localPoint(e);
+            strokeTo(pt.x, pt.y, e.pointerType === 'pen' ? e.pressure : 0.5);
+          }
+          updateReadout(ev);
+        });
+        const end = (ev) => {
+          drawing = false;
+          last = null;
+          updateReadout(ev);
+        };
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+        canvas.addEventListener('pointerleave', () => {
+          last = null;
+        });
+
+        minEl?.addEventListener('input', () => {
+          modal.querySelector('#tablet-min-label').textContent = `${minEl.value}%`;
+        });
+        maxEl?.addEventListener('input', () => {
+          modal.querySelector('#tablet-max-label').textContent = `${maxEl.value}%`;
+        });
+        modal.querySelector('#btn-tablet-clear')?.addEventListener('click', () => {
+          paintBackground();
+          samples = 0;
+          lo = Infinity;
+          hi = -Infinity;
+          samplesEl.textContent = '0';
+          rangeEl.textContent = '—';
+        });
+        modal.querySelector('#btn-tablet-apply')?.addEventListener('click', () => {
+          app.setBrushOverrides({
+            minWidthRatio: Number(minEl.value) / 100,
+            maxWidthRatio: Number(maxEl.value) / 100,
+          });
+          close();
+          showToast('Pressure curve applied to Pressure Ink and Chalk strokes.', 'success');
+          if (lastPressure === 0.5 && typeEl.textContent === 'mouse') {
+            showToast('Mouse input carries no pressure; this applies to pen input only.', 'warn');
           }
         });
       }
@@ -618,6 +891,126 @@ export function initDialogs(app) {
     renderCustomizeModal();
   }
 
+  function openCodeEditorModal(el = null) {
+    if (!el || el.type !== 'code') return;
+    const langValue = el.codeLanguage || 'plain';
+    openHtml(
+      'Code Block Editor',
+      `
+        <div class="wb-code-editor-head">
+          <label class="wb-prop-row" style="margin:0;">
+            <span>Language</span>
+            <select id="code-lang" aria-label="Code Language">
+              ${['plain', 'bash', 'yaml', 'json', 'python']
+                .map(
+                  (l) =>
+                    `<option value="${l}" ${langValue === l ? 'selected' : ''}>${l === 'plain' ? 'Plain text' : l}</option>`
+                )
+                .join('')}
+            </select>
+          </label>
+          <label class="wb-prop-row" style="margin:0;">
+            <span>Font size</span>
+            <input type="number" id="code-font-size" min="10" max="28" value="${el.fontSize || 14}" style="width:64px;"/>
+          </label>
+          <label class="wb-prop-row" style="margin:0;">
+            <span>Highlight lines</span>
+            <input type="text" id="code-highlight" value="${escapeXml(el.highlightLines || '')}" placeholder="e.g. 2,5-7" style="width:110px;"/>
+          </label>
+          <label class="wb-check-row" style="margin:0;">
+            <input type="checkbox" id="code-wrap" ${el.codeWrap ? 'checked' : ''}/>
+            <span>Wrap long lines</span>
+          </label>
+        </div>
+        <div class="wb-code-editor-shell">
+          <pre class="wb-code-gutter" id="code-gutter" aria-hidden="true"></pre>
+          <textarea id="code-source" class="wb-code-source" spellcheck="false" wrap="${el.codeWrap ? 'soft' : 'off'}" aria-label="Code content">${escapeXml(el.text || '')}</textarea>
+        </div>
+        <div class="wb-code-editor-foot">
+          <span class="wb-muted">Whitespace is stored exactly as typed. No code is executed.</span>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" id="code-copy">Copy code</button>
+            <button type="button" class="wb-btn wb-sm" id="code-outdent" title="Outdent selected lines">⇤</button>
+            <button type="button" class="wb-btn wb-sm" id="code-indent" title="Indent selected lines">⇥</button>
+          </div>
+        </div>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-btn" id="code-cancel">Cancel</button>
+          <button type="button" class="wb-btn wb-primary" id="code-save">Save Code Block</button>
+        </div>
+      `,
+      (modal) => {
+        const ta = modal.querySelector('#code-source');
+        const gutter = modal.querySelector('#code-gutter');
+        const paintGutter = () => {
+          const count = ta.value.split(String.fromCharCode(10)).length;
+          gutter.textContent = Array.from({ length: count }, (_, i) => i + 1).join(String.fromCharCode(10));
+          gutter.scrollTop = ta.scrollTop;
+        };
+        paintGutter();
+        ta.addEventListener('input', paintGutter);
+        ta.addEventListener('scroll', () => {
+          gutter.scrollTop = ta.scrollTop;
+        });
+        const indent = (delta) => {
+          const start = ta.selectionStart;
+          const end = ta.selectionEnd;
+          const value = ta.value;
+          const lineStart = value.lastIndexOf(String.fromCharCode(10), start - 1) + 1;
+          const before = value.slice(0, lineStart);
+          const block = value.slice(lineStart, end);
+          const changed = block
+            .split(String.fromCharCode(10))
+            .map((line) =>
+              delta > 0 ? `  ${line}` : line.replace(/^ {1,2}/, '')
+            )
+            .join(String.fromCharCode(10));
+          ta.value = before + changed + value.slice(end);
+          ta.selectionStart = lineStart;
+          ta.selectionEnd = lineStart + changed.length;
+          paintGutter();
+        };
+        modal.querySelector('#code-indent')?.addEventListener('click', () => indent(1));
+        modal.querySelector('#code-outdent')?.addEventListener('click', () => indent(-1));
+        ta.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Tab') {
+            ev.preventDefault();
+            indent(ev.shiftKey ? -1 : 1);
+          }
+        });
+        modal.querySelector('#code-copy')?.addEventListener('click', async () => {
+          const text =
+            ta.selectionStart !== ta.selectionEnd
+              ? ta.value.slice(ta.selectionStart, ta.selectionEnd)
+              : ta.value;
+          try {
+            await navigator.clipboard.writeText(text);
+            showToast('Code copied to clipboard.', 'success');
+          } catch {
+            showToast('Clipboard permission denied — select the text and copy manually.');
+          }
+        });
+        modal.querySelector('#code-wrap')?.addEventListener('change', (e) => {
+          ta.setAttribute('wrap', e.target.checked ? 'soft' : 'off');
+        });
+        modal.querySelector('#code-cancel')?.addEventListener('click', close);
+        modal.querySelector('#code-save')?.addEventListener('click', () => {
+          el.text = ta.value;
+          el.codeLanguage = modal.querySelector('#code-lang').value;
+          el.highlightLines = modal.querySelector('#code-highlight').value.trim();
+          el.codeWrap = Boolean(modal.querySelector('#code-wrap').checked);
+          el.fontSize = Math.max(10, Math.min(28, Number(modal.querySelector('#code-font-size').value) || 14));
+          autoGrowShapeForText(el, el.text);
+          app.commitChange();
+          close();
+          app.updateUI();
+          app.requestRender();
+          showToast('Code block saved.', 'success');
+        });
+      }
+    );
+  }
+
   return {
     isOpen,
     close,
@@ -632,5 +1025,8 @@ export function initDialogs(app) {
     openHyperlinkModal,
     openPromptModal,
     openFocusToolsModal,
+    openCodeEditorModal,
+    openTableInsertModal,
+    openTabletTestModal,
   };
 }

@@ -6,6 +6,7 @@ import {
   syncFreehandBounds,
   distanceToSegment,
 } from './geometry.js';
+import { tableGeometry } from '../render/shapes.js';
 import {
   getConnectorPoints,
   getConnectorMidpointHandle,
@@ -251,24 +252,35 @@ export function hitTestHyperlinkBadge(el, px, py) {
 
 export function getTableCellAtPoint(el, px, py) {
   if (!el || el.type !== 'table') return null;
-  const rows = Math.max(1, el.rows || 3);
-  const cols = Math.max(1, el.cols || 3);
   const cx = el.x + el.w / 2;
   const cy = el.y + el.h / 2;
   const local = unrotatePoint(px, py, cx, cy, el.rotation || 0);
   if (local.x < el.x || local.x > el.x + el.w || local.y < el.y || local.y > el.y + el.h) {
     return null;
   }
-  const cellW = el.w / cols;
-  const cellH = el.h / rows;
-  const col = Math.min(cols - 1, Math.max(0, Math.floor((local.x - el.x) / cellW)));
-  const row = Math.min(rows - 1, Math.max(0, Math.floor((local.y - el.y) / cellH)));
+  // Use the same spans the renderer draws, so a hit can never land in a cell
+  // that is not under the pointer when columns have custom widths.
+  const geo = tableGeometry(el);
+  let col = geo.cols - 1;
+  let row = geo.rows - 1;
+  for (let c = 0; c < geo.cols; c++) {
+    if (local.x < geo.xs[c + 1]) {
+      col = c;
+      break;
+    }
+  }
+  for (let r = 0; r < geo.rows; r++) {
+    if (local.y < geo.ys[r + 1]) {
+      row = r;
+      break;
+    }
+  }
   return {
     row,
     col,
-    x: el.x + col * cellW,
-    y: el.y + row * cellH,
-    w: cellW,
-    h: cellH,
+    x: geo.xs[col],
+    y: geo.ys[row],
+    w: geo.cellW[col],
+    h: geo.cellH[row],
   };
 }
