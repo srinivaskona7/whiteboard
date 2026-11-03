@@ -97,6 +97,9 @@ export const TOOL_REGISTRY = [
   { id: 'arrow', label: 'Smart Connector Arrow', shortcut: 'A', group: 'dock', icon: ICONS.arrow },
   { id: 'text', label: 'Text', shortcut: 'T', group: 'dock', icon: ICONS.text },
   { id: 'sticky', label: 'Sticky Note', shortcut: 'N', group: 'dock', icon: ICONS.sticky },
+  // Spotlight is a mode, not a drawing tool: clicking it toggles the spotlight
+  // instead of entering a placement tool (see setTool).
+  { id: 'spotlight', label: 'Spotlight Mode', shortcut: 'F7', group: 'dock', icon: ICONS.spotlight },
   { id: 'pointer', label: 'Point at Component (Classroom)', shortcut: 'W', group: 'dock', icon: ICONS.pointer },
   { id: 'question', label: 'Pin Question to Board', shortcut: 'Q', group: 'dock', icon: ICONS.question },
 

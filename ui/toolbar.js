@@ -3,6 +3,8 @@ import { TOOL_REGISTRY, ICONS, getShortcutLabel } from './registry.js';
 import { WORKSPACE_PRESETS } from '../scene/storage.js';
 import { escapeXml } from '../render/svg-export.js';
 import { ARROW_QUICK_PRESETS } from '../scene/arrow-presets.js';
+import { BRUSH_PRESETS, getBrushPreset } from '../scene/brushes.js';
+import { PALETTE_STROKE_COLORS } from '../render/themes.js';
 import { arrowPresetPreview } from './arrow-preview.js';
 
 export const PRIMARY_TOOL_IDS = [
@@ -11,10 +13,11 @@ export const PRIMARY_TOOL_IDS = [
   'pen',
   'highlighter',
   'eraser',
-  'rect',
   'arrow',
-  'text',
   'sticky',
+  'spotlight',
+  'rect',
+  'text',
   'laser',
   'pointer',
   'question',
@@ -171,6 +174,249 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-shortcuts')?.addEventListener('click', () => app.dialogs.openShortcutsModal());
   }
 
+  // ── Dock helpers: brush drawer, arrow tabs ────────────────────────────────
+  const HIGHLIGHTER_INKS = ['#facc15', '#4ade80', '#60a5fa', '#f472b6', '#fb923c', '#a78bfa'];
+
+  const ARROW_ROUTINGS = [
+    { id: 'straight', label: 'Straight', path: 'M4 18 L20 6' },
+    { id: 'orthogonal', label: 'Orthogonal', path: 'M4 18 H12 V6 H20' },
+    { id: 'curved', label: 'Curved', path: 'M4 18 Q12 2 20 14' },
+    { id: 'rounded-elbow', label: 'Rounded elbow', path: 'M4 18 H9 A3 3 0 0 0 12 15 V9 A3 3 0 0 1 15 6 H20' },
+  ];
+
+  const ARROW_HEADS = [
+    { id: 'none', label: 'None', glyph: '—' },
+    { id: 'arrow', label: 'Arrow', glyph: '→' },
+    { id: 'triangle', label: 'Triangle', glyph: '▶' },
+    { id: 'diamond', label: 'Diamond', glyph: '◆' },
+    { id: 'circle', label: 'Circle', glyph: '●' },
+    { id: 'bar', label: 'Bar', glyph: '|' },
+  ];
+
+  function inkToolActive() {
+    return app.activeTool === 'pen' || app.activeTool === 'highlighter';
+  }
+
+  function selectedInk() {
+    const page = app.getPage?.();
+    if (!page) return [];
+    return page.elements.filter(
+      (el) =>
+        app.selectedIds.has(el.id) &&
+        (el.type === 'pen' || el.type === 'highlighter') &&
+        !el.locked
+    );
+  }
+
+  function currentBrushPreset() {
+    return getBrushPreset(app.currentBrush) || BRUSH_PRESETS[0];
+  }
+
+  // What the arrow tabs should show: the selected connector first, then any
+  // override still waiting for the next arrow, then the plain defaults.
+  function arrowStyleSeed() {
+    const page = app.getPage?.();
+    const selected = page?.elements?.find(
+      (e) => app.selectedIds.has(e.id) && (e.type === 'arrow' || e.type === 'line')
+    );
+    const pending = app.pendingArrowStyle || {};
+    const style = app.currentStyle || {};
+    return {
+      routing: selected?.routing || pending.routing || style.routing || 'orthogonal',
+      startArrow: selected?.startArrow || pending.startArrow || style.startArrow || 'none',
+      endArrow: selected?.endArrow || pending.endArrow || style.endArrow || 'arrow',
+      cornerRadius: selected?.cornerRadius || pending.cornerRadius || 14,
+      presetId: app.pendingArrowPreset || '',
+    };
+  }
+
+  function arrowPopoverMarkup() {
+    const s = arrowStyleSeed();
+    const tabBtn = (id, label, active) => `
+      <button type="button" class="wb-arrow-tab ${active ? 'active' : ''}" role="tab"
+        data-arrow-tab="${id}" aria-selected="${active}">${label}</button>`;
+    return `
+      <div class="wb-arrow-tabs" role="tablist" aria-label="Arrow options">
+        ${tabBtn('presets', 'Presets', true)}
+        ${tabBtn('route', 'Route', false)}
+        ${tabBtn('heads', 'Heads', false)}
+      </div>
+      <div class="wb-arrow-tab-panel" data-arrow-panel="presets">
+        ${ARROW_QUICK_PRESETS.map(
+          (p, i) => `
+          <button type="button" class="wb-menu-item wb-arrow-card" data-arrow-preset="${p.id}" title="${escapeXml(p.description)}">
+            ${arrowPresetPreview(p, i)}
+            <span>${escapeXml(p.name)}</span>
+          </button>`
+        ).join('')}
+        <button type="button" class="wb-menu-item" id="btn-arrow-insert-sample" title="Insert a ready-made arrow without dragging">
+          + <span>Insert sample arrow</span>
+        </button>
+      </div>
+      <div class="wb-arrow-tab-panel wb-hidden" data-arrow-panel="route">
+        <div class="wb-prop-title" style="margin:2px 0 4px;">Path type</div>
+        <div class="wb-arrow-option-grid">
+          ${ARROW_ROUTINGS.map(
+            (r) => `
+            <button type="button" class="wb-arrow-option ${s.routing === r.id ? 'active' : ''}"
+              data-arrow-routing="${r.id}" aria-pressed="${s.routing === r.id}" title="${r.label}">
+              <svg viewBox="0 0 24 24" width="26" height="16" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${r.path}"/></svg>
+              <span>${r.label}</span>
+            </button>`
+          ).join('')}
+        </div>
+        <label class="wb-prop-row">
+          <span>Corner radius (${Math.round(s.cornerRadius)}px)</span>
+          <input type="range" id="wb-arrow-radius" min="2" max="48" value="${Math.round(s.cornerRadius)}"
+            ${s.routing === 'rounded-elbow' ? '' : 'disabled'}/>
+        </label>
+      </div>
+      <div class="wb-arrow-tab-panel wb-hidden" data-arrow-panel="heads">
+        <div class="wb-prop-title" style="margin:2px 0 4px;">Start head</div>
+        <div class="wb-arrow-option-grid">
+          ${ARROW_HEADS.map(
+            (h) => `
+            <button type="button" class="wb-arrow-option ${s.startArrow === h.id ? 'active' : ''}"
+              data-arrow-start="${h.id}" aria-pressed="${s.startArrow === h.id}" title="${h.label}">
+              <b aria-hidden="true">${h.glyph}</b><span>${h.label}</span>
+            </button>`
+          ).join('')}
+        </div>
+        <div class="wb-prop-title" style="margin:6px 0 4px;">End head</div>
+        <div class="wb-arrow-option-grid">
+          ${ARROW_HEADS.map(
+            (h) => `
+            <button type="button" class="wb-arrow-option ${s.endArrow === h.id ? 'active' : ''}"
+              data-arrow-end="${h.id}" aria-pressed="${s.endArrow === h.id}" title="${h.label}">
+              <b aria-hidden="true">${h.glyph}</b><span>${h.label}</span>
+            </button>`
+          ).join('')}
+        </div>
+        <button type="button" class="wb-menu-item" id="wb-arrow-swap-heads" title="Swap start and end heads">⇄ Swap heads</button>
+      </div>
+    `;
+  }
+
+  // The drawer only exists while an ink tool is active, so switching to any
+  // other tool collapses it (the dock is rebuilt on every tool change).
+  function brushDrawerMarkup() {
+    if (!inkToolActive()) return '';
+    const preset = currentBrushPreset();
+    const width = app.brushOverrides?.strokeWidth ?? preset.strokeWidth;
+    const opacity = Math.round((app.brushOverrides?.opacity ?? preset.opacity) * 100);
+    const smoothing = app.brushSmoothing || preset.smoothing || 'adaptive';
+    const inks = preset.kind === 'highlighter' ? HIGHLIGHTER_INKS : PALETTE_STROKE_COLORS;
+    const ink = app.currentStyle?.stroke || (preset.kind === 'highlighter' ? '#facc15' : '#1e293b');
+    const label = app.activeTool === 'highlighter' ? 'Highlighter' : 'Freehand';
+    return `
+      <div class="wb-brush-drawer" id="wb-brush-drawer" role="group" aria-label="${label} brush options">
+        <div class="wb-brush-drawer-head">
+          <strong>${label}</strong>
+          <span class="wb-muted">${escapeXml(preset.name)}</span>
+        </div>
+        <div class="wb-brush-drawer-presets" role="radiogroup" aria-label="Brush preset">
+          ${BRUSH_PRESETS.map(
+            (p) => `
+            <button type="button" class="wb-brush-chip ${p.id === preset.id ? 'active' : ''}"
+              data-drawer-brush="${p.id}" role="radio" aria-checked="${p.id === preset.id}"
+              title="${escapeXml(p.description)}">${escapeXml(p.name)}</button>`
+          ).join('')}
+        </div>
+        <div class="wb-brush-drawer-colors" role="group" aria-label="Ink colour">
+          ${inks
+            .map(
+              (c) =>
+                `<button type="button" class="wb-color-swatch ${ink === c ? 'active' : ''}"
+                  style="background:${c}" data-drawer-color="${c}" aria-label="Ink colour ${c}"></button>`
+            )
+            .join('')}
+          <input type="color" id="wb-drawer-color" value="${ink}" aria-label="Custom ink colour"/>
+        </div>
+        <label class="wb-brush-drawer-row">
+          <span>Size</span>
+          <input type="range" id="wb-drawer-size" min="1" max="40" value="${Math.round(width)}" aria-label="Brush size"/>
+          <b data-drawer-value="size">${Math.round(width)}px</b>
+        </label>
+        <label class="wb-brush-drawer-row">
+          <span>Opacity</span>
+          <input type="range" id="wb-drawer-opacity" min="5" max="100" value="${opacity}" aria-label="Brush opacity"/>
+          <b data-drawer-value="opacity">${opacity}%</b>
+        </label>
+        <label class="wb-brush-drawer-row">
+          <span>Stabilize</span>
+          <select id="wb-drawer-smoothing" aria-label="Stroke stabilization">
+            <option value="off" ${smoothing === 'off' ? 'selected' : ''}>Off</option>
+            <option value="adaptive" ${smoothing === 'adaptive' ? 'selected' : ''}>Adaptive</option>
+            <option value="stabilizer" ${smoothing === 'stabilizer' ? 'selected' : ''}>Stabilizer</option>
+          </select>
+        </label>
+      </div>
+    `;
+  }
+
+  function bindBrushDrawer(drawer) {
+    drawer.querySelectorAll('[data-drawer-brush]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        app.setBrushPreset(btn.dataset.drawerBrush, { applyToSelection: selectedInk().length > 0 });
+      });
+    });
+
+    const setInkColour = (colour) => {
+      if (!colour) return;
+      const ink = selectedInk();
+      if (ink.length > 0) {
+        for (const el of ink) el.stroke = colour;
+        app.commitChange();
+      }
+      app.currentStyle = { ...app.currentStyle, stroke: colour };
+      drawer
+        .querySelectorAll('[data-drawer-color]')
+        .forEach((s) => s.classList.toggle('active', s.dataset.drawerColor === colour));
+      app.requestRender();
+    };
+    drawer.querySelectorAll('[data-drawer-color]').forEach((swatch) => {
+      swatch.addEventListener('click', () => setInkColour(swatch.dataset.drawerColor));
+    });
+    drawer.querySelector('#wb-drawer-color')?.addEventListener('input', (e) => setInkColour(e.target.value));
+
+    drawer.querySelector('#wb-drawer-size')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value) || 2;
+      app.setBrushOverrides?.({ strokeWidth: v }, { silent: true });
+      const ink = selectedInk();
+      if (ink.length > 0) {
+        for (const el of ink) el.strokeWidth = v;
+        app.commitChange();
+      }
+      const out = drawer.querySelector('[data-drawer-value="size"]');
+      if (out) out.textContent = `${Math.round(v)}px`;
+      app.requestRender();
+    });
+
+    drawer.querySelector('#wb-drawer-opacity')?.addEventListener('input', (e) => {
+      const pct = Number(e.target.value) || 100;
+      const v = Math.max(0.05, pct / 100);
+      app.setBrushOverrides?.({ opacity: v }, { silent: true });
+      const ink = selectedInk();
+      if (ink.length > 0) {
+        for (const el of ink) el.opacity = v;
+        app.commitChange();
+      }
+      const out = drawer.querySelector('[data-drawer-value="opacity"]');
+      if (out) out.textContent = `${pct}%`;
+      app.requestRender();
+    });
+
+    drawer.querySelector('#wb-drawer-smoothing')?.addEventListener('change', (e) => {
+      app.setBrushSmoothing(e.target.value);
+    });
+  }
+
+  function bindBrushDrawerSafely(dock) {
+    const drawer = dock.querySelector('#wb-brush-drawer');
+    if (drawer) bindBrushDrawer(drawer);
+  }
+
   let lastDockSignature = '';
 
   function renderDock(forceRebuild = false) {
@@ -187,13 +433,27 @@ export function initToolbar(app) {
           ? app.getPinnedTools()
           : PRIMARY_TOOL_IDS;
     const pinnedIds = rawPinnedIds.filter((id) => (app.collab ? app.collab.canUseTool(id) : true));
-    const sig = `${canEdit}:${collabStatus}:${Boolean(app.focusMode)}:${pinnedIds.join(',')}`;
+    // Tool, spotlight and brush state are part of the signature so the brush
+    // drawer appears/collapses with the active tool instead of lingering.
+    const sig = [
+      canEdit ? 1 : 0,
+      collabStatus,
+      app.focusMode ? 1 : 0,
+      app.activeTool || '',
+      app.spotlight?.active ? 1 : 0,
+      app.currentBrush || '',
+      app.pendingArrowPreset || '',
+      pinnedIds.join(','),
+    ].join('|');
 
     if (!forceRebuild && sig === lastDockSignature && dock.querySelector('.wb-tool-list')) {
       const pinnedSet = new Set(pinnedIds);
-      const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id));
+      const advancedTools = TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id) && t.id !== 'arrow');
       dock.querySelectorAll('[data-tool]').forEach((btn) => {
-        const isAct = btn.dataset.tool === app.activeTool;
+        const isAct =
+          btn.dataset.tool === 'spotlight'
+            ? Boolean(app.spotlight?.active)
+            : btn.dataset.tool === app.activeTool;
         btn.classList.toggle('active', isAct);
         btn.setAttribute('aria-pressed', String(isAct));
       });
@@ -218,27 +478,34 @@ export function initToolbar(app) {
 
     lastDockSignature = sig;
     const pinnedSet = new Set(pinnedIds);
-    const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id));
-    const advancedTools = canEdit ? TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id)) : [];
+    // The arrow is always drawn as the split button below, so it never also
+    // appears as a plain pinned button or in the + menu.
+    const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id) && t.id !== 'arrow');
+    const advancedTools = canEdit
+      ? TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id) && t.id !== 'arrow')
+      : [];
 
     dock.innerHTML = `
       <div class="wb-tool-list" role="toolbar" aria-label="Drawing Tools">
         ${visibleTools
-          .map(
-            (t) => `
+          .map((t) => {
+            // Spotlight is a mode: its button reflects the spotlight, not the tool.
+            const isActive =
+              t.id === 'spotlight' ? Boolean(app.spotlight?.active) : app.activeTool === t.id;
+            return `
           <button
             type="button"
-            class="wb-tool-btn ${app.activeTool === t.id ? 'active' : ''}"
+            class="wb-tool-btn ${isActive ? 'active' : ''}"
             data-tool="${t.id}"
             aria-label="${t.label} (${t.shortcut})"
-            aria-pressed="${app.activeTool === t.id}"
+            aria-pressed="${isActive}"
             title="${t.label} (${t.shortcut})"
           >
             <span class="wb-tool-icon">${t.icon}</span>
             <span class="wb-tool-key">${t.shortcut}</span>
           </button>
-        `
-          )
+        `;
+          })
           .join('')}
         ${
           canEdit
@@ -249,7 +516,7 @@ export function initToolbar(app) {
                   id="btn-quick-arrow"
                   data-quick-arrow="simple-sketch"
                   aria-label="Arrow tool"
-                  title="Arrow tool with the current preset — drag on the canvas (Alt: choose a preset)"
+                  title="Arrow tool with the current preset — drag on the canvas (Alt: open arrow tabs)"
                 >
                   <span class="wb-tool-icon">${(TOOL_REGISTRY.find((t) => t.id === 'arrow') || {}).icon || '↗'}</span>
                   <span class="wb-tool-key">↗</span>
@@ -260,22 +527,10 @@ export function initToolbar(app) {
                   id="btn-quick-arrow-more"
                   aria-haspopup="menu"
                   aria-expanded="false"
-                  aria-label="Arrow presets"
-                  title="Arrow presets"
+                  aria-label="Arrow options"
+                  title="Arrow options — presets, route and heads"
                 >▾</button>
-                <div class="wb-insert-popover wb-arrow-popover wb-hidden" id="wb-arrow-popover" role="menu" aria-label="Arrow quick presets">
-                  <div class="wb-prop-title" style="margin-bottom:4px;">Arrow presets</div>
-                  ${ARROW_QUICK_PRESETS.map(
-                    (p, i) => `
-                      <button type="button" class="wb-menu-item wb-arrow-card" data-arrow-preset="${p.id}" title="${escapeXml(p.description)}">
-                        ${arrowPresetPreview(p, i)}
-                        <span>${escapeXml(p.name)}</span>
-                      </button>`
-                  ).join('')}
-                  <button type="button" class="wb-menu-item" id="btn-arrow-insert-sample" title="Insert a ready-made arrow without dragging">
-                    + <span>Insert sample arrow</span>
-                  </button>
-                </div>
+                <div class="wb-insert-popover wb-arrow-popover wb-hidden" id="wb-arrow-popover" role="menu" aria-label="Arrow options"></div>
               </div>`
             : ''
         }
@@ -342,6 +597,7 @@ export function initToolbar(app) {
             </div>`
           : ''
       }
+      ${brushDrawerMarkup()}
     `;
 
     dock.querySelectorAll('[data-tool]').forEach((btn) => {
@@ -364,8 +620,103 @@ export function initToolbar(app) {
 
     const arrowPop = dock.querySelector('#wb-arrow-popover');
     const arrowCaret = dock.querySelector('#btn-quick-arrow-more');
+
+    // Keep the tabs' active marks in step with what was just applied without
+    // rebuilding the dock (which would close the popover mid-edit).
+    const refreshArrowTabState = () => {
+      if (!arrowPop) return;
+      const s = arrowStyleSeed();
+      arrowPop.querySelectorAll('[data-arrow-routing]').forEach((btn) => {
+        const on = btn.dataset.arrowRouting === s.routing;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', String(on));
+      });
+      arrowPop.querySelectorAll('[data-arrow-start]').forEach((btn) => {
+        const on = btn.dataset.arrowStart === s.startArrow;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', String(on));
+      });
+      arrowPop.querySelectorAll('[data-arrow-end]').forEach((btn) => {
+        const on = btn.dataset.arrowEnd === s.endArrow;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', String(on));
+      });
+      const radius = arrowPop.querySelector('#wb-arrow-radius');
+      if (radius) {
+        radius.value = Math.round(s.cornerRadius);
+        radius.disabled = s.routing !== 'rounded-elbow';
+        const lab = radius.closest('.wb-prop-row')?.querySelector('span');
+        if (lab) lab.textContent = `Corner radius (${Math.round(s.cornerRadius)}px)`;
+      }
+    };
+
+    const bindArrowPopover = () => {
+      if (!arrowPop) return;
+      arrowPop.querySelectorAll('[data-arrow-tab]').forEach((tab) => {
+        tab.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const name = tab.dataset.arrowTab;
+          arrowPop.querySelectorAll('[data-arrow-tab]').forEach((t) => {
+            const on = t.dataset.arrowTab === name;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', String(on));
+          });
+          arrowPop.querySelectorAll('[data-arrow-panel]').forEach((panel) => {
+            panel.classList.toggle('wb-hidden', panel.dataset.arrowPanel !== name);
+          });
+        });
+      });
+      arrowPop.querySelectorAll('[data-arrow-preset]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          toggleArrowPop(false);
+          // With arrows selected this restyles them; otherwise it arms the tool.
+          app.applyArrowPresetToSelection(btn.dataset.arrowPreset);
+          renderDock();
+        });
+      });
+      arrowPop.querySelectorAll('[data-arrow-routing]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          app.applyArrowStyle({ routing: btn.dataset.arrowRouting });
+          refreshArrowTabState();
+        });
+      });
+      arrowPop.querySelector('#wb-arrow-radius')?.addEventListener('change', (ev) => {
+        app.applyArrowStyle({ cornerRadius: Number(ev.target.value) || 14 });
+        refreshArrowTabState();
+      });
+      arrowPop.querySelectorAll('[data-arrow-start]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          app.applyArrowStyle({ startArrow: btn.dataset.arrowStart });
+          refreshArrowTabState();
+        });
+      });
+      arrowPop.querySelectorAll('[data-arrow-end]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          app.applyArrowStyle({ endArrow: btn.dataset.arrowEnd });
+          refreshArrowTabState();
+        });
+      });
+      arrowPop.querySelector('#wb-arrow-swap-heads')?.addEventListener('click', () => {
+        const s = arrowStyleSeed();
+        app.applyArrowStyle({ startArrow: s.endArrow, endArrow: s.startArrow });
+        refreshArrowTabState();
+      });
+      arrowPop.querySelector('#btn-arrow-insert-sample')?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        toggleArrowPop(false);
+        app.insertSimpleArrow(app.pendingArrowPreset);
+        renderDock();
+      });
+    };
+
+    // Content is rendered on open so the tabs always reflect the current
+    // selection rather than the state from the last dock rebuild.
     const toggleArrowPop = (open) => {
       const next = open ?? arrowPop?.classList.contains('wb-hidden');
+      if (next && arrowPop) {
+        arrowPop.innerHTML = arrowPopoverMarkup();
+        bindArrowPopover();
+      }
       arrowPop?.classList.toggle('wb-hidden', !next);
       arrowCaret?.setAttribute('aria-expanded', String(Boolean(next)));
     };
@@ -383,20 +734,6 @@ export function initToolbar(app) {
       ev.stopPropagation();
       toggleArrowPop();
     });
-    dock.querySelectorAll('[data-arrow-preset]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        toggleArrowPop(false);
-        // With arrows selected this restyles them; otherwise it arms the tool.
-        app.applyArrowPresetToSelection(btn.dataset.arrowPreset);
-        renderDock();
-      });
-    });
-    dock.querySelector('#btn-arrow-insert-sample')?.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      toggleArrowPop(false);
-      app.insertSimpleArrow(app.pendingArrowPreset);
-      renderDock();
-    });
     if (!dock.dataset.arrowDismissBound) {
       dock.dataset.arrowDismissBound = '1';
       document.addEventListener('pointerdown', (ev) => {
@@ -407,6 +744,8 @@ export function initToolbar(app) {
         document.getElementById('btn-quick-arrow-more')?.setAttribute('aria-expanded', 'false');
       });
     }
+
+    bindBrushDrawerSafely(dock);
 
     dock.querySelectorAll('[data-insert-tool]').forEach((btn) => {
       btn.addEventListener('click', () => {

@@ -129,6 +129,9 @@ export class WhiteboardApp {
       scope: this.workspacePrefs.eraserScope || 'all',
     };
     this.eraserCursor = { x: 0, y: 0, active: false };
+    // Route / head overrides chosen in the dock's arrow tabs; they apply on top
+    // of the next preset so a preset alone never erases a deliberate choice.
+    this.pendingArrowStyle = {};
 
     // 4. Ephemeral teaching & presentation state
     this.annotationMode = false;
@@ -272,6 +275,7 @@ export class WhiteboardApp {
     );
     if (!this.pendingArrowPreset || defaults.has(this.pendingArrowPreset)) {
       this.pendingArrowPreset = WORKSPACE_PRESETS[presetId].defaultArrowPreset || null;
+      this.pendingArrowStyle = {};
     }
     if (typeof document !== 'undefined' && document.body) {
       document.body.dataset.preset = presetId;
@@ -541,6 +545,12 @@ export class WhiteboardApp {
       return;
     }
     if (this.textTool.isOpen()) this.textTool.commit();
+    // Spotlight is a presentation mode, not a placement tool: it toggles and
+    // leaves the current drawing tool alone.
+    if (toolId === 'spotlight') {
+      this.toggleSpotlight(false);
+      return;
+    }
     this.cancelActiveInteractions();
     this.activeTool = toolId;
     // Each ink tool keeps its own natural preset instead of inheriting whichever
@@ -1529,6 +1539,9 @@ export class WhiteboardApp {
   }
 
   applyArrowPresetToSelection(presetId) {
+    // A preset is a complete, documented combination: choosing one discards
+    // route/head overrides from the tabs instead of half-applying both.
+    this.pendingArrowStyle = {};
     const page = this.getPage();
     const targets = page.elements.filter(
       (e) => this.selectedIds.has(e.id) && (e.type === 'line' || e.type === 'arrow') && !e.locked
@@ -1543,6 +1556,34 @@ export class WhiteboardApp {
       return false;
     }
     for (const el of targets) applyArrowQuickPreset(el, presetId);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    return true;
+  }
+
+  // Fine-grained arrow settings from the dock's Route / Heads tabs. Applied to
+  // the selected connectors immediately, and remembered for the next arrow.
+  applyArrowStyle(patch = {}) {
+    const clean = {};
+    if (patch.routing !== undefined) clean.routing = patch.routing;
+    if (patch.startArrow !== undefined) clean.startArrow = patch.startArrow;
+    if (patch.endArrow !== undefined) clean.endArrow = patch.endArrow;
+    if (patch.cornerRadius !== undefined) {
+      clean.cornerRadius = Math.max(2, Math.min(48, Number(patch.cornerRadius) || 14));
+    }
+    if (Object.keys(clean).length === 0) return false;
+    this.pendingArrowStyle = { ...(this.pendingArrowStyle || {}), ...clean };
+    const page = this.getPage();
+    const targets = page.elements.filter(
+      (e) => this.selectedIds.has(e.id) && (e.type === 'line' || e.type === 'arrow') && !e.locked
+    );
+    if (targets.length === 0) {
+      this.toolbarUI?.update?.();
+      this.requestRender();
+      return false;
+    }
+    for (const el of targets) Object.assign(el, clean);
     this.commitChange();
     this.updateUI();
     this.requestRender();
@@ -1582,6 +1623,7 @@ export class WhiteboardApp {
       y2: Math.round(origin.y),
     });
     applyArrowQuickPreset(el, chosen);
+    Object.assign(el, this.pendingArrowStyle || {});
     page.elements.push(el);
     this.selectedIds = new Set([el.id]);
     this.commitChange();

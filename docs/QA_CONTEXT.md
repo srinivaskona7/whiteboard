@@ -186,3 +186,18 @@ being inert on AKS/GKE.
 
 The lesson recorded in memory: state that lives outside `page.elements` silently escapes preview,
 undo and autosave unless each mechanism is extended to include it.
+
+### Dock, brush drawer and arrow tabs (later on 2026-11-03)
+
+| Check | Expected | Actual |
+|---|---|---|
+| Required pins in every preset | pen, highlighter, eraser, sticky, spotlight, arrow present in teach / diagram / collaborate | All three reported `missing: []`; arrow is the split button, not a duplicate plain button |
+| Old prefs migrate | A prefs blob without the new tools is topped up once | `pinnedToolsStamp` mismatch → union; a second load after unpinning did **not** re-add the tool |
+| Drawer visibility | Present for pen and highlighter, absent otherwise | `#wb-brush-drawer` true/true for pen/highlighter; false for eraser, rect, sticky, spotlight, select |
+| Drawer controls | Change the real brush state and persist | chalk chip; size 13 px; opacity 42 %; colour applied; all present in `classroom_whiteboard_workspace_prefs_v1` |
+| Spotlight pin | Toggles the mode, button shows active, tool unchanged | `spotlight.active` toggled, `activeTool` stayed `select` |
+| Arrow tabs | Presets / Route / Heads act on the selection and the next arrow | curved plus diamond/triangle applied to the arrow; `pendingArrowStyle` carried the choice forward |
+| Console | No errors or warnings | none |
+
+Not tested: `:has()` fallback on browsers without support (panel overlap would return); touch input on the drawer.
+

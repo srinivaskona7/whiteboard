@@ -313,10 +313,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: 11px; font-weight: 700; background: var(--bg-muted); border-radius: 5px;
 }
 .wb-insert-wrap { position: relative; }
-.wb-split-wrap { position: relative; display: flex; align-items: stretch; gap: 0; }
-.wb-split-wrap .wb-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.wb-split-wrap { position: relative; display: flex; align-items: stretch; gap: 0; width: 38px; flex-shrink: 0; }
+.wb-split-wrap .wb-split-main {
+  width: 24px; min-width: 24px; padding: 0;
+  border-top-right-radius: 0; border-bottom-right-radius: 0;
+}
+.wb-split-wrap .wb-split-main .wb-tool-key { display: none; }
 .wb-split-wrap .wb-split-caret {
-  min-width: 14px; padding: 0 2px; border-top-left-radius: 0; border-bottom-left-radius: 0;
+  width: 14px; min-width: 14px; padding: 0;
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
   border-left: 1px solid var(--border-subtle); font-size: 9px; line-height: 1;
 }
 .wb-arrow-popover { width: 252px; }
@@ -327,6 +332,60 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   justify-content: flex-start; text-align: left; font-size: 11px; padding: 3px 5px; gap: 6px; min-height: 32px;
 }
 .wb-arrow-preset-grid .wb-arrow-preview { width: 44px; height: 22px; }
+
+/* Detailed arrow tabs (Presets / Route / Heads) */
+.wb-arrow-tabs {
+  display: flex; gap: 2px; padding: 2px; margin-bottom: 6px;
+  background: var(--bg-muted); border-radius: 7px;
+}
+.wb-arrow-tab {
+  flex: 1; padding: 4px 6px; border: none; border-radius: 5px; background: transparent;
+  color: var(--text-secondary); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.wb-arrow-tab:hover { color: var(--text-primary); }
+.wb-arrow-tab.active { background: var(--bg-elevated); color: var(--accent-color); }
+.wb-arrow-tab-panel { display: flex; flex-direction: column; gap: 3px; }
+.wb-arrow-tab-panel.wb-hidden { display: none; }
+.wb-arrow-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.wb-arrow-option {
+  display: flex; align-items: center; gap: 6px; padding: 5px 7px; min-height: 30px;
+  border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-surface);
+  color: var(--text-primary); font-size: 11px; cursor: pointer; text-align: left;
+}
+.wb-arrow-option:hover { border-color: var(--accent-color); }
+.wb-arrow-option.active { border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color); }
+.wb-arrow-option b { font-size: 13px; line-height: 1; width: 14px; text-align: center; }
+
+/* Brush drawer — attaches to the dock, only exists while Freehand/Highlighter is active */
+.wb-brush-drawer {
+  position: fixed; left: 56px; bottom: 44px; width: 236px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-lg); z-index: 25;
+}
+.wb-brush-drawer-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px;
+}
+.wb-brush-drawer-presets { display: flex; flex-wrap: wrap; gap: 3px; }
+.wb-brush-chip {
+  padding: 3px 7px; font-size: 10px; font-weight: 600; border-radius: 99px;
+  border: 1px solid var(--border-color); background: var(--bg-surface);
+  color: var(--text-secondary); cursor: pointer;
+}
+.wb-brush-chip:hover { border-color: var(--accent-color); color: var(--text-primary); }
+.wb-brush-chip.active { border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color); }
+.wb-brush-drawer-colors { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.wb-brush-drawer-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.wb-brush-drawer-row > span { flex: 0 0 48px; color: var(--text-secondary); }
+.wb-brush-drawer-row > input[type="range"] { flex: 1; min-width: 0; }
+.wb-brush-drawer-row > b { flex: 0 0 38px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.wb-brush-drawer-row > select { flex: 1; min-width: 0; }
+/* Keep the drawer clear of an open left panel instead of covering it. */
+body:has(.wb-left-panel:not(.wb-hidden)) .wb-brush-drawer { left: 356px; }
+@media (max-width: 640px) {
+  .wb-brush-drawer { left: 50px; bottom: 48px; width: 200px; }
+  body:has(.wb-left-panel:not(.wb-hidden)) .wb-brush-drawer { left: 50px; }
+}
 .wb-tablet-stage { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; margin: 8px 0; }
 .wb-tablet-stage canvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
 .wb-tablet-readout {

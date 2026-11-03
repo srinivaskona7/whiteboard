@@ -241,4 +241,22 @@ Three reviewers read the diff. Six confirmed defects, all fixed and re-verified.
 | Matches past the 40th were unreachable however the count read | Palette passes `limit: entries.length`; the windowed list bounds DOM cost | browser: "cloud" → 135 matches, 135 reachable, 9 rows in the DOM |
 | `connectivity` inert on `azure-aks` and `gcp-gke` | Entry edge labelled `public` / `private endpoint` / `hybrid ExpressRoute` in every pattern | unit |
 
+## 16. Dock, brush drawer and arrow tabs (2026-11-03)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Freehand, Highlighter, Eraser, Sticky Note, Spotlight and Arrow pinned in **all three** presets | PASS(browser) | `DEFAULT_PRESET_TOOLS` lists all six per preset; the dock reported `missing: []` for teach, diagram and collaborate |
+| Existing prefs gain the new pins | PASS(unit + browser) | `REQUIRED_PINNED_TOOLS` is topped up once, keyed by a stamp derived from the list; the user's own order is preserved and a later unpin is not resurrected |
+| Spotlight is a pinnable dock tool | PASS(browser) | `TOOL_REGISTRY` entry with `F7`; the dock button reflects `spotlight.active`, toggles the mode and leaves `activeTool` untouched |
+| Brush drawer expands only for Freehand / Highlighter | PASS(browser) | `#wb-brush-drawer` present for pen and highlighter, absent for eraser, rect, sticky, spotlight and select |
+| Drawer drives the real brush state | PASS(browser) | chip → `currentBrush: chalk`; size 13 / opacity 42 → `brushOverrides {strokeWidth:13, opacity:0.42}`; colour → `currentStyle.stroke`; all persisted to workspace prefs |
+| Arrow tabs are detailed, not a single list | PASS(browser) | Presets / Route / Heads tabs; Route applies `curved`, Heads applies `diamond` + `triangle` to the selected arrow; radius slider enables only for `rounded-elbow` |
+| Tab choices survive into the *next* arrow | PASS(browser) | `pendingArrowStyle` accumulates and is applied by `ConnectorTool.applyPendingPreset` and `insertSimpleArrow` |
+| No duplicate arrow button | PASS(browser) | `arrow` is filtered out of the plain dock list and the `+` menu; the split button is the single arrow entry |
+| Pinned ids always resolve | PASS(unit) | `tests/dock.test.js` fails on a pinned id with no registry entry — the silent-drop class of bug |
+
+Known limits: the drawer duplicates the Inspector's drawing section by design (both edit the same state);
+the drawer is positioned beside the dock and shifts right of an open left panel via `:has()` — on a browser
+without `:has()` it would overlap that panel.
+
 

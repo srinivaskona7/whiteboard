@@ -89,16 +89,50 @@ export function stripTeacherNotes(scene) {
   return sanitizeSceneForPersistence(scene, { stripNotes: true });
 }
 
+// Tools that every workspace preset keeps on the dock. They are the six a teacher
+// reaches for regardless of mode, so switching preset must never hide them.
+export const REQUIRED_PINNED_TOOLS = [
+  'pen',
+  'highlighter',
+  'eraser',
+  'sticky',
+  'spotlight',
+  'arrow',
+];
+
+// Bumped when REQUIRED_PINNED_TOOLS grows. The stamp is derived from the list
+// itself, so prefs written before the list changed — including blobs that carry
+// a stale version number — are topped up exactly once.
+export const PINNED_TOOLS_VERSION = 2;
+export const PINNED_TOOLS_STAMP = REQUIRED_PINNED_TOOLS.join(',');
+
 export const DEFAULT_PRESET_TOOLS = {
-  teach: ['select', 'hand', 'pen', 'highlighter', 'eraser', 'laser', 'pointer', 'question'],
+  teach: [
+    'select',
+    'hand',
+    'pen',
+    'highlighter',
+    'eraser',
+    'sticky',
+    'spotlight',
+    'arrow',
+    'laser',
+    'pointer',
+    'question',
+  ],
   diagram: [
     'select',
     'hand',
+    'pen',
+    'highlighter',
+    'eraser',
+    'arrow',
+    'sticky',
+    'spotlight',
     'rect',
     'rounded-rect',
     'ellipse',
     'diamond',
-    'arrow',
     'line',
     'text',
     'frame',
@@ -108,15 +142,27 @@ export const DEFAULT_PRESET_TOOLS = {
   collaborate: [
     'select',
     'hand',
-    'pointer',
-    'question',
-    'sticky',
     'pen',
     'highlighter',
+    'eraser',
+    'sticky',
+    'spotlight',
+    'arrow',
     'laser',
+    'pointer',
+    'question',
     'stamp',
   ],
 };
+
+// Append missing required tools without disturbing the user's own order.
+export function withRequiredPinnedTools(toolIds = []) {
+  const list = Array.isArray(toolIds) ? [...toolIds] : [];
+  for (const id of REQUIRED_PINNED_TOOLS) {
+    if (!list.includes(id)) list.push(id);
+  }
+  return list;
+}
 
 export const WORKSPACE_PRESETS = {
   teach: {
@@ -163,6 +209,8 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
     rightPanelWidth: 268,
     minimapOpen: false,
     inspectorOpen: true,
+    pinnedToolsVersion: PINNED_TOOLS_VERSION,
+    pinnedToolsStamp: PINNED_TOOLS_STAMP,
   };
   if (!storage) return defaults;
   try {
@@ -176,21 +224,24 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
       parsed.pinnedToolsByPreset && typeof parsed.pinnedToolsByPreset === 'object'
         ? parsed.pinnedToolsByPreset
         : {};
+    // Prefs saved before the dock gained its required tools are topped up once.
+    // After that the stored list wins, so unpinning a tool stays respected.
+    // Compare the stamp, not the version number: a blob written while the
+    // required list was different (or by an older build) must still be healed.
+    const needsMigration = parsed.pinnedToolsStamp !== PINNED_TOOLS_STAMP;
+    const normalise = (key) => {
+      const stored =
+        Array.isArray(rawPinned[key]) && rawPinned[key].length > 0
+          ? rawPinned[key]
+          : [...DEFAULT_PRESET_TOOLS[key]];
+      return needsMigration ? withRequiredPinnedTools(stored) : stored;
+    };
     return {
       preset,
       pinnedToolsByPreset: {
-        teach:
-          Array.isArray(rawPinned.teach) && rawPinned.teach.length > 0
-            ? rawPinned.teach
-            : [...DEFAULT_PRESET_TOOLS.teach],
-        diagram:
-          Array.isArray(rawPinned.diagram) && rawPinned.diagram.length > 0
-            ? rawPinned.diagram
-            : [...DEFAULT_PRESET_TOOLS.diagram],
-        collaborate:
-          Array.isArray(rawPinned.collaborate) && rawPinned.collaborate.length > 0
-            ? rawPinned.collaborate
-            : [...DEFAULT_PRESET_TOOLS.collaborate],
+        teach: normalise('teach'),
+        diagram: normalise('diagram'),
+        collaborate: normalise('collaborate'),
       },
       leftPanelWidth: Math.max(240, Math.min(480, Number(parsed.leftPanelWidth) || 320)),
       rightPanelWidth: Math.max(220, Math.min(440, Number(parsed.rightPanelWidth) || 268)),
@@ -215,6 +266,8 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
         ? parsed.eraserScope
         : 'all',
       activeTool: typeof parsed.activeTool === 'string' ? parsed.activeTool : null,
+      pinnedToolsVersion: PINNED_TOOLS_VERSION,
+      pinnedToolsStamp: PINNED_TOOLS_STAMP,
     };
   } catch {
     return defaults;

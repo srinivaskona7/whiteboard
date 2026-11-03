@@ -16,12 +16,17 @@ export class ConnectorTool {
     this.startedFromPort = null;
   }
 
-  // Apply a quick preset chosen from the palette/context menu to the next arrow.
+  // Apply a quick preset chosen from the palette/context menu to the next arrow,
+  // then any route/head overrides picked in the dock's arrow tabs.
   applyPendingPreset(conn) {
     const presetId = this.app.pendingArrowPreset;
-    if (!presetId || !conn || conn.type !== 'arrow') return;
-    applyArrowQuickPreset(conn, presetId);
-    this.app.pendingArrowPreset = null;
+    if (!conn || conn.type !== 'arrow') return;
+    if (presetId) {
+      applyArrowQuickPreset(conn, presetId);
+      this.app.pendingArrowPreset = null;
+    }
+    const style = this.app.pendingArrowStyle;
+    if (style && typeof style === 'object') Object.assign(conn, style);
   }
 
   cancel() {
