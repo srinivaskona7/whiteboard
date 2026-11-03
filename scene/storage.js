@@ -47,9 +47,12 @@ export function sanitizeSceneForPersistence(scene, { stripNotes = false } = {}) 
         zoom: Math.max(0.1, Math.min(8, Number(page.camera?.zoom) || 1)),
       },
       background: ['plain', 'grid', 'dots'].includes(page.background) ? page.background : 'dots',
+      width: Math.max(200, Number(page.width) || 1280),
+      height: Math.max(200, Number(page.height) || 720),
     };
-    if (!stripNotes && page.teacherNotes) {
-      outPage.teacherNotes = String(page.teacherNotes);
+    // Preserve an explicitly emptied note ("") as intentional state, not a missing field.
+    if (!stripNotes && typeof page.teacherNotes === 'string') {
+      outPage.teacherNotes = page.teacherNotes;
     }
     return outPage;
   });
@@ -260,6 +263,8 @@ export function migrateSceneData(raw) {
         zoom: Math.max(0.1, Math.min(8, Number(p.camera?.zoom) || 1)),
       };
       p.background = ['plain', 'grid', 'dots'].includes(p.background) ? p.background : 'dots';
+      p.width = Math.max(200, Number(p.width) || 1280);
+      p.height = Math.max(200, Number(p.height) || 720);
       p.teacherNotes = typeof p.teacherNotes === 'string' ? p.teacherNotes : '';
     }
   }
@@ -378,20 +383,43 @@ export function createDebouncedAutosave(arg1 = 500, arg2 = null, arg3 = null) {
 
   let timer = null;
   let lastSnapshotTime = 0;
-  return function scheduleSave(scene) {
+  let pendingScene = null;
+
+  const runSave = () => {
+    if (!pendingScene) return;
+    const scene = pendingScene;
+    pendingScene = null;
+    const ok = saveSceneToLocalStorage(scene, onQuotaError);
+    if (onStatusChange) onStatusChange(ok ? 'saved' : 'error');
+    const now = Date.now();
+    if (ok && now - lastSnapshotTime > 45000) {
+      lastSnapshotTime = now;
+      saveRecoverySnapshot(scene, 'Auto-checkpoint');
+    }
+  };
+
+  function scheduleSave(scene) {
     if (!scene) return;
+    pendingScene = scene;
     if (onStatusChange) onStatusChange('saving');
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      const ok = saveSceneToLocalStorage(scene, onQuotaError);
-      if (onStatusChange) onStatusChange(ok ? 'saved' : 'error');
-      const now = Date.now();
-      if (ok && now - lastSnapshotTime > 45000) {
-        lastSnapshotTime = now;
-        saveRecoverySnapshot(scene, 'Auto-checkpoint');
-      }
+      timer = null;
+      runSave();
     }, delayMs);
+  }
+
+  // Flush a pending debounced write synchronously. Used on pagehide/visibilitychange so a
+  // reload cannot discard a note or edit typed inside the debounce window.
+  scheduleSave.flush = function flush() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    runSave();
   };
+  scheduleSave.hasPending = () => Boolean(pendingScene);
+  return scheduleSave;
 }
 
 export function loadRecoverySnapshots(storage = globalThis.localStorage) {

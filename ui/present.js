@@ -57,6 +57,8 @@ export function initPresentUI(app) {
   }
 
   function enter() {
+    // Presentation always runs on the full viewport, never inside a notebook sheet.
+    if (app.viewMode === 'notebook') app.setViewMode('diagram');
     const page = app.getPage();
     savedViewBeforePresent = {
       pageId: page.id,
@@ -229,14 +231,6 @@ export function initPresentUI(app) {
                         <span class="wb-slide-title">${escapeXml(s.text || s.name || 'Frame')}</span>
                         <span class="wb-slide-meta">${childCount} items${s.teacherNotes ? ' • 📝' : ''}</span>
                       </button>
-                      ${
-                        idx === sIdx && slides.length > 1
-                          ? `<div class="wb-slide-reorder">
-                              <button type="button" class="wb-page-mini" data-move-slide="-1" ${idx === 0 ? 'disabled' : ''} title="Move frame earlier in presentation">◀</button>
-                              <button type="button" class="wb-page-mini" data-move-slide="1" ${idx === slides.length - 1 ? 'disabled' : ''} title="Move frame later in presentation">▶</button>
-                            </div>`
-                          : ''
-                      }
                     </div>
                   `;
                 })
@@ -276,16 +270,24 @@ export function initPresentUI(app) {
       showNotesPanel = false;
       renderBar();
     });
+    overlay.querySelector('#pres-frame-notes-input')?.addEventListener('input', (e) => {
+      if (currentSlide) {
+        currentSlide.teacherNotes = e.target.value;
+        app.scheduleAutosave(app.scene);
+      }
+    });
     overlay.querySelector('#pres-frame-notes-input')?.addEventListener('change', (e) => {
       if (currentSlide) {
         currentSlide.teacherNotes = e.target.value;
         app.commitChange();
       }
     });
-    overlay.querySelector('#pres-page-notes-input')?.addEventListener('change', (e) => {
+    const onPageNotesInput = (e) => {
       page.teacherNotes = e.target.value;
       app.scheduleAutosave(app.scene);
-    });
+    };
+    overlay.querySelector('#pres-page-notes-input')?.addEventListener('input', onPageNotesInput);
+    overlay.querySelector('#pres-page-notes-input')?.addEventListener('change', onPageNotesInput);
     overlay.querySelectorAll('[data-pres-slide]').forEach((b) => {
       b.addEventListener('click', () => {
         const idx = Number(b.dataset.presSlide);
@@ -293,12 +295,6 @@ export function initPresentUI(app) {
         focusSlide(slides[idx]);
         renderBar();
         app.requestRender();
-      });
-    });
-    overlay.querySelectorAll('[data-move-slide]').forEach((b) => {
-      b.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        moveSlideOrder(sIdx, Number(b.dataset.moveSlide));
       });
     });
   }

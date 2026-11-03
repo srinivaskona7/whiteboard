@@ -805,6 +805,60 @@ export class CanvasRenderer {
     mctx.restore();
   }
 
+  // Render one page into a fixed-size canvas at page-local coordinates (0,0)->(width,height).
+  // Used by Notebook view thumbnails/sheets and multipage PDF export.
+  renderPageToCanvas(scene, page, targetCanvas, options = {}) {
+    const {
+      scale = 1,
+      dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
+      width = page.width || 1280,
+      height = page.height || 720,
+      showGrid = true,
+    } = options;
+    const ctx = targetCanvas.getContext('2d');
+    const cssW = Math.max(1, Math.round(width * scale));
+    const cssH = Math.max(1, Math.round(height * scale));
+    targetCanvas.width = Math.round(cssW * dpr);
+    targetCanvas.height = Math.round(cssH * dpr);
+    targetCanvas.style.width = `${cssW}px`;
+    targetCanvas.style.height = `${cssH}px`;
+
+    const theme = getThemeTokens(scene.theme);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = theme.canvasBg;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    if (showGrid) {
+      const prevW = this.width;
+      const prevH = this.height;
+      this.width = cssW;
+      this.height = cssH;
+      this.drawBackgroundPattern(
+        ctx,
+        page.background,
+        { x: 0, y: 0, zoom: scale },
+        theme,
+        scene.settings?.gridSize || 20
+      );
+      this.width = prevW;
+      this.height = prevH;
+    }
+
+    ctx.save();
+    ctx.scale(scale, scale);
+    const now = Date.now();
+    for (const el of page.elements) {
+      if (!el || el.hidden) continue;
+      if (!Number.isFinite(el.x) || !Number.isFinite(el.y)) continue;
+      try {
+        this.drawSingleElement(ctx, el, page, scene, theme, now, null, null);
+      } catch {
+        // Isolate a single bad element so a thumbnail never blanks the whole sheet.
+      }
+    }
+    ctx.restore();
+  }
+
   exportToPngCanvas(scene, page, options = {}) {
     const { scale = 2, transparent = false, selectionOnly = false, selectedIds = new Set() } = options;
     const elements = selectionOnly

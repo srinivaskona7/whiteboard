@@ -41,6 +41,7 @@ import {
   computeOrthogonalPath,
   getConnectorPoints,
   getPointAlongConnector,
+  sanitizeRoutePoints,
 } from '../scene/routing.js';
 import {
   bindConnectorEndpoint,
@@ -57,6 +58,8 @@ import {
   importLibraryJson,
   encodeSceneToHash,
   decodeSceneFromHash,
+  sanitizeSceneForPersistence,
+  createDebouncedAutosave,
 } from '../scene/storage.js';
 import { exportToSvgString, escapeXml } from '../render/svg-export.js';
 import { CanvasRenderer } from '../render/canvas.js';
@@ -591,3 +594,122 @@ describe('DevOps Icon Library, Arrangement, Multi-Resize & Live Classroom', () =
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Notebook / persistence regression suite (Stage A reliability + Stage C view)
+// ---------------------------------------------------------------------------
+describe('Notes Persistence, Page Geometry & Route Sanitization', () => {
+  test('page notes persist including an explicitly cleared empty value', () => {
+    const scene = createScene();
+    const page = scene.pages[0];
+    page.teacherNotes = 'Marker: chapter 4 recap';
+    let clean = sanitizeSceneForPersistence(scene);
+    assert.equal(clean.pages[0].teacherNotes, 'Marker: chapter 4 recap');
+
+    page.teacherNotes = '';
+    clean = sanitizeSceneForPersistence(scene);
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(clean.pages[0], 'teacherNotes'),
+      'cleared notes must persist as an explicit empty string, not a missing field'
+    );
+    assert.equal(clean.pages[0].teacherNotes, '');
+
+    // Student/room serialization still never carries teacher notes.
+    const student = sanitizeSceneForPersistence(scene, { stripNotes: true });
+    assert.equal(student.pages[0].teacherNotes, undefined);
+  });
+
+  test('pages carry durable teaching dimensions through save and migration', () => {
+    const scene = createScene();
+    scene.pages[0].width = 1600;
+    scene.pages[0].height = 900;
+    const roundTripped = parseSceneJson(serializeScene(scene));
+    assert.equal(roundTripped.pages[0].width, 1600);
+    assert.equal(roundTripped.pages[0].height, 900);
+
+    const legacy = migrateSceneData({ version: 2, pages: [{ id: 'p1', name: 'Old', elements: [] }] });
+    assert.equal(legacy.pages[0].width, 1280);
+    assert.equal(legacy.pages[0].height, 720);
+  });
+
+  test('debounced autosave flush persists a pending edit inside the debounce window', () => {
+    const store = new Map();
+    const previous = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    try {
+      const scene = createScene();
+      scene.pages[0].teacherNotes = 'typed but not yet flushed';
+      const schedule = createDebouncedAutosave(600, null, null);
+      schedule(scene);
+      assert.equal(schedule.hasPending(), true);
+      assert.equal(store.get('classroom_whiteboard_scene_v2'), undefined);
+      schedule.flush();
+      assert.equal(schedule.hasPending(), false);
+      const written = store.get('classroom_whiteboard_scene_v2');
+      assert.ok(written, 'flush must write synchronously');
+      assert.match(written, /typed but not yet flushed/);
+    } finally {
+      if (previous === undefined) delete globalThis.localStorage;
+      else globalThis.localStorage = previous;
+    }
+  });
+
+  test('route sanitization removes NaN, duplicate and collinear points', () => {
+    const pts = sanitizeRoutePoints(
+      [
+        { x: 0, y: 0 },
+        { x: NaN, y: 10 },
+        { x: 100, y: 0 },
+        { x: 200, y: 0 },
+        { x: 200, y: 80 },
+      ],
+      { x: 0, y: 0 }
+    );
+    assert.deepEqual(pts, [
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+      { x: 200, y: 80 },
+    ]);
+    for (const p of pts) {
+      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+    }
+  });
+
+  test('aligned bound connectors stay straight with no zigzag bends', () => {
+    const scene = createScene();
+    const page = scene.pages[0];
+    const a = createElement('rect', { x: 100, y: 100, w: 120, h: 80, text: 'A' });
+    const b = createElement('rect', { x: 400, y: 100, w: 120, h: 80, text: 'B' });
+    page.elements.push(a, b);
+    const conn = createElement('arrow', {
+      x: a.x + a.w,
+      y: a.y + a.h / 2,
+      x2: b.x,
+      y2: b.y + b.h / 2,
+      routing: 'orthogonal',
+      startBinding: { elementId: a.id, port: 'right', resolvedPort: 'right' },
+      endBinding: { elementId: b.id, port: 'left', resolvedPort: 'left' },
+    });
+    const pts = getConnectorPoints(conn, page);
+    assert.equal(pts.length, 2, 'aligned connectors should be a single straight segment');
+  });
+
+  test('auto routing keeps a clear path straight and bends around an obstacle without NaN', () => {
+    const scene = createScene();
+    const page = scene.pages[0];
+    const connClear = createElement('arrow', { x: 0, y: 0, x2: 200, y2: 0, routing: 'auto' });
+    const clearPts = getConnectorPoints(connClear, page);
+    assert.equal(clearPts.length, 2, 'auto routing should not add bends to an unobstructed path');
+
+    page.elements.push(createElement('rect', { x: 80, y: -40, w: 60, h: 80, text: 'blocker' }));
+    const blockedPts = getConnectorPoints(connClear, page);
+    assert.ok(blockedPts.length > 2, 'auto routing should detour around an obstacle');
+    for (const p of blockedPts) {
+      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), 'route points must stay finite');
+    }
+  });
+});

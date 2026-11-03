@@ -68,7 +68,7 @@ export class SelectTool {
 
   onPointerDown(world, ev = {}) {
     const page = this.app.getPage();
-    const zoom = page.camera.zoom;
+    const zoom = this.app.getCamera().zoom;
 
     // 0. If in crop mode, check if dragging inside crop target
     if (this.app.cropState && this.app.cropState.element) {
@@ -280,16 +280,16 @@ export class SelectTool {
       if (this.app.selectedIds.size === 1) {
         const onlyId = Array.from(this.app.selectedIds)[0];
         const selEl = page.elements.find((e) => e.id === onlyId);
-        const hd = selEl ? hitTestHandle(selEl, world.x, world.y, page.camera.zoom, page) : null;
+        const hd = selEl ? hitTestHandle(selEl, world.x, world.y, this.app.getCamera().zoom, page) : null;
         if (hd) cursor = hd.cursor || 'pointer';
       } else if (this.app.selectedIds.size > 1) {
         const selectedEls = page.elements.filter((e) => this.app.selectedIds.has(e.id) && !e.locked);
         const gb = getSelectionBounds(selectedEls);
-        const ghd = hitTestMultiSelectionHandle(gb, world.x, world.y, page.camera.zoom);
+        const ghd = hitTestMultiSelectionHandle(gb, world.x, world.y, this.app.getCamera().zoom);
         if (ghd) cursor = ghd.cursor || 'pointer';
       }
 
-      const port = findHoverPort(page, world.x, world.y, 18 / page.camera.zoom);
+      const port = findHoverPort(page, world.x, world.y, 18 / this.app.getCamera().zoom);
       this.app.hoveredPort = port;
       if (port) {
         this.app.hoveredElement = port.element;
@@ -342,7 +342,7 @@ export class SelectTool {
         );
         const mb = getSelectionBounds(this.movingElements);
         if (mb && candidates.length > 0) {
-          const snap = computeSmartGuides(mb, candidates, 5 / page.camera.zoom);
+          const snap = computeSmartGuides(mb, candidates, 5 / this.app.getCamera().zoom);
           if (snap.dx || snap.dy) {
             for (const el of this.movingElements) {
               translateElement(el, snap.dx, snap.dy);
@@ -401,7 +401,7 @@ export class SelectTool {
       const conn = this.targetElement;
       const hid = this.activeHandle.id;
       if (hid === 'start' || hid === 'end') {
-        const portHit = findHoverPort(page, world.x, world.y, 20 / page.camera.zoom, conn.id);
+        const portHit = findHoverPort(page, world.x, world.y, 20 / this.app.getCamera().zoom, conn.id);
         this.app.hoveredPort = portHit;
         this.app.hoveredElement = portHit ? portHit.element : null;
         this.app.connectorPreview = {

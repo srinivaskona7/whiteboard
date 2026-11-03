@@ -54,7 +54,7 @@ export class ConnectorTool {
     const page = this.app.getPage();
     const style = this.app.currentStyle;
     const type = this.app.activeTool === 'line' ? 'line' : 'arrow';
-    const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom);
+    const portHit = findHoverPort(page, world.x, world.y, 24 / this.app.getCamera().zoom);
     this.startedFromPort = null;
 
     const conn = createElement(type, {
@@ -89,7 +89,7 @@ export class ConnectorTool {
   onPointerMove(world, ev) {
     const page = this.app.getPage();
     if (!this.activeConnector) {
-      const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom);
+      const portHit = findHoverPort(page, world.x, world.y, 24 / this.app.getCamera().zoom);
       this.app.hoveredPort = portHit;
       this.app.hoveredElement = portHit ? portHit.element : null;
       this.app.requestRender();
@@ -97,7 +97,7 @@ export class ConnectorTool {
     }
 
     const conn = this.activeConnector;
-    const portHit = findHoverPort(page, world.x, world.y, 24 / page.camera.zoom, conn.id);
+    const portHit = findHoverPort(page, world.x, world.y, 24 / this.app.getCamera().zoom, conn.id);
     this.app.hoveredPort = portHit;
     this.app.hoveredElement = portHit ? portHit.element : null;
 

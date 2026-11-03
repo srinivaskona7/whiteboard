@@ -38,6 +38,7 @@ export function initTimerUI(app) {
   }
 
   function broadcastIfLive() {
+    if (!canControl()) return;
     app.collab?.broadcastTimerState?.({
       running,
       remainingSec,
@@ -85,14 +86,28 @@ export function initTimerUI(app) {
     }
   }
 
+  // Students (viewer/questioner in a live room) receive the shared timer but never control it.
+  function canControl() {
+    const collab = app.collab;
+    if (!collab) return true;
+    const isStudent =
+      ['live', 'connecting', 'readonly-snapshot'].includes(collab.status) &&
+      (collab.role === 'viewer' || collab.role === 'questioner');
+    if (isStudent) return false;
+    return collab.canEditBoard ? collab.canEditBoard() : true;
+  }
+
   function render() {
+    const controllable = canControl();
     widget.innerHTML = `
       <div class="wb-timer-header">
         <strong>⏱ Classroom Timer</strong>
         <button type="button" class="wb-icon-btn" id="btn-timer-close" aria-label="Close Timer">✕</button>
       </div>
       <div class="wb-timer-display" id="wb-timer-readout">${formatTime(remainingSec)}</div>
-      <div class="wb-btn-group">
+      ${
+        controllable
+          ? `<div class="wb-btn-group">
         <button type="button" class="wb-btn wb-sm" data-preset="60">1m</button>
         <button type="button" class="wb-btn wb-sm" data-preset="180">3m</button>
         <button type="button" class="wb-btn wb-sm" data-preset="300">5m</button>
@@ -102,11 +117,13 @@ export function initTimerUI(app) {
         <input type="number" id="timer-custom-min" class="wb-input" min="1" max="120" placeholder="Min" style="width:62px" aria-label="Custom Minutes"/>
         <button type="button" class="wb-btn wb-sm" id="btn-timer-set">Set</button>
         <button type="button" class="wb-btn wb-sm wb-primary" id="btn-timer-toggle">${running ? 'Pause' : 'Start'}</button>
-      </div>
+      </div>`
+          : `<div class="wb-timer-readonly" style="font-size:11px;color:var(--text-secondary);">Teacher controls this shared class timer.</div>`
+      }
     `;
 
     widget.querySelector('#btn-timer-close')?.addEventListener('click', () => {
-      stopTimer();
+      if (controllable) stopTimer();
       widget.classList.add('wb-hidden');
     });
 

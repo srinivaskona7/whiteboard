@@ -62,5 +62,10 @@
 
 ## Invariants
 - Only `vite` in `devDependencies`, zero `dependencies`.
-- `npm test` runs `node --test tests/*.test.js` (34 tests across 14 suites).
+- `npm test` runs `node --test tests/*.test.js` (42 tests across 15 suites as of 2026-11-03).
 - `npm run build` outputs to `dist/` with `base: './'`.
+- The app instance for browser verification is `window.__WHITEBOARD_APP__` (there is no `window.app`).
+- `ui/notebook.js` is a projection over the one scene model: the live `#wb-canvas` is reparented into the
+  active sheet and other pages are static `renderPageToCanvas` previews. Notebook zoom lives in
+  `app.getCamera()`, never in the persisted `page.camera`.
+- `app.printHandout()` builds `#wb-print-root` with one sheet per page, ordered, then calls `window.print()`.

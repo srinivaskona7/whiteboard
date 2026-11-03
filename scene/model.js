@@ -279,6 +279,8 @@ export function createPage(name = 'Page 1', id = uid('page')) {
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
     background: 'dots', // 'plain' | 'grid' | 'dots'
+    width: 1280,
+    height: 720,
     teacherNotes: '',
   };
 }

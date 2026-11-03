@@ -107,7 +107,7 @@ export class TextTool {
     if (!el || el.locked || !this.editorEl) return;
     if (this.app.collab && !this.app.collab.canEditBoard()) return;
     const page = this.app.getPage();
-    const cam = page.camera;
+    const cam = this.app.getCamera ? this.app.getCamera() : page.camera;
     const rect = this.app.canvas.getBoundingClientRect();
 
     this.editingElement = el;

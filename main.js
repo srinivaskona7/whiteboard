@@ -25,6 +25,7 @@ import {
   validateElementsBatch,
 } from './scene/geometry.js';
 import { bindConnectorEndpoint, updateConnectorBindings } from './scene/bindings.js';
+import { hitTestScene } from './scene/hit.js';
 import { HistoryManager } from './scene/history.js';
 import {
   loadSceneFromStorage,
@@ -65,6 +66,7 @@ import { initLibraryPanel } from './ui/library-panel.js';
 import { initPresentUI } from './ui/present.js';
 import { initTimerUI } from './ui/timer.js';
 import { initCommandPalette } from './ui/palette.js';
+import { initNotebookView } from './ui/notebook.js';
 import { initDialogs } from './ui/dialogs.js';
 import { ClassroomTool, initClassroomUI, parseClassroomHash } from './ui/classroom.js';
 
@@ -127,6 +129,7 @@ export class WhiteboardApp {
       dimBackground: true,
     };
     this.presentState = { active: false, slideIndex: 0, revealStep: 0 };
+    this.viewMode = 'diagram'; // 'diagram' | 'notebook' — a projection over the same document
     this._lastFatalErrorTime = 0;
 
     this.canvas = document.getElementById('wb-canvas');
@@ -158,6 +161,7 @@ export class WhiteboardApp {
     this.libraryUI = initLibraryPanel(this);
     this.presentUI = initPresentUI(this);
     this.timerUI = initTimerUI(this);
+    this.notebookView = initNotebookView(this);
     this.paletteUI = initCommandPalette(this);
 
     this.scheduleAutosave = createDebouncedAutosave(
@@ -394,9 +398,25 @@ export class WhiteboardApp {
     return page.elements.filter((e) => this.selectedIds.has(e.id) && !e.hidden);
   }
 
+  // Active view camera. Notebook view supplies its own zoom without mutating the document.
+  getCamera() {
+    if (!this.presentState.active && this.viewMode === 'notebook' && this.notebookView?.getCamera) {
+      return this.notebookView.getCamera();
+    }
+    return this.getPage().camera;
+  }
+
+  getRenderPage() {
+    const page = this.getPage();
+    if (!this.presentState.active && this.viewMode === 'notebook' && this.notebookView?.getCamera) {
+      return { ...page, camera: this.notebookView.getCamera() };
+    }
+    return page;
+  }
+
   screenToWorld(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect();
-    return screenToWorldPoint(clientX, clientY, rect, this.getPage().camera);
+    return screenToWorldPoint(clientX, clientY, rect, this.getCamera());
   }
 
   getOpenPanelInsets() {
@@ -556,6 +576,20 @@ export class WhiteboardApp {
     this.pagesUI.update();
     this.layersUI.update();
     this.classroomUI?.update();
+    this.notebookView?.update();
+  }
+
+  setViewMode(mode) {
+    const next = mode === 'notebook' ? 'notebook' : 'diagram';
+    if (next === this.viewMode) return;
+    if (next === 'notebook') {
+      this.notebookView?.enter();
+    } else {
+      this.notebookView?.exit();
+    }
+    this.toolbarUI.update();
+    this.updateUI();
+    this.requestRender();
   }
 
   _handleFatalRenderError(err) {
@@ -604,6 +638,7 @@ export class WhiteboardApp {
     const remoteCursors = this.collab.getInterpolatedRemoteCursors(page.id);
 
     this.renderer.render(this.scene, {
+      page: this.getRenderPage(),
       selectedIds: this.selectedIds,
       hoveredElement: this.hoveredElement,
       hoveredPort: this.hoveredPort,
@@ -633,6 +668,11 @@ export class WhiteboardApp {
 
   handleResize() {
     if (!this.canvasWrap) return;
+    if (this.viewMode === 'notebook' && this.notebookView) {
+      this.notebookView.handleResize();
+      this.requestRender();
+      return;
+    }
     const rect = this.canvasWrap.getBoundingClientRect();
     this.renderer.resize(Math.max(300, rect.width), Math.max(200, rect.height));
     this.requestRender();
@@ -714,6 +754,25 @@ export class WhiteboardApp {
     this.scene.pages.push(p);
     this.history.initPage(p);
     this.scene.activePageId = p.id;
+    this.selectedIds.clear();
+    this.scheduleAutosave(this.scene);
+    this.collab.broadcastSceneChange();
+    this.updateUI();
+    this.requestRender();
+  }
+
+  addPages(count = 1) {
+    if (!this.collab.canEditBoard()) return;
+    const total = Math.max(1, Math.min(50, Number(count) || 1));
+    let last = null;
+    for (let i = 0; i < total; i++) {
+      const n = this.scene.pages.length + 1;
+      const p = createPage(`Page ${n}`);
+      this.scene.pages.push(p);
+      this.history.initPage(p);
+      last = p;
+    }
+    if (last) this.scene.activePageId = last.id;
     this.selectedIds.clear();
     this.scheduleAutosave(this.scene);
     this.collab.broadcastSceneChange();
@@ -1167,6 +1226,17 @@ export class WhiteboardApp {
       this.dialogs.showToast(`Template rejected: ${check.reason}`);
       return;
     }
+    // Place the template clear of existing content so an inserted lesson never lands on top
+    // of what the teacher already drew. An empty page keeps the template's authored position.
+    if (page.elements.some((e) => e && !e.hidden)) {
+      const tb = getSelectionBounds(built);
+      if (tb && Number.isFinite(tb.minX) && Number.isFinite(tb.minY)) {
+        const origin = computeNonOverlappingOrigin(page, this.getUsableViewportCenter());
+        const dx = origin.x - tb.minX;
+        const dy = origin.y - tb.minY;
+        for (const el of built) translateElement(el, dx, dy);
+      }
+    }
     page.elements.push(...built);
     updateConnectorBindings(page);
     this.commitChange();
@@ -1445,6 +1515,48 @@ export class WhiteboardApp {
     }
   }
 
+  // Ordered multi-page PDF handout: one printed sheet per page, in page order.
+  // Teacher notes are never rendered into the canvas, so they cannot leak into the print.
+  printHandout(options = {}) {
+    const { scale = 2 } = options;
+    const pages = this.scene.pages;
+    if (!pages.length) return;
+    document.getElementById('wb-print-root')?.remove();
+    const root = document.createElement('div');
+    root.id = 'wb-print-root';
+    root.setAttribute('aria-hidden', 'true');
+    pages.forEach((page, idx) => {
+      const sheet = document.createElement('section');
+      sheet.className = 'wb-print-sheet';
+      const canvas = document.createElement('canvas');
+      try {
+        this.renderer.renderPageToCanvas(this.scene, page, canvas, {
+          scale,
+          width: page.width || 1280,
+          height: page.height || 720,
+          showGrid: false,
+        });
+      } catch {
+        // A single bad page must not abort the rest of the handout.
+      }
+      const label = document.createElement('div');
+      label.className = 'wb-print-label';
+      label.textContent = `${idx + 1} / ${pages.length} — ${page.name || 'Page'}`;
+      sheet.appendChild(canvas);
+      sheet.appendChild(label);
+      root.appendChild(sheet);
+    });
+    document.body.appendChild(root);
+    const cleanup = () => {
+      root.remove();
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    // Give the print root one frame to lay out before the dialog snapshots the DOM.
+    setTimeout(() => window.print(), 120);
+    return pages.length;
+  }
+
   openImageFilePicker() {
     document.getElementById('wb-file-image')?.click();
   }
@@ -1474,6 +1586,16 @@ export class WhiteboardApp {
   _bindEvents() {
     window.addEventListener('resize', () => this.handleResize());
     window.addEventListener('hashchange', () => this._initShareRouteFromHash());
+    // Never lose a note/edit typed inside the autosave debounce window on reload or tab close.
+    const flushPendingSave = () => {
+      if (this.textTool?.isOpen()) this.textTool.commit();
+      if (typeof this.scheduleAutosave?.flush === 'function') this.scheduleAutosave.flush();
+    };
+    window.addEventListener('pagehide', flushPendingSave);
+    window.addEventListener('beforeunload', flushPendingSave);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushPendingSave();
+    });
     window.addEventListener('blur', () => {
       this.spacePressed = false;
       this.cancelActiveInteractions();
@@ -1481,6 +1603,7 @@ export class WhiteboardApp {
     });
 
     this.canvas.addEventListener('pointerdown', (ev) => this._onPointerDown(ev));
+    this.canvas.addEventListener('dblclick', (ev) => this._onDoubleClick(ev));
     window.addEventListener('pointermove', (ev) => this._onPointerMove(ev));
     window.addEventListener('pointerup', (ev) => this._onPointerUp(ev));
     window.addEventListener('pointercancel', () => {
@@ -1491,6 +1614,16 @@ export class WhiteboardApp {
     this.canvas.addEventListener(
       'wheel',
       (ev) => {
+        // In Notebook view a plain wheel/trackpad scrolls the page stack natively.
+        // Ctrl/Cmd + wheel is an explicit notebook zoom gesture.
+        if (this.viewMode === 'notebook') {
+          if (ev.ctrlKey || ev.metaKey) {
+            ev.preventDefault();
+            const current = this.notebookView?.getScale?.() || 0.55;
+            this.notebookView?.setScale(current * (ev.deltaY < 0 ? 1.1 : 1 / 1.1));
+          }
+          return;
+        }
         ev.preventDefault();
         if (this.collab.followingTeacher) this.collab.setFollowTeacher(false);
         const rect = this.canvas.getBoundingClientRect();
@@ -1666,6 +1799,42 @@ export class WhiteboardApp {
     this._getToolHandler().onPointerUp(world, ev);
   }
 
+  // Double-click a shape/connector/label/table cell/code block to edit its text in place.
+  // Enter/Edit Text in the Inspector is the keyboard-accessible equivalent.
+  _onDoubleClick(ev) {
+    if (this.presentState.active) return;
+    if (this.collab && !this.collab.canEditBoard()) return;
+    if (this.textTool.isOpen()) return;
+    const world = this.screenToWorld(ev.clientX, ev.clientY);
+    const hit = hitTestScene(this.getPage(), world.x, world.y, {
+      includeLocked: false,
+      tolerance: 12,
+    });
+    if (!hit || hit.locked) return;
+    const EDITABLE = new Set([
+      'text',
+      'rect',
+      'rounded-rect',
+      'ellipse',
+      'diamond',
+      'sticky',
+      'code',
+      'table',
+      'line',
+      'arrow',
+      'stencil',
+      'image',
+      'frame',
+    ]);
+    if (!EDITABLE.has(hit.type) && !hit.isBoundary) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    this.dialogs?.close?.();
+    this.selectedIds = new Set([hit.id]);
+    this.textTool.openEditorForElement(hit, world);
+    this.updateUI();
+  }
+
   _isEditingInput(target) {
     if (this.textTool.isOpen()) return true;
     if (!target || typeof target !== 'object') return false;
@@ -1750,6 +1919,16 @@ export class WhiteboardApp {
       this.selectedIds.clear();
       this.setTool('select');
       return;
+    }
+
+    // Accessible fallback for double-click editing: F2 or Enter edits the selected element.
+    if ((ev.key === 'F2' || ev.key === 'Enter') && !this.presentState.active) {
+      const target = this.getSelectedElements()[0];
+      if (target && !target.locked) {
+        ev.preventDefault();
+        this.textTool.openEditorForElement(target);
+        return;
+      }
     }
 
     if (this.presentState.active) {

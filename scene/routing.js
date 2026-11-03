@@ -340,40 +340,21 @@ export function buildRoundedElbowSvgPath(pts, maxRadius = 12) {
   return cmds.join(' ');
 }
 
+export function sanitizeRoutePoints(pts, fallback = null) {
+  if (!Array.isArray(pts)) return fallback ? [fallback, fallback] : [];
+  const clean = pts
+    .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+    .map((p) => ({ x: p.x, y: p.y }));
+  if (clean.length >= 2) return deduplicateCollinear(clean);
+  if (fallback) return [{ x: fallback.x, y: fallback.y }, { x: fallback.x, y: fallback.y }];
+  return clean;
+}
+
 export function getConnectorPoints(connector, page = null) {
   const start = { x: Number(connector.x) || 0, y: Number(connector.y) || 0 };
   const end = { x: Number(connector.x2) || 0, y: Number(connector.y2) || 0 };
   const routing = connector.routing || 'straight';
 
-  if (routing === 'straight') {
-    connector.waypoints = [start, end];
-    return [start, end];
-  }
-
-  if (routing === 'curved') {
-    const mx = (start.x + end.x) / 2;
-    const my = (start.y + end.y) / 2;
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const nx = -dy * 0.22;
-    const ny = dx * 0.22;
-    const offset = Number(connector.elbowOffset) || 0;
-    const len = Math.hypot(dx, dy) || 1;
-    const cp =
-      connector.controlPoint &&
-      Number.isFinite(connector.controlPoint.x) &&
-      Number.isFinite(connector.controlPoint.y)
-        ? { x: connector.controlPoint.x, y: connector.controlPoint.y }
-        : {
-            x: mx + nx + (-dy / len) * offset,
-            y: my + ny + (dx / len) * offset,
-          };
-    const pts = [start, cp, end];
-    connector.waypoints = pts;
-    return pts;
-  }
-
-  // Orthogonal routing
   const startEl =
     page && connector.startBinding
       ? page.elements.find((e) => e.id === connector.startBinding.elementId)
@@ -396,7 +377,61 @@ export function getConnectorPoints(connector, page = null) {
           e.type !== 'question'
       )
     : [];
-  const pts = computeOrthogonalPath(connector, startEl, endEl, obstacles);
+
+  if (routing === 'straight') {
+    const pts = sanitizeRoutePoints([start, end], start);
+    connector.waypoints = pts;
+    return pts;
+  }
+
+  if (routing === 'curved') {
+    const mx = (start.x + end.x) / 2;
+    const my = (start.y + end.y) / 2;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const nx = -dy * 0.22;
+    const ny = dx * 0.22;
+    const offset = Number(connector.elbowOffset) || 0;
+    const len = Math.hypot(dx, dy) || 1;
+    const cp =
+      connector.controlPoint &&
+      Number.isFinite(connector.controlPoint.x) &&
+      Number.isFinite(connector.controlPoint.y)
+        ? { x: connector.controlPoint.x, y: connector.controlPoint.y }
+        : {
+            x: mx + nx + (-dy / len) * offset,
+            y: my + ny + (dx / len) * offset,
+          };
+    const pts = sanitizeRoutePoints([start, cp, end], start);
+    connector.waypoints = pts;
+    return pts;
+  }
+
+  if (routing === 'auto') {
+    // Auto Clean: prefer the fewest possible bends. A direct segment is used when it is
+    // obstacle-free; otherwise fall back to the obstacle-avoiding orthogonal path.
+    const direct = sanitizeRoutePoints([start, end], start);
+    const boxes = obstacles
+      .map((e) => {
+        const b = getElementBounds(e);
+        return b ? expandBox(b, 6) : null;
+      })
+      .filter(Boolean);
+    const clear = direct.length === 2 && !pathIntersectsBoxes(direct, boxes);
+    if (clear) {
+      connector.waypoints = direct;
+      return direct;
+    }
+    const pts = sanitizeRoutePoints(
+      computeOrthogonalPath(connector, startEl, endEl, obstacles),
+      start
+    );
+    connector.waypoints = pts;
+    return pts;
+  }
+
+  // Orthogonal routing
+  const pts = sanitizeRoutePoints(computeOrthogonalPath(connector, startEl, endEl, obstacles), start);
   connector.waypoints = pts;
   return pts;
 }

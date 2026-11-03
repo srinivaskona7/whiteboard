@@ -463,6 +463,7 @@ export function initPropsPanel(app) {
       const routeMeta = getSharedProp(connEls, (e) => e.routing || 'orthogonal', ref.routing || 'orthogonal');
       const arrowTypes = ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'];
       const routingModes = [
+        ['auto', 'Auto Clean'],
         ['straight', 'Straight'],
         ['orthogonal', 'Right-Angle'],
         ['rounded-elbow', 'Rounded-Elbow'],
@@ -601,10 +602,18 @@ export function initPropsPanel(app) {
           </div>
           ${
             selected.length === 1 && !isConnector
-              ? `<label class="wb-prop-row">
-                  <span>Label</span>
-                  <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="Component label..." value="${escapeXml(ref.text || '')}" aria-label="Component Label"/>
-                </label>`
+              ? selected[0].type === 'code'
+                ? `<label class="wb-prop-row" style="align-items:flex-start;">
+                    <span style="padding-top:4px;">Code</span>
+                    <textarea id="prop-label-text" class="wb-textarea wb-code-input" rows="8" spellcheck="false" placeholder="Paste a script or command block…" aria-label="Code Block Content">${escapeXml(ref.text || '')}</textarea>
+                  </label>
+                  <div class="wb-prop-row" style="font-size:10px;color:var(--text-secondary);">
+                    Newlines and indentation are preserved exactly. Enter inserts a new line.
+                  </div>`
+                : `<label class="wb-prop-row">
+                    <span>Label</span>
+                    <input type="text" id="prop-label-text" class="wb-input" style="width:128px;padding:3px 6px;" placeholder="Component label..." value="${escapeXml(ref.text || '')}" aria-label="Component Label"/>
+                  </label>`
               : ''
           }
           <label class="wb-prop-row">
@@ -745,12 +754,14 @@ export function initPropsPanel(app) {
       }
     });
 
-    container.querySelector('#prop-page-teacher-notes')?.addEventListener('change', (e) => {
+    const onPageNotesUpdate = (e) => {
       const page = app.getPage();
       page.teacherNotes = e.target.value;
       app.scheduleAutosave(app.scene);
       app.presentUI?.renderBar?.();
-    });
+    };
+    container.querySelector('#prop-page-teacher-notes')?.addEventListener('input', onPageNotesUpdate);
+    container.querySelector('#prop-page-teacher-notes')?.addEventListener('change', onPageNotesUpdate);
 
     container.querySelectorAll('[data-breadcrumb-id]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -966,13 +977,22 @@ export function initPropsPanel(app) {
         app.requestRender();
       }
     });
-    container.querySelector('#prop-el-teacher-notes')?.addEventListener('change', (e) => {
+    const onFrameNotesUpdate = (e) => {
       if (selected[0]) {
         selected[0].teacherNotes = e.target.value;
         app.commitChange();
         app.presentUI?.renderBar?.();
       }
-    });
+    };
+    const onFrameNotesInput = (e) => {
+      if (selected[0]) {
+        selected[0].teacherNotes = e.target.value;
+        app.scheduleAutosave(app.scene);
+        app.presentUI?.renderBar?.();
+      }
+    };
+    container.querySelector('#prop-el-teacher-notes')?.addEventListener('input', onFrameNotesInput);
+    container.querySelector('#prop-el-teacher-notes')?.addEventListener('change', onFrameNotesUpdate);
     container.querySelector('#prop-code-hl')?.addEventListener('input', (e) => {
       if (selected[0]) { selected[0].highlightLines = e.target.value; app.commitChange(); app.requestRender(); }
     });

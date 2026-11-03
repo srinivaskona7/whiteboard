@@ -498,15 +498,23 @@ export function initToolbar(app) {
 
   function renderBottomBar(forceRebuild = false) {
     if (!bottomBar) return;
-    const zoomPct = Math.round(app.getPage().camera.zoom * 100);
+    const zoomPct = Math.round((app.getCamera ? app.getCamera().zoom : app.getPage().camera.zoom) * 100);
     const existingReset = bottomBar.querySelector('#btn-zoom-reset');
     const existingMinimap = bottomBar.querySelector('#btn-minimap');
-    if (!forceRebuild && existingReset && existingMinimap) {
+    const existingView = bottomBar.querySelector('#btn-view-notebook');
+    if (!forceRebuild && existingReset && existingMinimap && existingView) {
       existingReset.textContent = `${zoomPct}%`;
       existingMinimap.classList.toggle('active', Boolean(app.minimapOpen));
+      const mode = app.viewMode || 'diagram';
+      bottomBar.querySelector('#btn-view-diagram')?.classList.toggle('active', mode === 'diagram');
+      bottomBar.querySelector('#btn-view-notebook')?.classList.toggle('active', mode === 'notebook');
       return;
     }
     bottomBar.innerHTML = `
+      <div class="wb-view-controls" role="group" aria-label="Workspace View">
+        <button type="button" class="wb-btn wb-sm ${(app.viewMode || 'diagram') === 'diagram' ? 'active' : ''}" id="btn-view-diagram" title="Diagram view — freeform page workspace">▦ Diagram</button>
+        <button type="button" class="wb-btn wb-sm ${app.viewMode === 'notebook' ? 'active' : ''}" id="btn-view-notebook" title="Notebook view — vertically stacked lesson pages">▤ Notebook</button>
+      </div>
       <div class="wb-zoom-controls">
         <button type="button" class="wb-btn wb-sm" id="btn-zoom-out" aria-label="Zoom Out (-)">−</button>
         <button type="button" class="wb-btn wb-sm" id="btn-zoom-reset" aria-label="Reset Zoom to 100%">${zoomPct}%</button>
@@ -516,9 +524,26 @@ export function initToolbar(app) {
         <button type="button" class="wb-btn wb-sm ${app.minimapOpen ? 'active' : ''}" id="btn-minimap" title="Toggle Minimap">Map</button>
       </div>
     `;
-    bottomBar.querySelector('#btn-zoom-out')?.addEventListener('click', () => app.zoomBy(1 / 1.2));
-    bottomBar.querySelector('#btn-zoom-in')?.addEventListener('click', () => app.zoomBy(1.2));
-    bottomBar.querySelector('#btn-zoom-reset')?.addEventListener('click', () => app.resetZoom());
+    bottomBar.querySelector('#btn-view-diagram')?.addEventListener('click', () => app.setViewMode('diagram'));
+    bottomBar.querySelector('#btn-view-notebook')?.addEventListener('click', () => app.setViewMode('notebook'));
+    bottomBar.querySelector('#btn-zoom-out')?.addEventListener('click', () => {
+      if (app.viewMode === 'notebook') {
+        app.notebookView?.setScale((app.notebookView.getScale?.() || 0.55) / 1.15);
+      } else {
+        app.zoomBy(1 / 1.2);
+      }
+    });
+    bottomBar.querySelector('#btn-zoom-in')?.addEventListener('click', () => {
+      if (app.viewMode === 'notebook') {
+        app.notebookView?.setScale((app.notebookView.getScale?.() || 0.55) * 1.15);
+      } else {
+        app.zoomBy(1.2);
+      }
+    });
+    bottomBar.querySelector('#btn-zoom-reset')?.addEventListener('click', () => {
+      if (app.viewMode === 'notebook') app.notebookView?.setScale(0.55);
+      else app.resetZoom();
+    });
     bottomBar.querySelector('#btn-zoom-fit')?.addEventListener('click', () => app.fitToContent());
     bottomBar.querySelector('#btn-zoom-sel')?.addEventListener('click', () => app.zoomToSelection());
     bottomBar.querySelector('#btn-minimap')?.addEventListener('click', () => {

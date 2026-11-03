@@ -197,13 +197,21 @@ export function initDialogs(app) {
         modal.querySelector('#btn-exp-svg')?.addEventListener('click', () => {
           const opts = getOpts();
           const svg = exportToSvgString(app.scene, app.getPage(), opts);
-          app.downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${app.getPage().name}.svg`);
+          const safeName = (app.getPage().name || 'page')
+            .toLowerCase()
+            .replace(/[^a-z0-9-_]+/g, '-');
+          app.downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${safeName}.svg`);
           close();
         });
         modal.querySelector('#btn-exp-handout')?.addEventListener('click', () => {
           close();
-          app.fitToContent();
-          setTimeout(() => window.print(), 120);
+          const count = app.printHandout();
+          app.dialogs.showToast(
+            count > 1
+              ? `Prepared ${count} pages — choose "Save as PDF" in the print dialog.`
+              : 'Prepared the current page for printing.',
+            'success'
+          );
         });
       }
     );
