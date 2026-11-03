@@ -219,4 +219,47 @@ three failed there, so they guard the actual defect rather than passing vacuousl
 
 Not tested: the classroom address from a second device on the LAN; short-link creation against a remote host.
 
+### Deep architecture, icon and lesson pass (later on 2026-11-03)
+
+New files: `templates/aws.js`, `scene/lesson.js`, `tests/aws-templates.test.js`, `tests/lesson.test.js`.
+Modified: `stencils/devops-cloud.js` (35 icons), `scene/architecture-config.js` (4 new patterns),
+`scene/animation.js` (`pulse`, `rollout`), `render/canvas.js` (pulse ring, rollout badge),
+`ui/animation.js` ("Build lesson from diagram"), `templates/index.js`, `tests/config.test.js`.
+
+| Check | Expected | Actual |
+|---|---|---|
+| New icons render | Every added stencil draws real art | 35 ids laid out and screenshotted: unique glyphs, correct AWS/Azure/GCP badges, `missing: []` |
+| AWS templates | Native, editable, provider-correct | 10 registered, 6–14 AWS stencils each, arrows bound, `templateId` on every element |
+| Config patterns | Each applies cleanly with known stencils | 8 patterns total; new four apply to ≥4 tracked nodes; AWS defaults use AWS regions |
+| Lesson from diagram | Steps follow the connectors | AWS three-tier: 16 steps, actions `reveal, request, failure, retry, pulse, rollout`, rollout 10/50/100 |
+| Entry heuristic | A stray title is not the entry | Unit: a disconnected rect at (0,0) loses to the flow root; order length ≥ 3 |
+| Reduced motion | Static highlight survives | Unit: `pulse` adds to `highlighted` as well as `pulses` |
+| Console | No errors or warnings | none |
+
+Unit proof: the three new configuration tests fail against the previous `architecture-config.js`
+(verified by `git stash` on that file alone). Full suite 165 pass. `vite build` clean.
+
+Honest gaps: the three research agents returned after the implementation, so their findings arrived
+**after** the code rather than shaping it. What they confirmed and what they add:
+
+- **Architecture** — the three-tier, serverless/event-driven, multi-region DR, lakehouse and DevOps
+  reference paths match what was built. Only some rows were confirmed against official pages
+  (Azure three-tier, AWS serverless, AWS/Azure DR, GCP lakehouse, GCP build→Binary Authorization);
+  the rest are the agent's own knowledge. Two teaching insights worth folding into template notes:
+  without a DLQ a poison message is retried until it expires and the event is lost; replication
+  copies corruption, so backups are still required in a multi-region design.
+- **Icons** — the ranked top-30 list is mostly covered by the 35 added. Still missing: Azure Logic
+  Apps, Azure NAT Gateway, GCP Cloud NAT, AWS/Azure/GCP private connectivity (PrivateLink, Private
+  Link is present as *Private Endpoint*, Private Service Connect), ExpressRoute/Cloud VPN, Cloud
+  Tasks, Cloud Logging, Azure L4 Load Balancer, Application Insights. Naming flags: Azure Cache for
+  Redis is being retired for Azure Managed Redis; Synapse is being superseded by Fabric.
+- **Animation** — the accessibility rules are the actionable part: an on-screen pause/stop (present),
+  a static equivalent for every animated state (`pulse` highlight and `rollout` badge both satisfy
+  this), ≤3 flashes/s, and reduced motion cutting pans rather than shortening them. The timing
+  advice (400–600 ms per hop, 300–500 ms pauses) is **below** the current `REVEAL_MS=700` /
+  `MARKER_MS=1200`, so the lesson still runs slower than the research recommends.
+
+Catalog is 48 templates, not 80. Miro activities remain absent. 5 % canvas-area target unmeasured.
+Only the AWS three-tier template had its lesson played end to end.
+
 

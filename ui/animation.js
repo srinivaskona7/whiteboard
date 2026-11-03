@@ -8,10 +8,11 @@ import {
   stepStartMs,
   sampleTrack,
 } from '../scene/animation.js';
+import { buildLessonTrack } from '../scene/lesson.js';
 
 export function initAnimationUI(app) {
   const bar = document.getElementById('wb-anim-bar');
-  if (!bar) return { open() {}, close() {}, toggle() {}, rebuildFromReveal() {}, stop() {}, isOpen: () => false };
+  if (!bar) return { open() {}, close() {}, toggle() {}, rebuildFromReveal() {}, rebuildFromDiagram() {}, stop() {}, isOpen: () => false };
 
   let playing = false;
   let elapsed = 0;
@@ -69,6 +70,32 @@ export function initAnimationUI(app) {
     renderBar();
     app.requestRender();
     return track;
+  }
+
+  /**
+   * Walk the connectors instead of asking the teacher to number elements.
+   * The track follows the diagram as drawn: entry node, each real hop, then a
+   * failure/retry beat and a canary rollout so the lesson teaches behaviour,
+   * not just names.
+   */
+  function rebuildFromDiagram() {
+    const page = app.getPage();
+    if (!page || !Array.isArray(page.elements)) {
+      app.dialogs?.showToast('Open a board page first.', 'info');
+      return null;
+    }
+    const track = buildLessonTrack(page, { includeFailure: true, includeRollout: true });
+    if (!track) {
+      app.dialogs?.showToast('Connect the shapes with arrows first — a lesson follows the connectors.', 'info');
+      return null;
+    }
+    const saved = setTrack(track);
+    if (saved) {
+      open = true;
+      bar.classList.remove('wb-hidden');
+      renderBar();
+    }
+    return saved;
   }
 
   function rebuildFromReveal() {
@@ -278,6 +305,7 @@ export function initAnimationUI(app) {
               ${[0.5, 1, 1.5, 2].map((s) => `<option value="${s}" ${s === speed ? 'selected' : ''}>${s}×</option>`).join('')}
             </select>
           </label>
+          <button type="button" class="wb-btn wb-sm" data-anim="build-lesson" ${presenter ? '' : 'disabled'} title="Walk the connectors and build a lesson track from the diagram">Build lesson from diagram</button>
           <button type="button" class="wb-btn wb-sm" data-anim="build" ${presenter ? '' : 'disabled'}>Build track from reveal steps</button>
           ${track ? `<button type="button" class="wb-btn wb-sm" data-anim="clear" ${presenter ? '' : 'disabled'}>Clear track</button>` : ''}
           <button type="button" class="wb-btn wb-sm" data-anim="close" aria-label="Close animation controls">✕</button>
@@ -296,6 +324,7 @@ export function initAnimationUI(app) {
           play();
         } else if (action === 'stop') stop();
         else if (action === 'build') rebuildFromReveal();
+        else if (action === 'build-lesson') rebuildFromDiagram();
         else if (action === 'clear') {
           const page = app.getPage();
           if (page) {
@@ -344,5 +373,5 @@ export function initAnimationUI(app) {
     }
   });
 
-  return { open: show, close, toggle, rebuildFromReveal, stop, isOpen: () => open };
+  return { open: show, close, toggle, rebuildFromReveal, rebuildFromDiagram, stop, isOpen: () => open };
 }

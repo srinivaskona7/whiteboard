@@ -275,5 +275,25 @@ without `:has()` it would overlap that panel.
 Known limits: the 80-template catalog, Miro activities and the 5 % canvas-area target are still open and
 are not addressed here. Remote classroom access was not exercised from a second device.
 
+## 18. Deep architecture, icon and lesson work (2026-11-03)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| AWS reference templates | PASS(unit + browser) | `templates/aws.js`, 10 diagrams (`tpl-aws-01-three-tier-web` … `tpl-aws-10-recovery`), 6–14 native AWS stencils each, frame, teaching notes, `templateId` stamped; catalog 38 → 48 |
+| AWS service icons | PASS(unit + browser) | 19 stencils (API Gateway, Step Functions, EventBridge, Kinesis, Glue, Athena, Redshift, ECR, Secrets Manager, CloudTrail, NAT, Transit Gateway, ElastiCache, OpenSearch, WAF, Direct Connect, Cognito, EFS, CloudFormation) |
+| Azure + GCP additions | PASS(unit + browser) | 16 more (APIM, Front Door, Bastion, Private Endpoint, Event Hubs, Cache, Synapse, Static Web App; Cloud Functions, App Engine, Cloud Armor, API Gateway, Memorystore, Dataproc, Dataplex, Cloud CDN); registry 236 → 271 |
+| Icons render in the palette | PASS(browser) | All 35 new ids laid out and screenshotted: distinct glyph, correct provider badge, no blank or duplicated art |
+| Configurable architectures | PASS(unit + browser) | `aws-three-tier`, `aws-serverless`, `azure-multiregion`, `devops-platform` added to `CONFIG_PATTERNS` (4 → 8); each applies to ≥4 tracked nodes using known stencils |
+| Provider-correct defaults | PASS(unit) | AWS patterns default to an AWS region (`eu-west-1`/`eu-central-1`/`us-east-1`/`us-west-2`); Azure patterns never do |
+| Production guard on delivery pattern | PASS(unit) | `environment: prod` with `replicas < 2` is refused before the page is touched |
+| Lesson generated from the diagram | PASS(unit + browser) | `scene/lesson.js` walks real connector bindings; entry is the root with the most outgoing edges, so a title or legend is never picked; disconnected shapes are not revealed |
+| Failure / retry / health-check beats | PASS(browser) | Last reachable hop gets `failure` → `retry ×3` → `pulse`; suppressed when the diagram has a single node |
+| Canary rollout beat | PASS(unit + browser) | 10 / 50 / 100 on the deployment-looking node (`cluster|aks|gke|eks|…`); `pulse` and `rollout` added to the allowlist, both require a `targetId` |
+| Reduced motion still teaches | PASS(unit) | `pulse` sets a static highlight as well as the ring, so a reduced-motion playback leaves the node marked |
+
+Known limits: the catalog is 48, not 80. Miro activities are still absent. The 5 % canvas-area target
+was not measured. The animated lesson was watched on the AWS three-tier template only; the other 47
+templates were not played end to end.
+
 
 

@@ -14,6 +14,8 @@ export const ANIMATION_ACTIONS = [
   'failure',
   'retry',
   'backlog',
+  'pulse',
+  'rollout',
   'camera',
 ];
 
@@ -61,6 +63,9 @@ export function validateTrack(track, page) {
     ) {
       errors.push(`Step "${step.id}" needs an edge or element target.`);
     }
+    if (['pulse', 'rollout'].includes(step.action) && !step.targetId) {
+      errors.push(`Step "${step.id}" needs an element target.`);
+    }
   }
   return { ok: errors.length === 0, errors };
 }
@@ -98,6 +103,8 @@ export function sampleTrack(track, elapsedMs, options = {}) {
     effects: new Map(),
     // failure / retry / backlog draw a marker and a count, not just a colour.
     badges: [],
+    // pulse / rollout draw a halo and a progress arc around the element.
+    pulses: [],
     markers: [],
     camera: null,
     narration: '',
@@ -162,6 +169,7 @@ export function sampleTrack(track, elapsedMs, options = {}) {
       case 'failure':
       case 'retry':
       case 'backlog':
+      case 'rollout':
         if (step.targetId) {
           state.highlighted.add(step.targetId);
           state.effects.set(step.targetId, step.action);
@@ -179,6 +187,14 @@ export function sampleTrack(track, elapsedMs, options = {}) {
               stepId: step.id,
             });
           }
+        }
+        break;
+      case 'pulse':
+        if (step.targetId) {
+          // The static highlight keeps the meaning when motion is off or unseen.
+          state.highlighted.add(step.targetId);
+          state.effects.set(step.targetId, 'pulse');
+          state.pulses.push({ targetId: step.targetId, progress, stepId: step.id });
         }
         break;
       case 'camera':

@@ -3,6 +3,7 @@ import { createElement } from '../scene/model.js';
 import { bindConnectorEndpoint } from '../scene/bindings.js';
 import { buildDevOpsDiagramPacks } from '../ui/registry.js';
 import { AZURE_GCP_TEMPLATES } from './azure-gcp.js';
+import { AWS_TEMPLATES } from './aws.js';
 
 const DEVOPS_PACK_TEMPLATES = [
   {
@@ -85,6 +86,7 @@ const DEVOPS_PACK_TEMPLATES = [
 
 export const BUILTIN_TEMPLATES = [
   ...DEVOPS_PACK_TEMPLATES,
+  ...AWS_TEMPLATES,
   ...AZURE_GCP_TEMPLATES,
   {
     id: 'tpl-blank',

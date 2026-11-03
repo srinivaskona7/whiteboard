@@ -10,6 +10,7 @@ export const CONFIG_LABEL = 'Diagram configuration';
 const ENVIRONMENTS = ['dev', 'test', 'prod'];
 const AZ_REGIONS = ['westeurope', 'northeurope', 'eastus', 'eastus2'];
 const GCP_REGIONS = ['europe-west1', 'europe-west2', 'us-central1', 'us-east1'];
+const AWS_REGIONS = ['eu-west-1', 'eu-central-1', 'us-east-1', 'us-west-2'];
 
 const select = (id, label, choices, def, help = '') => ({
   id, label, type: 'select', choices, default: def, help,
@@ -20,24 +21,33 @@ const number = (id, label, def, min, max, help = '') => ({
 const bool = (id, label, def, help = '') => ({ id, label, type: 'boolean', default: def, help });
 const text = (id, label, def, help = '') => ({ id, label, type: 'text', default: def, help });
 
-const commonParams = (provider) => [
-  select('variant', 'Variant', ['standard', 'high-availability'], 'standard', 'Changes which managed services are bound.'),
-  select('environment', 'Environment', ENVIRONMENTS, 'prod'),
-  select('region', 'Region', provider === 'GCP' ? GCP_REGIONS : AZ_REGIONS, provider === 'GCP' ? 'europe-west1' : 'westeurope'),
-  number('replicas', 'Application replicas', 2, 1, 10),
-  bool('identity', 'Managed identity / workload identity', true),
-  bool('observability', 'Monitoring and logging', true),
-  bool('cache', 'Cache tier', false),
-  bool('queue', 'Queue / event tier', false),
-  bool('recovery', 'Secondary region recovery', false),
-  select('connectivity', 'Connectivity', ['public', 'private-endpoint', 'hybrid'], 'private-endpoint'),
-  text('namePrefix', 'Resource name prefix', 'classroom'),
-  text('cidr', 'VNet / subnet CIDR', '10.0.0.0/16', 'Private address range for the application subnet.'),
-  text('port', 'Application port', '443'),
-  select('releaseStrategy', 'Release strategy', ['rolling', 'blue-green', 'canary'], 'rolling'),
-  bool('showExplanation', 'Show teaching explanation on the board', true),
-  select('detail', 'Diagram detail', ['overview', 'internals'], 'overview'),
-];
+const regionChoice = (provider) => {
+  if (provider === 'GCP') return { choices: GCP_REGIONS, def: 'europe-west1' };
+  if (provider === 'AWS') return { choices: AWS_REGIONS, def: 'eu-west-1' };
+  return { choices: AZ_REGIONS, def: 'westeurope' };
+};
+
+const commonParams = (provider) => {
+  const region = regionChoice(provider);
+  return [
+    select('variant', 'Variant', ['standard', 'high-availability'], 'standard', 'Changes which managed services are bound.'),
+    select('environment', 'Environment', ENVIRONMENTS, 'prod'),
+    select('region', 'Region', region.choices, region.def),
+    number('replicas', 'Application replicas', 2, 1, 10),
+    bool('identity', 'Managed identity / workload identity', true),
+    bool('observability', 'Monitoring and logging', true),
+    bool('cache', 'Cache tier', false),
+    bool('queue', 'Queue / event tier', false),
+    bool('recovery', 'Secondary region recovery', false),
+    select('connectivity', 'Connectivity', ['public', 'private-endpoint', 'hybrid'], 'private-endpoint'),
+    text('namePrefix', 'Resource name prefix', 'classroom'),
+    text('cidr', 'VNet / subnet CIDR', '10.0.0.0/16', 'Private address range for the application subnet.'),
+    text('port', 'Application port', '443'),
+    select('releaseStrategy', 'Release strategy', ['rolling', 'blue-green', 'canary'], 'rolling'),
+    bool('showExplanation', 'Show teaching explanation on the board', true),
+    select('detail', 'Diagram detail', ['overview', 'internals'], 'overview'),
+  ];
+};
 
 const baseValidate = (values) => {
   const errors = {};
@@ -263,8 +273,169 @@ function gcpGke(values) {
   return { nodes, edges };
 }
 
-export const CONFIG_PATTERNS = [
-  {
+function awsThreeTier(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('client', 40, 130, 'cloud-generic', 'Internet user'),
+    node('dns', 240, 130, 'aws-route53', `${prefix}-zone`),
+    node('entry', 450, 130, 'aws-alb', `${prefix}-alb`),
+    node('app', 660, 130, 'aws-ec2', `${prefix}-app (${values.replicas})`),
+    node('data', 870, 130, 'aws-rds', `${prefix}-aurora`),
+  ];
+  const edges = [
+    edge('client', 'dns', 'resolve'),
+    edge('dns', 'entry', 'alias record'),
+    edge('entry', 'app', `target group :${values.port}`),
+    edge('app', 'data', dataPathLabel(values)),
+  ];
+  if (values.identity) {
+    nodes.push(node('identity', 660, 330, 'aws-iam', `${prefix}-task-role`));
+    edges.push(edge('app', 'identity', 'task role'));
+  }
+  if (values.cache) {
+    nodes.push(node('cache', 450, 330, 'aws-elasticache', `${prefix}-cache`));
+    edges.push(edge('app', 'cache', 'read-through'));
+  }
+  if (values.queue) {
+    nodes.push(node('queue', 240, 330, 'aws-sqs', `${prefix}-queue`));
+    edges.push(edge('app', 'queue', 'enqueue'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 870, 330, 'aws-cloudwatch', `${prefix}-monitor`));
+    edges.push(edge('app', 'monitor', 'metrics + logs'));
+  }
+  if (values.recovery) {
+    nodes.push(node('secondary', 660, 470, 'aws-rds', `${prefix}-aurora-replica`));
+    edges.push(edge('data', 'secondary', 'cross-region replica'));
+  }
+  if (values.connectivity === 'hybrid') {
+    nodes.push(node('onprem', 40, 330, 'cloud-vm', 'On-premises'));
+    edges.push(edge('onprem', 'entry', 'Direct Connect'));
+  }
+  return { nodes, edges };
+}
+
+function awsServerless(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('client', 40, 130, 'cloud-generic', 'Client application'),
+    node('entry', 240, 130, 'aws-apigw', `${prefix}-api`),
+    node('app', 450, 130, 'aws-lambda', `${prefix}-fn (${values.replicas})`),
+    node('data', 660, 130, 'aws-dynamodb', `${prefix}-table`),
+  ];
+  const edges = [
+    edge('client', 'entry', `HTTPS ${values.port}`),
+    edge('entry', 'app', 'invoke'),
+    edge('app', 'data', values.connectivity === 'public' ? 'public endpoint' : 'private endpoint'),
+  ];
+  if (values.queue) {
+    nodes.push(node('queue', 450, 330, 'aws-sqs', `${prefix}-jobs`));
+    nodes.push(node('worker', 660, 330, 'aws-lambda', `${prefix}-worker`));
+    edges.push(edge('app', 'queue', 'enqueue'));
+    edges.push(edge('queue', 'worker', 'poll'));
+  }
+  if (values.cache) {
+    nodes.push(node('cache', 660, 470, 'aws-elasticache', `${prefix}-cache`));
+    edges.push(edge('app', 'cache', 'read-through'));
+  }
+  if (values.identity) {
+    nodes.push(node('identity', 240, 330, 'aws-iam', `${prefix}-exec-role`));
+    edges.push(edge('app', 'identity', 'execution role'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 870, 330, 'aws-cloudwatch', `${prefix}-monitor`));
+    edges.push(edge('app', 'monitor', 'logs + traces'));
+  }
+  if (values.recovery) {
+    nodes.push(node('secondary', 870, 470, 'aws-dynamodb', `${prefix}-global-table`));
+    edges.push(edge('data', 'secondary', 'global table replica'));
+  }
+  return { nodes, edges };
+}
+
+function azureMultiRegion(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('client', 40, 130, 'cloud-generic', 'Users'),
+    node('entry', 240, 130, 'az-frontdoor', `${prefix}-frontdoor`),
+    node('app', 450, 130, 'az-vm', `${prefix}-app (${values.replicas})`),
+    node('data', 660, 130, 'az-sql', `${prefix}-sql-primary`),
+  ];
+  const edges = [
+    edge('client', 'entry', `HTTPS ${values.port}`),
+    edge('entry', 'app', 'origin group'),
+    edge('app', 'data', dataPathLabel(values)),
+  ];
+  nodes.push(node('standby', 450, 330, 'az-vm', `${prefix}-app-standby`));
+  nodes.push(node('standby-data', 660, 330, 'az-sql', `${prefix}-sql-secondary`));
+  nodes.push(node('health', 870, 330, 'az-monitor', `${prefix}-health`));
+  edges.push(edge('entry', 'standby', 'failover origin', 'bottom', 'top'));
+  edges.push(edge('data', 'standby-data', 'geo-replica'));
+  edges.push(edge('health', 'entry', 'probe', 'top', 'bottom'));
+  if (values.identity) {
+    nodes.push(node('identity', 870, 130, 'az-entra', `${prefix}-identity`));
+    edges.push(edge('app', 'identity', 'managed identity'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 660, 470, 'az-monitor', `${prefix}-monitor`));
+    edges.push(edge('app', 'monitor', 'traces'));
+  }
+  return { nodes, edges };
+}
+
+const devopsParams = [
+  select('environment', 'Environment', ENVIRONMENTS, 'prod'),
+  select('releaseStrategy', 'Release strategy', ['rolling', 'blue-green', 'canary'], 'canary'),
+  number('replicas', 'Application replicas', 2, 1, 10),
+  bool('identity', 'Workload identity for the pipeline', true),
+  bool('observability', 'Metrics and traces', true),
+  bool('showExplanation', 'Show teaching explanation on the board', true),
+  text('namePrefix', 'Resource name prefix', 'delivery'),
+];
+
+const devopsValidate = (values) => {
+  const errors = {};
+  if (!/^[a-z][a-z0-9-]{1,20}$/.test(String(values.namePrefix || ''))) {
+    errors.namePrefix = 'Prefix must start with a letter and contain only lowercase letters, digits and dashes.';
+  }
+  if (values.environment === 'prod' && (Number(values.replicas) || 0) < 2) {
+    errors.replicas = 'Production needs at least 2 replicas.';
+  }
+  return errors;
+};
+
+function devopsPlatform(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('source', 40, 130, 'cloud-generic', 'Developer commit'),
+    node('build', 240, 130, 'cicd-jenkins', `${prefix}-build`),
+    node('scan', 450, 130, 'sec-trivy', `${prefix}-scan`),
+    node('registry', 660, 130, 'cicd-artifact', `${prefix}-registry`),
+    node('gitops', 870, 130, 'cicd-argocd', `${prefix}-gitops`),
+    node('app', 870, 330, 'k8s-cluster', `${prefix}-cluster`),
+  ];
+  const edges = [
+    edge('source', 'build', 'push'),
+    edge('build', 'scan', 'build image'),
+    edge('scan', 'registry', 'push if clean'),
+    edge('registry', 'gitops', 'image digest'),
+    edge('gitops', 'app', `sync · ${values.releaseStrategy}`),
+  ];
+  if (values.identity) {
+    nodes.push(node('identity', 660, 330, 'sec-vault', `${prefix}-secrets`));
+    edges.push(edge('app', 'identity', 'secret ref', 'bottom', 'top'));
+  }
+  nodes.push(node('policy', 450, 330, 'sec-opa', `${prefix}-policy`));
+  edges.push(edge('scan', 'policy', 'policy check', 'bottom', 'top'));
+  edges.push(edge('policy', 'gitops', 'admission', 'right', 'bottom'));
+  if (values.observability) {
+    nodes.push(node('monitor', 660, 470, 'obs-prometheus', `${prefix}-metrics`));
+    edges.push(edge('app', 'monitor', 'scrape'));
+  }
+  return { nodes, edges };
+}
+
+export const CONFIG_PATTERNS = [  {
     id: 'azure-three-tier',
     name: 'Three-tier application',
     provider: 'Azure',
@@ -307,6 +478,50 @@ export const CONFIG_PATTERNS = [
     validate: baseValidate,
     explanation: (values) =>
       `A private GKE cluster runs ${values.replicas} api replica(s) in ${values.region} with ${values.releaseStrategy} releases and workload identity.`,
+  },
+  {
+    id: 'aws-three-tier',
+    name: 'Three-tier application (AWS)',
+    provider: 'AWS',
+    templateId: 'tpl-aws-01-three-tier-web',
+    params: commonParams('AWS'),
+    generate: awsThreeTier,
+    validate: baseValidate,
+    explanation: (values) =>
+      `Route 53 resolves the name, the ALB in the public subnets forwards ${values.port} to ${values.replicas} app instance(s), and Aurora is reached over a ${values.connectivity} path inside ${values.cidr}${values.variant === 'high-availability' ? ' with a second zone-redundant instance' : ''}.`,
+  },
+  {
+    id: 'aws-serverless',
+    name: 'Serverless event-driven (AWS)',
+    provider: 'AWS',
+    templateId: 'tpl-aws-03-serverless-events',
+    params: commonParams('AWS'),
+    generate: awsServerless,
+    validate: baseValidate,
+    explanation: (values) =>
+      `API Gateway invokes ${values.replicas} Lambda function(s) that write to DynamoDB over a ${values.connectivity} path; slow work is handed to a queue so the synchronous answer stays short.`,
+  },
+  {
+    id: 'azure-multiregion',
+    name: 'Multi-region recovery (Azure)',
+    provider: 'Azure',
+    templateId: 'tpl-az-10-recovery',
+    params: commonParams('Azure'),
+    generate: azureMultiRegion,
+    validate: baseValidate,
+    explanation: (values) =>
+      `Front Door sends ${values.port} traffic to the ${values.region} origin with a warm standby behind it; Azure SQL replicates to the secondary region, so RPO is bounded by replication lag and RTO by the failover path.`,
+  },
+  {
+    id: 'devops-platform',
+    name: 'CI/CD delivery platform',
+    provider: 'Cross-cloud',
+    templateId: 'tpl-aws-09-cicd',
+    params: devopsParams,
+    generate: devopsPlatform,
+    validate: devopsValidate,
+    explanation: (values) =>
+      `Every change is built once, scanned, and pushed by digest to the registry. GitOps reconciles that digest into the ${values.releaseStrategy} release, and a policy gate sits between the scan and admission so a critical finding stops before production.`,
   },
 ];
 

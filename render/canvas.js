@@ -205,19 +205,48 @@ export class CanvasRenderer {
       }
     }
 
+    if (animationState && animationState.pulses?.length) {
+      const scale = 1 / Math.max(0.2, cam.zoom);
+      for (const pulse of animationState.pulses) {
+        const el = page.elements.find((e) => e.id === pulse.targetId);
+        if (!el) continue;
+        // A ring that grows and fades. Motion alone never carries the meaning:
+        // the target also keeps its highlight during the pulse step.
+        const cx = (el.x || 0) + (el.w || 0) / 2;
+        const cy = (el.y || 0) + (el.h || 0) / 2;
+        const base = Math.max(el.w || 0, el.h || 0) / 2 + 8 * scale;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0.15, 0.7 * (1 - pulse.progress));
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.lineWidth = 3 * scale;
+        ctx.beginPath();
+        ctx.arc(cx, cy, base + pulse.progress * 18 * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     if (animationState && animationState.badges?.length) {
       const scale = 1 / Math.max(0.2, cam.zoom);
       for (const badge of animationState.badges) {
         const el = page.elements.find((e) => e.id === badge.targetId);
         if (!el) continue;
         const colour =
-          badge.action === 'failure' ? '#dc2626' : badge.action === 'retry' ? '#d97706' : '#7c3aed';
+          badge.action === 'failure'
+            ? '#dc2626'
+            : badge.action === 'retry'
+              ? '#d97706'
+              : badge.action === 'rollout'
+                ? '#16a34a'
+                : '#7c3aed';
         const label =
           badge.action === 'failure'
             ? '✕'
             : badge.action === 'retry'
               ? `↻${badge.count > 1 ? ` ×${badge.count}` : ''}`
-              : `⚠ ${badge.count}`;
+              : badge.action === 'rollout'
+                ? `${badge.count}%`
+                : `⚠ ${badge.count}`;
         ctx.save();
         ctx.font = `${12 * scale}px system-ui, sans-serif`;
         ctx.textAlign = 'center';
@@ -473,7 +502,16 @@ export class CanvasRenderer {
 
     if (animationState?.highlighted?.has(el.id)) {
       const effect = animationState.effects?.get(el.id);
-      const colour = effect === 'failure' ? '#dc2626' : effect === 'retry' ? '#d97706' : effect === 'backlog' ? '#7c3aed' : '#f59e0b';
+      const colour =
+        effect === 'failure'
+          ? '#dc2626'
+          : effect === 'retry'
+            ? '#d97706'
+            : effect === 'backlog'
+              ? '#7c3aed'
+              : effect === 'rollout'
+                ? '#16a34a'
+                : '#f59e0b';
       ctx.save();
       ctx.strokeStyle = colour;
       ctx.lineWidth = 3 / Math.max(0.2, page.camera?.zoom || 1);

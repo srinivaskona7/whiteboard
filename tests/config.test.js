@@ -12,6 +12,10 @@ import { createScene, createElement } from '../scene/model.js';
 import { getTemplateById } from '../templates/index.js';
 import { serializeScene, parseSceneJson } from '../scene/storage.js';
 import { HistoryManager } from '../scene/history.js';
+import { ALL_STENCILS } from '../stencils/index.js';
+
+const ALL_STENCIL_IDS = new Set(ALL_STENCILS.map((s) => s.id));
+const AWS_REGIONS = ['eu-west-1', 'eu-central-1', 'us-east-1', 'us-west-2'];
 
 const pattern = getConfigPattern('azure-three-tier');
 const pageWith = () => {
@@ -310,6 +314,72 @@ describe('Configuration parameters take effect', () => {
 
     history.undo(page);
     assert.equal(page.architectureConfigs[pattern.id].cidr, '10.1.0.0/16');
+  });
+});
+
+describe('Additional cloud and delivery patterns', () => {
+  const ids = ['aws-three-tier', 'aws-serverless', 'azure-multiregion', 'devops-platform'];
+
+  test('all four patterns exist with typed defaults', () => {
+    for (const id of ids) {
+      const p = getConfigPattern(id);
+      assert.ok(p, `${id} missing`);
+      const values = defaultValues(p);
+      for (const param of p.params) assert.notEqual(values[param.id], undefined, `${id}.${param.id}`);
+    }
+  });
+
+  test('each pattern generates only known stencils and applies cleanly', () => {
+    for (const id of ids) {
+      const p = getConfigPattern(id);
+      const page = pageWith();
+      const res = applyArchitectureConfig(page, p, defaultValues(p));
+      assert.equal(res.ok, true, `${id}: ${res.errors}`);
+      const nodes = page.elements.filter((e) => e.configKey);
+      assert.ok(nodes.length >= 4, `${id} generated ${nodes.length} nodes`);
+      for (const el of nodes) {
+        assert.ok(
+          ALL_STENCIL_IDS.has(el.stencilId) || ['cloud-generic', 'cloud-vm'].includes(el.stencilId),
+          `${id} uses unknown stencil ${el.stencilId}`
+        );
+      }
+    }
+  });
+
+  test('AWS patterns default to AWS regions', () => {
+    const values = defaultValues(getConfigPattern('aws-three-tier'));
+    assert.ok(AWS_REGIONS.includes(values.region), `default region ${values.region} is not an AWS region`);
+    const azure = defaultValues(getConfigPattern('azure-multiregion'));
+    assert.ok(!AWS_REGIONS.includes(azure.region));
+  });
+
+  test('the multi-region pattern always draws a standby path', () => {
+    const page = pageWith();
+    const p = getConfigPattern('azure-multiregion');
+    applyArchitectureConfig(page, p, defaultValues(p));
+    assert.ok(page.elements.some((e) => e.configKey === 'standby'));
+    assert.ok(page.elements.some((e) => e.configKey === 'standby-data'));
+    assert.ok(page.elements.some((e) => e.configEdge === 'entry->standby'));
+    assert.ok(page.elements.some((e) => e.configEdge === 'data->standby-data'));
+  });
+
+  test('the delivery pattern refuses a production single replica', () => {
+    const p = getConfigPattern('devops-platform');
+    const values = defaultValues(p);
+    values.environment = 'prod';
+    values.replicas = 1;
+    assert.equal(validateValues(p, values).ok, false);
+    values.replicas = 2;
+    assert.equal(validateValues(p, values).ok, true);
+  });
+
+  test('every pattern has an explanation that mentions a real value', () => {
+    for (const p of CONFIG_PATTERNS) {
+      const values = defaultValues(p);
+      const text = p.explanation(values);
+      assert.ok(text.length > 60, `${p.id} explanation too thin`);
+      assert.ok(!/undefined|NaN/.test(text), `${p.id} explanation leaked a missing value: ${text}`);
+    }
   });
 });
 

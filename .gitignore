@@ -7,3 +7,6 @@
 /playwright-report/
 /screenshots/
 /.data/
+/.playwright-mcp/
+/aws-lesson.png
+/icon-grid.png
