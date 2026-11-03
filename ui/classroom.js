@@ -363,6 +363,17 @@ export function initClassroomUI(app) {
     const isLive = collab?.status === 'live';
     const isSnapshot = collab?.status === 'snapshot';
     const participants = collab ? Array.from(collab.participants.values()) : [];
+    const pageOrigin =
+      typeof window !== 'undefined' && /^https?:$/.test(window.location.protocol)
+        ? window.location.origin
+        : '';
+    // Never pre-fill a loopback address on a board served over the network:
+    // students on other devices cannot reach this machine's localhost.
+    const suggestedBase = collab?.apiBase || pageOrigin;
+    const unreachableByStudents = collab?.isApiBaseReachableFromOtherDevices?.() === false;
+    const backendLabel = collab?.apiBase
+      ? collab.apiBase
+      : `${pageOrigin || 'same origin'} (same origin)`;
 
     panel.innerHTML = `
       <div class="wb-panel-header">
@@ -375,13 +386,18 @@ export function initClassroomUI(app) {
           <div class="wb-status-card ${isLive ? 'wb-status-live' : collab?.backendAvailable ? 'wb-status-live' : isSnapshot ? 'wb-status-ro' : 'wb-status-offline'}">
             <div><strong>${escapeXml(collab?.statusMessage || 'Local board')}</strong></div>
             <div class="wb-muted" style="font-size:11px;margin-top:2px;">
-              Backend: <code>${escapeXml(collab?.apiBase || (typeof window !== 'undefined' ? window.location.origin : 'same-origin'))}</code> · ${collab?.backendAvailable ? '✓ Online' : 'Offline'}
+              Backend: <code>${escapeXml(backendLabel)}</code> · ${collab?.backendAvailable ? '✓ Online' : 'Offline'}
             </div>
+            ${
+              unreachableByStudents
+                ? `<div class="wb-warning-box" style="margin-top:6px;font-size:11px;">⚠️ <code>${escapeXml(collab?.apiBase || '')}</code> is a loopback address: it works only on this machine. Students must use an address they can reach, for example <code>${escapeXml(pageOrigin || 'http://<your-host>:4179')}</code>.</div>`
+                : ''
+            }
             ${
               !collab?.backendAvailable && !isLive
                 ? `<div class="wb-muted" style="font-size:11px;margin-top:4px;">Short links and cross-device live collaboration require a reachable collaboration server.</div>
                    <div style="display:flex;gap:4px;margin-top:6px;">
-                     <input type="text" id="cls-backend-url" class="wb-input" style="font-size:11px;padding:3px 6px;" placeholder="http://127.0.0.1:4179" value="${escapeXml(collab?.apiBase || 'http://127.0.0.1:4179')}" aria-label="Collaboration Server URL"/>
+                     <input type="text" id="cls-backend-url" class="wb-input" style="font-size:11px;padding:3px 6px;" placeholder="${escapeXml(pageOrigin || 'http://127.0.0.1:4179')}" value="${escapeXml(suggestedBase)}" aria-label="Collaboration Server URL"/>
                      <button type="button" class="wb-btn wb-sm" id="btn-cls-connect-backend">Connect</button>
                    </div>`
                 : ''
@@ -568,7 +584,9 @@ export function initClassroomUI(app) {
 
     panel.querySelector('#btn-cls-connect-backend')?.addEventListener('click', async () => {
       const urlVal = panel.querySelector('#cls-backend-url')?.value?.trim() || '';
-      app.collab?.setApiBase(urlVal);
+      // Typing the page's own origin means "same origin" — storing it would
+      // break if the board is later served from a different host or port.
+      app.collab?.setApiBase(urlVal === pageOrigin ? '' : urlVal);
       const ok = await app.collab?.checkBackendHealth();
       if (ok) {
         app.dialogs.showToast(`✓ Connected to collaboration server (${app.collab.apiBase || 'same-origin'})`, 'success');

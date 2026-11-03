@@ -93,7 +93,48 @@ export class CollabClient {
     if (typeof window === 'undefined') return '';
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('api') || localStorage.getItem('studioboard_api_base_v1') || '';
-    return fromQuery.replace(/\/$/, '');
+    return fromQuery.replace(/\/$/, '') || this.getSuggestedApiBase();
+  }
+
+  static isLoopbackHost(hostname) {
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '[::1]'
+    );
+  }
+
+  /**
+   * The backend a board should point at by default. Same origin whenever the
+   * page was served over http(s) — that is the only address students on other
+   * devices can reach, and it is correct both for the Vite middleware and for
+   * a standalone server behind a proxy. The loopback port is only a sensible
+   * default for a board opened straight from disk.
+   */
+  getSuggestedApiBase() {
+    if (typeof window === 'undefined') return '';
+    const { protocol } = window.location;
+    if (protocol === 'http:' || protocol === 'https:') return '';
+    return 'http://127.0.0.1:4179';
+  }
+
+  /** Whether the configured backend is reachable by a device other than this one. */
+  isApiBaseReachableFromOtherDevices() {
+    if (!this.apiBase) return true; // same origin as the page
+    try {
+      return !CollabClient.isLoopbackHost(new URL(this.apiBase).hostname);
+    } catch {
+      return true;
+    }
+  }
+
+  isLocalPage() {
+    if (typeof window === 'undefined') return true;
+    return (
+      window.location.protocol === 'file:' ||
+      CollabClient.isLoopbackHost(window.location.hostname)
+    );
   }
 
   setApiBase(url) {
@@ -149,8 +190,10 @@ export class CollabClient {
     }
     const candidates = [this.apiBase];
     if (this.apiBase !== '') candidates.push('');
-    // If hosted on a static server or local preview without middleware, also probe local standalone collab port 4179
-    if (!candidates.includes('http://127.0.0.1:4179')) {
+    // The standalone loopback port only helps when this page is itself local.
+    // Probing it from a board served over the network would pin the UI to an
+    // address no student can reach, and hide the same-origin failure.
+    if (this.isLocalPage() && !candidates.includes('http://127.0.0.1:4179')) {
       candidates.push('http://127.0.0.1:4179');
     }
     for (const cand of candidates) {

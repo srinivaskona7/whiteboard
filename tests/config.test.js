@@ -190,6 +190,57 @@ describe('Configuration parameters take effect', () => {
     assert.ok(!page.elements.some((e) => e.configExplanation));
   });
 
+  test('the explanation wraps and its box is sized to the wrapped text', () => {
+    const page = pageWith();
+    const values = defaultValues(pattern);
+    values.showExplanation = true;
+    applyArchitectureConfig(page, pattern, values);
+    const explanation = page.elements.find((e) => e.configExplanation);
+    const longest = Math.max(...explanation.text.split('\n').map((l) => l.length));
+    assert.ok(longest <= 96, `line of ${longest} chars was not wrapped`);
+    assert.ok(explanation.autoGrow, 'explanation is not auto-sized');
+    // Text elements do not wrap when rendered, so the box must cover the text.
+    assert.ok(explanation.w >= longest * 14 * 0.62, `box w=${explanation.w} clips the text`);
+  });
+
+  test('the explanation follows the group on relayout instead of staying behind', () => {
+    const page = pageWith();
+    const values = defaultValues(pattern);
+    values.showExplanation = true;
+    applyArchitectureConfig(page, pattern, values);
+    const explanation = page.elements.find((e) => e.configExplanation);
+    explanation.x = 9999;
+    explanation.y = 9999;
+
+    applyArchitectureConfig(page, pattern, values, { relayout: 'group' });
+    const moved = page.elements.find((e) => e.configExplanation);
+    assert.notEqual(moved.x, 9999, 'explanation kept its stale position');
+    const groupBottom = Math.max(
+      ...page.elements.filter((e) => e.configKey).map((e) => e.y + (e.h || 92))
+    );
+    assert.ok(moved.y >= groupBottom, 'explanation is not below the diagram');
+  });
+
+  test('a first application lands clear of unrelated board content', () => {
+    const page = pageWith();
+    const foreign = createElement('rect', { x: 0, y: 0, w: 600, h: 420, text: 'Existing lesson' });
+    page.elements.push(foreign);
+
+    const values = defaultValues(pattern);
+    applyArchitectureConfig(page, pattern, values);
+    const configured = page.elements.filter((e) => e.configKey);
+    assert.ok(configured.length > 0);
+    const overlaps = configured.filter(
+      (el) =>
+        el.x < foreign.x + foreign.w &&
+        el.x + (el.w || 164) > foreign.x &&
+        el.y < foreign.y + foreign.h &&
+        el.y + (el.h || 92) > foreign.y
+    );
+    assert.equal(overlaps.length, 0, `${overlaps.length} configured nodes overlap existing content`);
+    assert.deepEqual([foreign.x, foreign.y], [0, 0], 'existing content was moved instead of the new diagram');
+  });
+
   test('relayout: group restores the configured nodes but leaves foreign objects alone', () => {
     const page = pageWith();
     const values = defaultValues(pattern);

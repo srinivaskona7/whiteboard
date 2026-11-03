@@ -259,4 +259,21 @@ Known limits: the drawer duplicates the Inspector's drawing section by design (b
 the drawer is positioned beside the dock and shifts right of an open left panel via `:has()` — on a browser
 without `:has()` it would overlap that panel.
 
+## 17. Placement, text entry and classroom address (2026-11-03)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Double-click empty canvas starts a text box | PASS(browser) | Element count 0 → 1, created `text`, inline editor open, `activeTool` still `select` |
+| Drawing tools keep their double-tap | PASS(browser) | With `pen` active the same gesture created nothing and opened no editor |
+| A first configuration lands clear of existing content | PASS(unit + browser) | Foreign 600×420 rect at the origin; applied group moved to y 480–912 with `overlaps: 0`; the existing rect never moved |
+| The explanation follows the group and wraps | PASS(unit + browser) | Wrapped at 96 chars (2 lines), `autoGrow` box 850×54, repositioned below the group on `relayout: group` |
+| Connector labels do not collide | PASS(browser) | Five labelled edges, no pair within 90×20 px; remaining collisions came from the overlap itself |
+| Classroom backend defaults to a reachable address | PASS(browser) | Panel reads `http://localhost:5177 (same origin)` and is online; no `127.0.0.1:4179` default |
+| A loopback backend is called out | PASS(browser) | Setting `http://127.0.0.1:4179` renders "it works only on this machine…" and suggests the page origin |
+| Same-origin is stored as same-origin | PASS(code) | Connecting with the page's own origin clears the stored base instead of pinning a host |
+
+Known limits: the 80-template catalog, Miro activities and the 5 % canvas-area target are still open and
+are not addressed here. Remote classroom access was not exercised from a second device.
+
+
 

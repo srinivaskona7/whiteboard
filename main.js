@@ -2222,7 +2222,19 @@ export class WhiteboardApp {
       includeLocked: false,
       tolerance: 12,
     });
-    if (!hit || hit.locked) return;
+    if (!hit) {
+      // Double-click on empty canvas starts a new text box — the standard
+      // whiteboard gesture. Restricted to the selection/text tools so the
+      // drawing tools keep their double-taps for inking.
+      if (this.activeTool !== 'select' && this.activeTool !== 'text') return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.dialogs?.close?.();
+      this.textTool.onPointerDown(world);
+      this.updateUI();
+      return;
+    }
+    if (hit.locked) return;
     const EDITABLE = new Set([
       'text',
       'rect',

@@ -201,3 +201,22 @@ undo and autosave unless each mechanism is extended to include it.
 
 Not tested: `:has()` fallback on browsers without support (panel overlap would return); touch input on the drawer.
 
+### Placement, text entry and classroom address (later on 2026-11-03)
+
+| Check | Expected | Actual |
+|---|---|---|
+| Double-click empty canvas | Creates a text element and opens the inline editor | `0 → 1` element, type `text`, editor open, `activeTool` unchanged |
+| Double-click with a drawing tool | No text box | Pen active: `0 → 0`, editor closed |
+| Config applied over existing content | New diagram moves clear, existing content stays | Foreign rect stayed at (0,0); group moved to y 480; `overlaps: 0` |
+| Explanation element | Wrapped, sized to its text, below the diagram | 96-char lines, 2 lines, 850×54, `autoGrow`, repositioned on `relayout: group` |
+| Connector labels | No two labels on top of each other | 5 labels, no pair within 90×20 px |
+| Classroom backend label | Page origin, not loopback | `http://localhost:5177 (same origin)`, ✓ Online |
+| Loopback backend | Warned and not silently usable | Warning rendered with the page origin as the suggested address |
+| Console | No errors or warnings | none |
+
+Unit proof: the three new configuration tests were run against the previous `architecture-config.js` and all
+three failed there, so they guard the actual defect rather than passing vacuously.
+
+Not tested: the classroom address from a second device on the LAN; short-link creation against a remote host.
+
+

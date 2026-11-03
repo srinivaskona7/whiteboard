@@ -2,7 +2,7 @@
 // A pattern declares parameters, constraints and a render binding. Applying a
 // configuration mutates the existing graph atomically and preserves stable ids
 // and manual positions unless a relayout is explicitly requested.
-import { createElement, handleAnchorDeletion } from './model.js';
+import { createElement, handleAnchorDeletion, autoGrowShapeForText } from './model.js';
 import { bindConnectorEndpoint } from './bindings.js';
 
 export const CONFIG_LABEL = 'Diagram configuration';
@@ -501,29 +501,45 @@ export function applyArchitectureConfig(page, pattern, values, options = {}) {
         }),
         { minX: Infinity, maxY: -Infinity }
       );
-      const text = pattern.explanation(values);
+      // The explanation is a plain text element, and text does not wrap at
+      // render time — an unwrapped sentence ran off the board edge. Wrap it
+      // here and let autoGrow size the box to the wrapped content.
+      const text = wrapExplanation(pattern.explanation(values));
+      const x = Number.isFinite(bounds.minX) ? bounds.minX : 40;
+      const y = Number.isFinite(bounds.maxY) ? bounds.maxY + 40 : 640;
       if (!explanationEl) {
         explanationEl = createElement('text', {
-          x: Number.isFinite(bounds.minX) ? bounds.minX : 40,
-          y: Number.isFinite(bounds.maxY) ? bounds.maxY + 40 : 640,
+          x,
+          y,
           w: 720,
           h: 64,
           text,
           fontSize: 14,
           fill: '#475569',
+          autoGrow: true,
         });
         explanationEl.configPattern = pattern.id;
         explanationEl.configExplanation = true;
         page.elements.push(explanationEl);
       } else {
         explanationEl.text = text;
+        // Follow the group when a relayout (or the clear-of-content shift)
+        // moves it, so the explanation never sits over another diagram.
+        if (relayout !== 'preserve') {
+          explanationEl.x = x;
+          explanationEl.y = y;
+        }
       }
+      autoGrowShapeForText(explanationEl, explanationEl.text);
     } else if (explanationEl) {
       const idx = page.elements.indexOf(explanationEl);
       if (idx >= 0) page.elements.splice(idx, 1);
     }
 
-    if (relayout === 'full') {
+    // A first application that lands on top of existing board content is a
+    // placement bug, not a preference: 'preserve' protects the manual positions
+    // of this configuration's own elements, and a fresh group has none yet.
+    if (relayout === 'full' || (existingNodes.size === 0 && existingEdges.size === 0)) {
       shiftConfiguredGroupClear(page, pattern.id);
     }
 
@@ -552,14 +568,35 @@ export function applyArchitectureConfig(page, pattern, values, options = {}) {
   }
 }
 
+/**
+ * Wrap a teaching explanation at a readable width. Text elements do not wrap
+ * at render time, so an unwrapped paragraph stretches past the board edge.
+ */
+function wrapExplanation(text, maxChars = 96) {
+  const out = [];
+  for (const para of String(text ?? '').split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > maxChars && line) {
+        out.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 /** Move the configured graph below any unrelated board content it collides with. */
 function shiftConfiguredGroupClear(page, patternId) {
-  const owned = page.elements.filter(
-    (el) => el.configPattern === patternId && (el.configKey || el.configEdge)
-  );
-  const others = page.elements.filter(
-    (el) => !(el.configPattern === patternId && (el.configKey || el.configEdge))
-  );
+  const isOwned = (el) =>
+    el.configPattern === patternId && (el.configKey || el.configEdge || el.configExplanation);
+  const owned = page.elements.filter(isOwned);
+  const others = page.elements.filter((el) => !isOwned(el));
   if (!owned.length || !others.length) return;
   const box = owned.reduce(
     (acc, el) => ({
