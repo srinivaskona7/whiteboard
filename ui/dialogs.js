@@ -9,8 +9,16 @@ import {
 } from '../scene/storage.js';
 import { renderUrlQrSvg } from './qr.js';
 import { autoGrowShapeForText, createElement } from '../scene/model.js';
-import { pasteTsvIntoTable, fitTable, ensureCellGrid } from '../scene/table.js';
+import { pasteTsvIntoTable, replaceTsvIntoTable, fitTable, ensureCellGrid } from '../scene/table.js';
 import { TOOL_REGISTRY, SHORTCUT_REFERENCE, formatShortcut } from './registry.js';
+import {
+  CONFIG_PATTERNS,
+  CONFIG_LABEL,
+  getConfigPattern,
+  defaultValues,
+  validateValues,
+  applyArchitectureConfig,
+} from '../scene/architecture-config.js';
 
 export function initDialogs(app) {
   const backdrop = document.getElementById('wb-modal-backdrop');
@@ -184,6 +192,13 @@ export function initDialogs(app) {
           <span>Paste TSV</span>
           <textarea id="tbl-tsv" class="wb-textarea" rows="6" placeholder="name&#9;status&#10;api&#9;running" aria-label="Tab-separated table data"></textarea>
         </label>
+        <label class="wb-prop-row">
+          <span>When pasting</span>
+          <select id="tbl-tsv-mode" aria-label="TSV paste mode">
+            <option value="fill" ${target ? 'selected' : ''}>Fill existing range (grow only if larger)</option>
+            <option value="replace" ${target ? '' : 'selected'}>Replace &amp; resize to the pasted grid</option>
+          </select>
+        </label>
         <div class="wb-modal-actions">
           <button type="button" class="wb-btn wb-primary" id="btn-table-apply">${target ? 'Apply' : 'Insert Table'}</button>
         </div>
@@ -228,9 +243,15 @@ export function initDialogs(app) {
           const { cells } = ensureCellGrid(el);
           while (cells.length > el.rows) cells.pop();
           if (tsv.trim()) {
-            // The pasted grid may be larger than the stated size; growing is
-            // better than silently dropping the extra cells.
-            pasteTsvIntoTable(el, tsv, 0, 0);
+            const mode = modal.querySelector('#tbl-tsv-mode')?.value || 'fill';
+            if (mode === 'replace') {
+              // Exact resize: the table becomes the pasted grid, with no leftover
+              // cells from its previous shape. Undo restores the whole change.
+              replaceTsvIntoTable(el, tsv);
+            } else {
+              // Fill from the top-left, growing only when the paste needs it.
+              pasteTsvIntoTable(el, tsv, 0, 0);
+            }
           }
           if (shouldFit) fitTable(app.renderer?.ctx, el);
           else {
@@ -1011,6 +1032,243 @@ export function initDialogs(app) {
     );
   }
 
+
+  function openDiagramConfigModal(patternId = null) {
+    const pattern = getConfigPattern(patternId) || CONFIG_PATTERNS[0];
+    const variantsKey = 'wb-diagram-variants';
+    const readVariants = () => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(variantsKey) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((v) => v && typeof v.name === 'string' && v.values) : [];
+      } catch {
+        return [];
+      }
+    };
+    const writeVariants = (list) => {
+      try {
+        // Keep the newest variants when trimming, never the oldest.
+        localStorage.setItem(variantsKey, JSON.stringify(list.slice(-20)));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    let values = {
+      ...defaultValues(pattern),
+      ...((app.getPage()?.architectureConfigs || {})[pattern.id] || {}),
+    };
+    let variants = readVariants().filter((v) => v.patternId === pattern.id);
+    let relayout = 'preserve';
+
+    function fieldsHtml() {
+      return pattern.params
+        .map((p) => {
+          const value = values[p.id];
+          if (p.type === 'boolean') {
+            return `<label class="wb-check-row"><input type="checkbox" data-param="${p.id}" ${value ? 'checked' : ''}/> <span>${escapeXml(p.label)}</span>${
+              p.help ? `<small class="wb-muted">${escapeXml(p.help)}</small>` : ''
+            }</label>`;
+          }
+          if (p.type === 'select') {
+            return `<label class="wb-prop-row"><span>${escapeXml(p.label)}</span>
+              <select data-param="${p.id}">${p.choices
+                .map((c) => `<option value="${escapeXml(c)}" ${c === value ? 'selected' : ''}>${escapeXml(c)}</option>`)
+                .join('')}</select></label>`;
+          }
+          if (p.type === 'number') {
+            return `<label class="wb-prop-row"><span>${escapeXml(p.label)}</span>
+              <input type="number" data-param="${p.id}" value="${escapeXml(String(value))}" min="${p.min ?? ''}" max="${p.max ?? ''}" class="wb-input" style="width:88px"/></label>`;
+          }
+          return `<label class="wb-prop-row"><span>${escapeXml(p.label)}</span>
+            <input type="text" data-param="${p.id}" value="${escapeXml(String(value))}" class="wb-input"/></label>`;
+        })
+        .join('');
+    }
+
+    function bodyHtml() {
+      return `
+        <p class="wb-muted">${escapeXml(CONFIG_LABEL)} — changes the diagram's parameters and updates the graph atomically. Nothing is provisioned or deployed.</p>
+        <div class="wb-prop-row"><span>Provider</span><strong>${escapeXml(pattern.provider)}</strong></div>
+        <div class="wb-prop-row"><span>Pattern</span>
+          <select id="cfg-pattern">${CONFIG_PATTERNS.map(
+            (p) => `<option value="${p.id}" ${p.id === pattern.id ? 'selected' : ''}>${escapeXml(p.provider)} · ${escapeXml(p.name)}</option>`
+          ).join('')}</select>
+        </div>
+        <div class="wb-prop-row"><span>Saved variants</span>
+          <select id="cfg-variants">
+            <option value="">— current settings —</option>
+            ${variants.map((v, i) => `<option value="${i}">${escapeXml(v.name)}</option>`).join('')}
+          </select>
+          <button type="button" class="wb-btn" id="cfg-duplicate">Duplicate variant</button>
+        </div>
+        <div id="cfg-fields">${fieldsHtml()}</div>
+        <div class="wb-prop-row"><span>Layout on apply</span>
+          <select id="cfg-relayout" aria-label="Layout on apply">
+            <option value="preserve" ${relayout === 'preserve' ? 'selected' : ''}>Preserve manual positions</option>
+            <option value="group" ${relayout === 'group' ? 'selected' : ''}>Relayout configured group</option>
+            <option value="full" ${relayout === 'full' ? 'selected' : ''}>Full relayout (clear of other content)</option>
+          </select>
+        </div>
+        <div id="cfg-errors" class="wb-config-errors" role="alert" aria-live="polite"></div>
+        <div class="wb-config-summary" id="cfg-summary">${escapeXml(pattern.explanation(values))}</div>
+        <div class="wb-modal-actions wb-config-actions">
+          <button type="button" class="wb-btn" id="cfg-reset">Reset</button>
+          <button type="button" class="wb-btn" id="cfg-cancel">Cancel</button>
+          <button type="button" class="wb-btn" id="cfg-preview">Preview</button>
+          <button type="button" class="wb-btn wb-primary" id="cfg-apply">Apply</button>
+        </div>
+      `;
+    }
+
+    openHtml(CONFIG_LABEL, bodyHtml(), (modal) => {
+      const errorBox = modal.querySelector('#cfg-errors');
+      const summary = modal.querySelector('#cfg-summary');
+      const applyBtn = modal.querySelector('#cfg-apply');
+
+      const readField = (el) => {
+        if (el.type === 'checkbox') return el.checked;
+        if (el.type === 'number') return Number(el.value);
+        return el.value;
+      };
+
+      const sync = () => {
+        const next = {};
+        modal.querySelectorAll('[data-param]').forEach((el) => {
+          next[el.dataset.param] = readField(el);
+        });
+        values = next;
+        const result = validateValues(pattern, values);
+        errorBox.innerHTML = result.ok
+          ? ''
+          : Object.values(result.errors)
+              .map((msg) => `<div class="wb-config-error">${escapeXml(msg)}</div>`)
+              .join('');
+        applyBtn.disabled = !result.ok;
+        const previewBtn = modal.querySelector('#cfg-preview');
+        if (previewBtn) previewBtn.disabled = !result.ok;
+        summary.textContent = result.ok ? pattern.explanation(values) : 'Fix the highlighted fields before applying.';
+      };
+
+      modal.querySelectorAll('[data-param]').forEach((el) => {
+        el.addEventListener('input', sync);
+        el.addEventListener('change', sync);
+      });
+
+      modal.querySelector('#cfg-relayout')?.addEventListener('change', (e) => {
+        relayout = e.target.value;
+      });
+
+      modal.querySelector('#cfg-pattern')?.addEventListener('change', (e) => {
+        close();
+        openDiagramConfigModal(e.target.value);
+      });
+
+      modal.querySelector('#cfg-variants')?.addEventListener('change', (e) => {
+        const chosen = variants[Number(e.target.value)];
+        if (!chosen) return;
+        values = { ...defaultValues(pattern), ...chosen.values };
+        modal.querySelector('#cfg-fields').innerHTML = fieldsHtml();
+        modal.querySelectorAll('[data-param]').forEach((el) => {
+          el.addEventListener('input', sync);
+          el.addEventListener('change', sync);
+        });
+        sync();
+      });
+
+      modal.querySelector('#cfg-duplicate')?.addEventListener('click', () => {
+        const check = validateValues(pattern, values);
+        if (!check.ok) {
+          showToast(Object.values(check.errors)[0], 'error');
+          return;
+        }
+        const name = `${pattern.name} variant ${variants.length + 1}`;
+        variants = [...variants, { name, patternId: pattern.id, values: { ...values } }];
+        const saved = writeVariants([...readVariants().filter((v) => v.patternId !== pattern.id), ...variants]);
+        close();
+        openDiagramConfigModal(pattern.id);
+        showToast(
+          saved ? `Saved ${name}.` : `Could not save ${name}: local storage is full. Export the board instead.`,
+          saved ? 'success' : 'error'
+        );
+      });
+
+      modal.querySelector('#cfg-reset')?.addEventListener('click', () => {
+        values = defaultValues(pattern);
+        modal.querySelector('#cfg-fields').innerHTML = fieldsHtml();
+        modal.querySelectorAll('[data-param]').forEach((el) => {
+          el.addEventListener('input', sync);
+          el.addEventListener('change', sync);
+        });
+        sync();
+      });
+
+      modal.querySelector('#cfg-cancel')?.addEventListener('click', close);
+
+      modal.querySelector('#cfg-preview')?.addEventListener('click', () => {
+        const result = validateValues(pattern, values);
+        if (!result.ok) {
+          summary.textContent = Object.values(result.errors).join(' ');
+          return;
+        }
+        const page = app.getPage();
+        if (!page) {
+          summary.textContent = 'Open a board page before previewing a configuration.';
+          return;
+        }
+        const before = page.elements.length;
+        // The preview must not reach the live page through a shared nested
+        // object: applyArchitectureConfig records values on the page it is given.
+        const previewPage = {
+          ...page,
+          elements: JSON.parse(JSON.stringify(page.elements)),
+          architectureConfigs: JSON.parse(JSON.stringify(page.architectureConfigs || {})),
+        };
+        const res = applyArchitectureConfig(previewPage, pattern, values, { relayout });
+        if (!res.ok) {
+          summary.textContent = res.errors.join(' ');
+          return;
+        }
+        const after = previewPage.elements.length;
+        summary.textContent = `${pattern.explanation(values)} Preview on this board: ${res.updated} kept, ${res.added} added, ${res.removed} removed (${after - before >= 0 ? '+' : ''}${after - before} elements). ${res.applied?.length ? `Applied: ${res.applied.join(', ')}.` : ''}`;
+      });
+
+      modal.querySelector('#cfg-apply')?.addEventListener('click', () => {
+        const result = validateValues(pattern, values);
+        if (!result.ok) return;
+        const page = app.getPage();
+        if (!page) {
+          showToast('Open a board page before applying a configuration.', 'error');
+          return;
+        }
+        let res;
+        try {
+          res = applyArchitectureConfig(page, pattern, values, { relayout });
+        } catch (err) {
+          showToast(err?.message || 'Configuration failed.', 'error');
+          return;
+        }
+        if (!res || res.ok === false) {
+          showToast((res?.errors || ['Configuration failed.']).join(' '), 'error');
+          return;
+        }
+        app.history?.commit?.(page);
+        app.scheduleAutosave?.(app.scene);
+        app.collab?.broadcastSceneChange?.();
+        app.updateUI?.();
+        app.requestRender?.();
+        close();
+        const removedNote = res.removed
+          ? ` ${res.removed} configured element(s) removed; any connector bound to them was unbound.`
+          : '';
+        const adoptedNote = res.adopted
+          ? ` ${res.adopted} existing template component(s) reused.`
+          : '';
+        showToast(`${CONFIG_LABEL} applied: ${res.updated} updated, ${res.added} added, ${res.removed} removed.${adoptedNote}${removedNote}`, 'success');
+      });
+    });
+  }
+
   return {
     isOpen,
     close,
@@ -1028,5 +1286,6 @@ export function initDialogs(app) {
     openCodeEditorModal,
     openTableInsertModal,
     openTabletTestModal,
+    openDiagramConfigModal,
   };
 }

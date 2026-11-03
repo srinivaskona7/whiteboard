@@ -11,10 +11,11 @@ import {
 } from '../scene/brushes.js';
 import { ARROW_QUICK_PRESETS, applyArrowQuickPreset } from '../scene/arrow-presets.js';
 import { createElement, createScene, autoGrowShapeForText } from '../scene/model.js';
-import { wrapCellLines, tableGeometry, fitTableToContent } from '../render/shapes.js';
+import { wrapCellLines, wrapCodeLines, tableGeometry, fitTableToContent } from '../render/shapes.js';
 import { getTableCellAtPoint } from '../scene/hit.js';
 import {
   pasteTsvIntoTable,
+  replaceTsvIntoTable,
   insertTableRow,
   insertTableCol,
   deleteTableRow,
@@ -430,5 +431,81 @@ describe('Regression guards — persistence, geometry parity and hostile documen
     const svg = exportToSvgString(scene, scene.pages[0]);
     assert.match(svg, /fill="#dc2626"/);
     assert.match(svg, /<g opacity="0.28">/);
+  });
+});
+
+describe('Stage A regressions — wrapping, TSV modes and arrowheads', () => {
+  test('code wrapping re-flows visually without changing source text', () => {
+    const ctx = { measureText: (s) => ({ width: String(s).length * 7 }) };
+    const source = 'kubectl get pods --namespace=production --selector=app=frontend --output=wide';
+    const rows = wrapCodeLines(ctx, source, 140);
+    assert.ok(rows.length > 1);
+    // Visual wrapping removes only the whitespace at the break point; every
+    // non-space character of the source survives.
+    assert.equal(
+      rows.map((r) => r.text).join('').replace(/\s+/g, ''),
+      source.replace(/\s+/g, '')
+    );
+    assert.ok(rows.every((r) => r.sourceLine === 1));
+    assert.equal(rows[0].continuation, false);
+    assert.ok(rows.slice(1).every((r) => r.continuation));
+  });
+
+  test('wrapped code keeps its width and grows only in height', () => {
+    const text = Array.from({ length: 12 }, (_, i) => `echo "line ${i + 1} with a long status annotation"`).join('\n');
+    const el = createElement('code', { x: 10, y: 20, w: 260, h: 100, text, codeWrap: true, fontSize: 14, autoGrow: true });
+    autoGrowShapeForText(el, text);
+    assert.equal(el.w, 260);
+    assert.equal(el.x, 10);
+    assert.equal(el.y, 20);
+    assert.ok(el.h > 100);
+  });
+
+  test('TSV replace resizes exactly while fill preserves extra columns', () => {
+    const table = createElement('table', { rows: 2, cols: 3, cells: [['a', 'b', 'keep'], ['c', 'd', 'keep']] });
+    const filled = pasteTsvIntoTable(table, '1\t2\n3\t4');
+    assert.equal(filled.rows, 2);
+    assert.equal(filled.cols, 3);
+    assert.deepEqual(table.cells[0], ['1', '2', 'keep']);
+    const replaced = replaceTsvIntoTable(table, '1\t2\n3\t4');
+    assert.equal(replaced.rows, 2);
+    assert.equal(replaced.cols, 2);
+    assert.deepEqual(table.cells, [['1', '2'], ['3', '4']]);
+  });
+
+  test('outline triangle is a stroke-only arrowhead in SVG', () => {
+    const scene = createScene();
+    const arrow = createElement('arrow', { x: 0, y: 0, x2: 100, y2: 0, endArrow: 'triangle-outline' });
+    scene.pages[0].elements.push(arrow);
+    const svg = exportToSvgString(scene, scene.pages[0]);
+    assert.match(svg, /<polygon points="0,0 [^"]*" fill="none" stroke=/);
+  });
+});
+
+describe('Fill patterns — deterministic and exported', () => {
+  test('hachure and cross-hatch emit a pattern def and reference it', () => {
+    const scene = createScene();
+    const a = createElement('rect', { x: 0, y: 0, w: 100, h: 60, fill: '#dbeafe', fillPattern: 'hachure' });
+    const b = createElement('rect', { x: 120, y: 0, w: 100, h: 60, fill: '#dcfce7', fillPattern: 'cross-hatch' });
+    scene.pages[0].elements.push(a, b);
+    const svg = exportToSvgString(scene, scene.pages[0]);
+    assert.match(svg, /<pattern id="wb-pat-[^"]+" width="8" height="8"/);
+    assert.match(svg, /fill="url\(#wb-pat-[^"]+\)"/);
+    assert.equal((svg.match(/<pattern /g) || []).length, 2);
+  });
+
+  test('a solid fill exports no pattern def', () => {
+    const scene = createScene();
+    scene.pages[0].elements.push(createElement('rect', { x: 0, y: 0, w: 100, h: 60, fill: '#dbeafe', fillPattern: 'solid' }));
+    const svg = exportToSvgString(scene, scene.pages[0]);
+    assert.doesNotMatch(svg, /<pattern /);
+  });
+
+  test('fill pattern survives a scene round trip', () => {
+    const scene = createScene();
+    const rect = createElement('rect', { fillPattern: 'hachure' });
+    scene.pages[0].elements.push(rect);
+    const reloaded = parseSceneJson(serializeScene(scene));
+    assert.equal(reloaded.pages[0].elements[0].fillPattern, 'hachure');
   });
 });

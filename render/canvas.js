@@ -18,6 +18,7 @@ import {
   getConnectionPorts,
 } from '../scene/geometry.js';
 import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
+import { markerPoint } from '../scene/animation.js';
 import {
   resolveBrush,
   buildStrokeSegments,
@@ -103,6 +104,7 @@ export class CanvasRenderer {
       laserTrail = [],
       spotlight = null,
       presentState = null,
+      animationState = null,
       cropState = null,
       eraserCursor = null,
       eraserSize = 12,
@@ -147,6 +149,8 @@ export class CanvasRenderer {
       if (presentState?.active && el.revealStep > 0 && el.revealStep > presentState.revealStep) {
         continue;
       }
+      if (animationState && animationState.hidden.has(el.id)) continue;
+      if (animationState?.revealPending?.has(el.id)) continue;
       if (!isElementInViewport(el, vpBounds)) continue;
 
       let clipFrame = null;
@@ -170,11 +174,71 @@ export class CanvasRenderer {
           ctx.rect(clipFrame.x, clipFrame.y, clipFrame.w, clipFrame.h);
           ctx.clip();
         }
-        this.drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState);
+        this.drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState, animationState);
       } catch (err) {
         this._reportRenderError(`element:${el.id}`, err);
       } finally {
         if (clipFrame) ctx.restore();
+      }
+    }
+
+    if (animationState && animationState.traces?.size) {
+      for (const edgeId of animationState.traces) {
+        const edge = page.elements.find((e) => e.id === edgeId && (e.type === 'arrow' || e.type === 'line'));
+        if (edge) drawConnectorElement(ctx, { ...edge, stroke: '#0ea5e9', strokeWidth: 4 }, page, theme);
+      }
+    }
+
+    if (animationState && animationState.markers?.length) {
+      for (const marker of animationState.markers) {
+        const edge = page.elements.find((e) => e.id === marker.edgeId && (e.type === 'arrow' || e.type === 'line'));
+        if (!edge) continue;
+        const pt = markerPoint(edge, marker.t, page);
+        if (!pt) continue;
+        const colour = marker.action === 'response' ? '#16a34a' : marker.action === 'request' ? '#0ea5e9' : '#f59e0b';
+        ctx.save();
+        ctx.beginPath();
+        ctx.fillStyle = colour;
+        ctx.arc(pt.x, pt.y, 6 / Math.max(0.2, cam.zoom), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    if (animationState && animationState.badges?.length) {
+      const scale = 1 / Math.max(0.2, cam.zoom);
+      for (const badge of animationState.badges) {
+        const el = page.elements.find((e) => e.id === badge.targetId);
+        if (!el) continue;
+        const colour =
+          badge.action === 'failure' ? '#dc2626' : badge.action === 'retry' ? '#d97706' : '#7c3aed';
+        const label =
+          badge.action === 'failure'
+            ? '✕'
+            : badge.action === 'retry'
+              ? `↻${badge.count > 1 ? ` ×${badge.count}` : ''}`
+              : `⚠ ${badge.count}`;
+        ctx.save();
+        ctx.font = `${12 * scale}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const pad = 6 * scale;
+        const w = Math.max(22 * scale, ctx.measureText(label).width + pad * 2);
+        const h = 20 * scale;
+        const bx = (el.x || 0) + (el.w || 0) - w / 2;
+        const by = (el.y || 0) - h / 2;
+        ctx.fillStyle = colour;
+        ctx.beginPath();
+        if (badge.action === 'backlog') {
+          ctx.roundRect?.(bx, by, w, h, 6 * scale);
+          if (!ctx.roundRect) ctx.rect(bx, by, w, h);
+        } else {
+          ctx.arc(bx + w / 2, by + h / 2, h / 2, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, bx + w / 2, by + h / 2 + 0.5 * scale);
+        ctx.restore();
       }
     }
 
@@ -382,9 +446,10 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState) {
+  drawSingleElement(ctx, el, page, scene, theme, now, editingElementId, presentState, animationState = null) {
     ctx.save();
     let alpha = el.opacity ?? 1;
+    if (animationState?.dimmed?.has(el.id)) alpha *= 0.3;
     if (el.fading && el.createdAt && now - el.createdAt > 2200) {
       alpha *= Math.max(0, 1 - (now - el.createdAt - 2200) / 800);
     }
@@ -406,6 +471,16 @@ export class CanvasRenderer {
     else if (el.type === 'math') drawMathTool(ctx, el);
     else drawShapeElement(ctx, editingElementId === el.id ? { ...el, text: '' } : el, theme);
 
+    if (animationState?.highlighted?.has(el.id)) {
+      const effect = animationState.effects?.get(el.id);
+      const colour = effect === 'failure' ? '#dc2626' : effect === 'retry' ? '#d97706' : effect === 'backlog' ? '#7c3aed' : '#f59e0b';
+      ctx.save();
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 3 / Math.max(0.2, page.camera?.zoom || 1);
+      ctx.setLineDash([]);
+      ctx.strokeRect(el.x - 4, el.y - 4, (el.w || 0) + 8, (el.h || 0) + 8);
+      ctx.restore();
+    }
     if (!presentState?.active) this.drawElementBadges(ctx, el);
     ctx.restore();
   }

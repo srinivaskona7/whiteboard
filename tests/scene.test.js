@@ -50,6 +50,7 @@ import {
 } from '../scene/bindings.js';
 import { HistoryManager } from '../scene/history.js';
 import { parseMermaidDiagram } from '../scene/mermaid.js';
+import { createTableElementData } from '../scene/table.js';
 import {
   migrateSceneData,
   serializeScene,
@@ -387,15 +388,15 @@ describe('Save/Load Migration, SVG Export & URL Hash Sharing', () => {
 });
 
 describe('Stencils, Templates, CanvasRenderer & Full Feature E2E Suite', () => {
-  test('renders all stencils, all 11 templates, and all element types to Canvas & SVG', () => {
+  test('renders all stencils, all built-in templates, and all element types to Canvas & SVG', () => {
     assert.ok(ALL_STENCILS.length >= 35, 'Should include comprehensive stencils across 7 categories');
     const categories = getStencilsByCategory('');
     assert.ok(categories.length >= 6);
     const k8sFiltered = getStencilsByCategory('pod');
     assert.ok(k8sFiltered.some((g) => g.items.some((i) => i.id === 'k8s-pod')));
 
-    // Verify all 18 built-in templates (11 general + 7 DevOps packs) build valid elements
-    assert.equal(BUILTIN_TEMPLATES.length, 18);
+    // Verify every built-in template (general + DevOps packs + Azure/GCP) builds valid elements
+    assert.ok(BUILTIN_TEMPLATES.length >= 38, 'Azure and GCP packs must stay registered');
     for (const tpl of BUILTIN_TEMPLATES) {
       const built = getTemplateById(tpl.id).build();
       assert.ok(Array.isArray(built));
@@ -711,5 +712,17 @@ describe('Notes Persistence, Page Geometry & Route Sanitization', () => {
     for (const p of blockedPts) {
       assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), 'route points must stay finite');
     }
+  });
+});
+
+describe('Table element factory', () => {
+  test('createTableElementData clamps rows and columns', () => {
+    const data = createTableElementData({ rows: 3, cols: 4 });
+    assert.equal(data.rows, 3);
+    assert.equal(data.cols, 4);
+    assert.equal(data.cells.length, 3);
+    assert.equal(data.cells[0].length, 4);
+    assert.equal(createTableElementData({ rows: 0, cols: 0 }).rows, 3);
+    assert.equal(createTableElementData({ rows: 1e9 }).rows, 200);
   });
 });

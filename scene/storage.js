@@ -54,6 +54,18 @@ export function sanitizeSceneForPersistence(scene, { stripNotes = false } = {}) 
     if (!stripNotes && typeof page.teacherNotes === 'string') {
       outPage.teacherNotes = page.teacherNotes;
     }
+    // Declarative teaching tracks travel with the page for the teacher.
+    if (!stripNotes && page.animationTrack && Array.isArray(page.animationTrack.steps)) {
+      outPage.animationTrack = {
+        id: page.animationTrack.id,
+        name: page.animationTrack.name,
+        steps: page.animationTrack.steps,
+      };
+    }
+    // Applied diagram configuration, so reopening the drawer does not reset it.
+    if (page.architectureConfigs && typeof page.architectureConfigs === 'object') {
+      outPage.architectureConfigs = structuredClone(page.architectureConfigs);
+    }
     return outPage;
   });
 

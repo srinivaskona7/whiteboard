@@ -248,8 +248,8 @@ export function initToolbar(app) {
                   class="wb-tool-btn wb-split-main ${app.activeTool === 'arrow' ? 'active' : ''}"
                   id="btn-quick-arrow"
                   data-quick-arrow="simple-sketch"
-                  aria-label="Insert a simple one-way arrow"
-                  title="Insert a simple one-way arrow at the centre (Alt: choose a preset)"
+                  aria-label="Arrow tool"
+                  title="Arrow tool with the current preset — drag on the canvas (Alt: choose a preset)"
                 >
                   <span class="wb-tool-icon">${(TOOL_REGISTRY.find((t) => t.id === 'arrow') || {}).icon || '↗'}</span>
                   <span class="wb-tool-key">↗</span>
@@ -272,6 +272,9 @@ export function initToolbar(app) {
                         <span>${escapeXml(p.name)}</span>
                       </button>`
                   ).join('')}
+                  <button type="button" class="wb-menu-item" id="btn-arrow-insert-sample" title="Insert a ready-made arrow without dragging">
+                    + <span>Insert sample arrow</span>
+                  </button>
                 </div>
               </div>`
             : ''
@@ -373,7 +376,7 @@ export function initToolbar(app) {
         return;
       }
       toggleArrowPop(false);
-      app.insertSimpleArrow();
+      app.armArrowTool();
       renderDock();
     });
     arrowCaret?.addEventListener('click', (ev) => {
@@ -383,9 +386,16 @@ export function initToolbar(app) {
     dock.querySelectorAll('[data-arrow-preset]').forEach((btn) => {
       btn.addEventListener('click', () => {
         toggleArrowPop(false);
-        app.insertSimpleArrow(btn.dataset.arrowPreset);
+        // With arrows selected this restyles them; otherwise it arms the tool.
+        app.applyArrowPresetToSelection(btn.dataset.arrowPreset);
         renderDock();
       });
+    });
+    dock.querySelector('#btn-arrow-insert-sample')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleArrowPop(false);
+      app.insertSimpleArrow(app.pendingArrowPreset);
+      renderDock();
     });
     if (!dock.dataset.arrowDismissBound) {
       dock.dataset.arrowDismissBound = '1';

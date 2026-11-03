@@ -11,9 +11,9 @@ import { NETWORK_STENCILS } from './network.js';
 import { UML_STENCILS } from './uml.js';
 import { ER_STENCILS } from './er.js';
 import { GENERIC_STENCILS } from './generic.js';
-import { ICON_PACK_SOURCES, getIconProvenance } from './manifest.js';
+import { ICON_PACK_SOURCES, getIconProvenance, describeIcon } from './manifest.js';
 
-export { ICON_PACK_SOURCES, getIconProvenance };
+export { ICON_PACK_SOURCES, getIconProvenance, describeIcon };
 
 export const SEARCH_ALIASES = {
   ec2: ['aws-ec2', 'cloud-vm'],

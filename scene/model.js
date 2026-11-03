@@ -13,6 +13,7 @@ export const DEFAULT_STYLE = {
   fill: 'transparent',
   strokeWidth: 2,
   strokeStyle: 'solid', // 'solid' | 'dashed' | 'dotted'
+  fillPattern: 'solid', // 'solid' | 'hachure' | 'cross-hatch'
   opacity: 1,
   fontFamily: 'sans', // 'sans' | 'serif' | 'mono' | 'hand'
   fontSize: 18,
@@ -59,6 +60,7 @@ export function createElement(type, props = {}) {
               : DEFAULT_STYLE.fill),
     strokeWidth: props.strokeWidth ?? (type === 'highlighter' ? 18 : DEFAULT_STYLE.strokeWidth),
     strokeStyle: props.strokeStyle ?? DEFAULT_STYLE.strokeStyle,
+    fillPattern: props.fillPattern ?? DEFAULT_STYLE.fillPattern,
     opacity: props.opacity ?? (type === 'highlighter' ? 0.42 : DEFAULT_STYLE.opacity),
     roundness: props.roundness ?? (type === 'rounded-rect' ? 16 : DEFAULT_STYLE.roundness),
     sloppy: props.sloppy ?? DEFAULT_STYLE.sloppy,
@@ -640,6 +642,7 @@ export function extractStyle(el) {
     fill: el.fill,
     strokeWidth: el.strokeWidth,
     strokeStyle: el.strokeStyle,
+    fillPattern: el.fillPattern,
     opacity: el.opacity,
     fontFamily: el.fontFamily,
     fontSize: el.fontSize,
@@ -660,6 +663,7 @@ export function applyStyle(el, style) {
     'fill',
     'strokeWidth',
     'strokeStyle',
+    'fillPattern',
     'opacity',
     'fontFamily',
     'fontSize',
@@ -782,6 +786,19 @@ export function autoGrowShapeForText(el, text) {
   // Code blocks keep a fixed top-left anchor. Growing symmetrically used to push the
   // block left, underneath the tool rail, where the content could not be reached.
   if (el.type === 'code') {
+    if (el.codeWrap) {
+      // Wrapped code keeps its width and grows only vertically. Estimate the visual
+      // rows with the same character metric the renderer's monospace font uses.
+      const innerW = Math.max(8, (el.w || 320) - 52);
+      const charsPerLine = Math.max(8, Math.floor(innerW / (fontSize * 0.6)));
+      let visualRows = 0;
+      for (const line of rawLines) {
+        visualRows += Math.max(1, Math.ceil(line.length / charsPerLine));
+      }
+      const codeH = Math.ceil(visualRows * fontSize * 1.45 + 52);
+      el.h = Math.max(el.h, codeH);
+      return;
+    }
     const codeW = Math.ceil(maxChars * fontSize * 0.62 + 64);
     const codeH = Math.ceil(rawLines.length * lineHeight + 52);
     el.w = Math.max(el.w, codeW);

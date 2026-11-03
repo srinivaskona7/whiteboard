@@ -5,6 +5,7 @@ import {
   getStencilsByCategory,
   getStencilById,
   ICON_PACK_SOURCES,
+  getIconProvenance,
 } from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
@@ -200,13 +201,14 @@ export function initLibraryPanel(app) {
 
     const renderCardHtml = (s) => {
       const isSelected = selectedStencils.has(s.id);
+      const provenance = getIconProvenance(s);
       const isFav = favorites.has(s.id);
       const iconW = previewDensity === 'compact' ? 38 : 48;
       const iconH = previewDensity === 'compact' ? 38 : 44;
       const boxW = previewDensity === 'compact' ? 32 : 40;
       const boxH = previewDensity === 'compact' ? 32 : 36;
       return `
-        <div class="wb-stencil-item ${isSelected ? 'selected' : ''}" role="option" tabindex="0" aria-selected="${isSelected}" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) — Click to place, drag onto canvas">
+        <div class="wb-stencil-item ${isSelected ? 'selected' : ''}" role="option" tabindex="0" aria-selected="${isSelected}" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) · ${escapeXml(provenance.provider)} ${escapeXml(provenance.version)} · ${escapeXml(provenance.license || 'project license')}${provenance.attribution ? ` · ${escapeXml(provenance.attribution)}` : ''}, reviewed ${escapeXml(provenance.reviewedAt || 'not recorded')} — Click to place, drag onto canvas">
           <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
           ${isSelected ? `<span class="wb-stencil-check">✓</span>` : ''}
           <svg width="${iconW}" height="${iconH}" viewBox="0 0 ${iconW} ${iconH}" preserveAspectRatio="xMidYMid meet">
@@ -438,6 +440,7 @@ export function initLibraryPanel(app) {
   function renderTemplatesTab(content) {
     content.innerHTML = `
       <p class="wb-muted">Load a starter classroom or architecture template onto the active page.</p>
+      <button type="button" class="wb-btn wb-sm" id="lib-config-btn">Diagram configuration…</button>
       <div class="wb-template-list">
         ${BUILTIN_TEMPLATES.map(
           (t) => `
@@ -455,6 +458,7 @@ export function initLibraryPanel(app) {
     content.querySelectorAll('[data-tpl-id]').forEach((b) => {
       b.addEventListener('click', () => app.applyTemplate(b.dataset.tplId));
     });
+    content.querySelector('#lib-config-btn')?.addEventListener('click', () => app.dialogs.openDiagramConfigModal());
   }
 
   render();

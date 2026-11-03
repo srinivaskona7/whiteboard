@@ -70,6 +70,7 @@ import { initLibraryPanel } from './ui/library-panel.js';
 import { initPresentUI } from './ui/present.js';
 import { initTimerUI } from './ui/timer.js';
 import { initCommandPalette } from './ui/palette.js';
+import { initAnimationUI } from './ui/animation.js';
 import { initNotebookView } from './ui/notebook.js';
 import { initContextMenu, buildContextItems } from './ui/context-menu.js';
 import { initDialogs } from './ui/dialogs.js';
@@ -179,6 +180,7 @@ export class WhiteboardApp {
     this.timerUI = initTimerUI(this);
     this.notebookView = initNotebookView(this);
     this.paletteUI = initCommandPalette(this);
+    this.animationUI = initAnimationUI(this);
     this.contextMenu = initContextMenu(this);
 
     this.scheduleAutosave = createDebouncedAutosave(
@@ -707,6 +709,7 @@ export class WhiteboardApp {
       classroomPointers: this.studentPointers,
       spotlight: this.spotlight,
       presentState: this.presentState,
+      animationState: this.animationState || null,
       cropState: this.cropState,
       eraserCursor: this.activeTool === 'eraser' ? this.eraserCursor : null,
       eraserSize: this.eraserSettings?.size || 12,
@@ -1546,8 +1549,24 @@ export class WhiteboardApp {
     return true;
   }
 
-  // Direct dock action: drop a plain one-way arrow at the viewport centre
-  // without having to pick the connector tool or configure routing first.
+  // Preset selection arms the arrow tool; it never drops an object by itself.
+  // Drag on the canvas to place the arrow with the chosen look.
+  armArrowTool(presetId = null) {
+    if (!this.collab.canEditBoard()) {
+      this.dialogs?.showToast?.('Viewers cannot insert elements onto the board.');
+      return false;
+    }
+    const chosen = presetId || this.pendingArrowPreset || 'simple-sketch';
+    this.pendingArrowPreset = chosen;
+    this.setTool('arrow');
+    const name = ARROW_QUICK_PRESETS.find((p) => p.id === chosen)?.name || chosen;
+    this.dialogs?.showToast?.(
+      `Arrow tool ready: ${name}. Drag to draw, or use Insert sample for a ready-made arrow.`
+    );
+    return true;
+  }
+
+  // Explicit "Insert sample": a ready-made arrow placed clear of existing objects.
   insertSimpleArrow(presetId = null) {
     const chosen = presetId || this.pendingArrowPreset || 'simple-sketch';
     if (!this.collab.canEditBoard()) {
@@ -1555,12 +1574,12 @@ export class WhiteboardApp {
       return null;
     }
     const page = this.getPage();
-    const c = this.getViewportCenterWorld();
+    const origin = computeNonOverlappingOrigin(page, this.getViewportCenterWorld());
     const el = createElement('arrow', {
-      x: Math.round(c.x - 90),
-      y: Math.round(c.y),
-      x2: Math.round(c.x + 90),
-      y2: Math.round(c.y),
+      x: Math.round(origin.x - 90),
+      y: Math.round(origin.y),
+      x2: Math.round(origin.x + 90),
+      y2: Math.round(origin.y),
     });
     applyArrowQuickPreset(el, chosen);
     page.elements.push(el);

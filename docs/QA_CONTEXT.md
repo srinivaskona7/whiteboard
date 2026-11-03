@@ -148,3 +148,41 @@ Last updated: 2026-11-03 (drawing / arrow / table / tablet stage)
 - Auto Clean still prefers orthogonal A* on dense diagrams; no large-diagram benchmark recorded.
 - Grain is deterministic per element id + `createdAt`. Copying an element carries the id/seed pairing but not an identical visual position; this is intended (a copy looks slightly different, like re-inking).
 - Raw stroke samples are capped at 1500 per element; beyond that re-smoothing is approximate by design.
+
+## 9. 2026-11-03 additions and their honest limits
+
+New files: `templates/azure-gcp.js`, `scene/search.js`, `scene/architecture-config.js`, `scene/animation.js`, `ui/animation.js`, `tests/multicloud.test.js`, `tests/search.test.js`, `tests/config.test.js`, `tests/animation.test.js`.
+Modified: `stencils/devops-cloud.js`, `stencils/manifest.js`, `stencils/index.js`, `templates/index.js`, `ui/palette.js`, `ui/library-panel.js`, `ui/dialogs.js`, `ui/props-panel.js`, `render/shapes.js`, `render/svg-export.js`, `render/canvas.js`, `scene/model.js`, `scene/storage.js`, `main.js`, `index.html`, `styles.css`, `tests/drawing.test.js`, `tests/scene.test.js`.
+
+| Item | Why it is not fully verified |
+|---|---|
+| Animation playback observed frame-by-frame | Resolved for the badge and camera paths: playback was run in the browser and `animationState.badges` plus the camera round trip were read back. Marker motion across a long connector is still unit-only |
+| Duplicate-variant round trip through the drawer | The storage path is implemented; duplicate → reload → reload variant was not clicked in the browser |
+| Search over a large board | Resolved for result count and DOM cost: query "a" reported 558 matches while rendering ~10 rows through the windowed list. Per-keystroke timing on a 1000-element board is still unmeasured |
+| Config drawer visual preview | Preview is a summary plus element delta, not a ghosted diagram — a deliberate scope choice |
+| Provider-icon fidelity against current vendor packs | Glyphs are original first-party SVG silhouettes, not vendor downloads; the manifest records that and the review date |
+| Per-pattern relayout of only affected groups | Resolved: `relayout: 'group'` now moves only elements owned by the configuration; `'full'` additionally shifts unrelated content clear |
+
+### Gap-closure pass, later on 2026-11-03
+
+Closed in code and verified in the running dev server: CIDR, `detail: internals`, `showExplanation`,
+`variant: high-availability`, `connectivity` public path, `relayout` wiring, template adoption instead of
+duplication, persistence of applied settings (`page.architectureConfigs`), the Inspector icon reference,
+student-mode note exclusion, aliases, group results, true result totals, saved searches, reveal-after-hide,
+distinct animation badges and camera restore on Stop.
+
+Still open: no visual ghost preview in the config drawer; marker travel is unit-tested only; variant
+duplicate → reload was not clicked through the drawer; no 1000-element search benchmark.
+
+### Review round, later on 2026-11-03
+
+Three reviewers (correctness, edge cases/integration, spec compliance) found six real defects that the
+green suite did not catch, all now fixed and re-verified: preview leaking unapplied settings through a
+shallow page copy; template adoption rewriting an unmatched stencil into a different service; undo
+leaving `architectureConfigs` stale; Stop not restoring the camera when a camera step was reached with
+Prev/Next; track build/clear never autosaved or broadcast; and `createTableElementData` throwing
+`ReferenceError: r`. Also closed: palette matches past the 40th being unreachable, and `connectivity`
+being inert on AKS/GKE.
+
+The lesson recorded in memory: state that lives outside `page.elements` silently escapes preview,
+undo and autosave unless each mechanism is extended to include it.

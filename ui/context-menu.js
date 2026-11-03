@@ -2,6 +2,16 @@
 // Presentation only: every action delegates to an existing app command, and text
 // fields keep their native menus because the canvas handler is the only one bound.
 import { escapeXml } from '../render/svg-export.js';
+
+const ARROW_HEAD_CHOICES = [
+  ['none', 'No arrowhead'],
+  ['arrow', 'Open'],
+  ['triangle', 'Filled triangle'],
+  ['triangle-outline', 'Outline triangle'],
+  ['diamond', 'Diamond'],
+  ['circle', 'Circle'],
+  ['bar', 'Bar'],
+];
 import {
   fitTable,
   insertTableRow,
@@ -242,9 +252,9 @@ export function buildContextItems(app, hit, world) {
         label: 'Endpoint heads',
         children: [
           {
-            label: `Start: ${hit.startArrow || 'none'}`,
-            children: ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'].map((v) => ({
-              label: v,
+            label: `Start: ${(ARROW_HEAD_CHOICES.find(([v]) => v === hit.startArrow) || [null, 'No arrowhead'])[1]}`,
+            children: ARROW_HEAD_CHOICES.map(([v, label]) => ({
+              label,
               disabled: !canEdit || locked,
               action: () => {
                 hit.startArrow = v;
@@ -254,9 +264,9 @@ export function buildContextItems(app, hit, world) {
             })),
           },
           {
-            label: `End: ${hit.endArrow || 'arrow'}`,
-            children: ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'].map((v) => ({
-              label: v,
+            label: `End: ${(ARROW_HEAD_CHOICES.find(([v]) => v === hit.endArrow) || ['arrow', 'Open'])[1]}`,
+            children: ARROW_HEAD_CHOICES.map(([v, label]) => ({
+              label,
               disabled: !canEdit || locked,
               action: () => {
                 hit.endArrow = v;

@@ -32,7 +32,30 @@ const G = {
   azEntra: `<polygon points="50,10 80,54 50,62 20,54" fill="currentColor" fill-opacity="0.16" stroke="currentColor"/><line x1="50" y1="10" x2="50" y2="62" stroke="currentColor"/>`,
   azMonitor: `<circle cx="50" cy="36" r="24" fill="none" stroke="currentColor"/><path d="M34 44 A18 18 0 1 1 66 44" fill="none" stroke="currentColor"/><line x1="50" y1="36" x2="62" y2="24" stroke="currentColor"/><circle cx="50" cy="36" r="3.5" fill="currentColor"/>`,
 
+
+  azAppSvc: `<rect x="18" y="16" width="64" height="42" rx="5" fill="none" stroke="currentColor"/><rect x="18" y="16" width="64" height="10" rx="3" fill="currentColor" fill-opacity="0.18"/><circle cx="26" cy="21" r="2" fill="currentColor"/><path d="M30 34 H66 M30 42 H54" stroke="currentColor"/>`,
+  azContApps: `<rect x="16" y="14" width="24" height="20" rx="3" fill="none" stroke="currentColor"/><rect x="44" y="14" width="24" height="20" rx="3" fill="none" stroke="currentColor"/><rect x="72" y="14" width="12" height="20" rx="3" fill="currentColor" fill-opacity="0.18" stroke="currentColor"/><rect x="16" y="40" width="68" height="20" rx="3" fill="none" stroke="currentColor"/><path d="M24 50 H60" stroke="currentColor"/>`,
+  azSvcBus: `<rect x="16" y="20" width="68" height="32" rx="5" fill="none" stroke="currentColor"/><path d="M24 28 H44 M24 36 H44 M24 44 H44" stroke="currentColor"/><path d="M52 28 H76 M70 22 L76 28 L70 34 M52 44 H76 M70 38 L76 44 L70 50" fill="none" stroke="currentColor"/>`,
+  azEventGrid: `<rect x="18" y="18" width="26" height="20" rx="3" fill="none" stroke="currentColor"/><rect x="56" y="18" width="26" height="20" rx="3" fill="none" stroke="currentColor"/><rect x="37" y="44" width="26" height="18" rx="3" fill="currentColor" fill-opacity="0.18" stroke="currentColor"/><path d="M44 38 L50 44 M56 38 L50 44 M31 38 V52 H37" fill="none" stroke="currentColor"/>`,
+  azDevOps: `<circle cx="50" cy="36" r="24" fill="none" stroke="currentColor"/><path d="M38 36 H58 M52 28 L62 36 L52 44" fill="none" stroke="currentColor"/><circle cx="34" cy="26" r="4" fill="none" stroke="currentColor"/><circle cx="66" cy="48" r="4" fill="none" stroke="currentColor"/>`,
+  azFirewall: `<rect x="20" y="12" width="60" height="48" rx="4" fill="none" stroke="currentColor"/><path d="M20 26 H80 M20 40 H80 M40 12 V60 M60 12 V60" stroke="currentColor"/><path d="M28 18 H36 M48 18 H56" stroke="currentColor"/>`,
+  azDns: `<circle cx="50" cy="36" r="24" fill="none" stroke="currentColor"/><ellipse cx="50" cy="36" rx="10" ry="24" fill="none" stroke="currentColor"/><line x1="26" y1="36" x2="74" y2="36" stroke="currentColor"/><path d="M62 48 L74 60" stroke="currentColor"/>`,
+  azAcr: `<rect x="20" y="14" width="60" height="16" rx="3" fill="none" stroke="currentColor"/><rect x="20" y="34" width="60" height="16" rx="3" fill="currentColor" fill-opacity="0.16" stroke="currentColor"/><path d="M30 22 H44 M30 42 H44 M52 22 H70 M52 42 H70" stroke="currentColor"/>`,
+  azBackup: `<path d="M50 12 L78 24 V44 C78 56 66 62 50 66 C34 62 22 56 22 44 V24 Z" fill="none" stroke="currentColor"/><path d="M38 38 A12 12 0 1 1 42 48 M38 32 V40 H46" fill="none" stroke="currentColor"/>`,
+
   // Google Cloud Service Silhouettes
+
+  gcpPubSub: `<rect x="16" y="16" width="30" height="40" rx="6" fill="none" stroke="currentColor"/><path d="M24 26 H38 M24 36 H38 M24 46 H38" stroke="currentColor"/><circle cx="68" cy="26" r="7" fill="none" stroke="currentColor"/><circle cx="68" cy="46" r="7" fill="none" stroke="currentColor"/><path d="M46 26 H61 M46 46 H61" stroke="currentColor"/>`,
+  gcpEventarc: `<circle cx="26" cy="36" r="9" fill="none" stroke="currentColor"/><path d="M35 36 C45 20 55 52 70 30" fill="none" stroke="currentColor"/><rect x="64" y="22" width="22" height="18" rx="3" fill="currentColor" fill-opacity="0.16" stroke="currentColor"/>`,
+  gcpBuild: `<path d="M30 26 L44 36 L30 46 Z" fill="currentColor" fill-opacity="0.2" stroke="currentColor"/><rect x="18" y="16" width="64" height="40" rx="6" fill="none" stroke="currentColor"/><path d="M52 30 H70 M52 42 H64" stroke="currentColor"/>`,
+  gcpArtifact: `<rect x="22" y="14" width="56" height="44" rx="5" fill="none" stroke="currentColor"/><path d="M22 24 H78" stroke="currentColor"/><path d="M50 30 L62 36 V48 L50 54 L38 48 V36 Z" fill="currentColor" fill-opacity="0.18" stroke="currentColor"/>`,
+  gcpRouter: `<circle cx="50" cy="36" r="14" fill="none" stroke="currentColor"/><path d="M50 14 V22 M50 50 V58 M28 36 H36 M64 36 H72" stroke="currentColor"/><path d="M44 30 L56 42 M56 30 L44 42" stroke="currentColor"/>`,
+  gcpInterconnect: `<path d="M14 26 H40 M14 46 H40 M60 26 H86 M60 46 H86" stroke="currentColor"/><rect x="40" y="20" width="20" height="32" rx="4" fill="none" stroke="currentColor"/><circle cx="26" cy="36" r="3" fill="currentColor"/><circle cx="74" cy="36" r="3" fill="currentColor"/>`,
+  gcpDns: `<circle cx="50" cy="36" r="22" fill="none" stroke="currentColor"/><path d="M50 14 C38 24 38 48 50 58 M50 14 C62 24 62 48 50 58 M28 36 H72" fill="none" stroke="currentColor"/>`,
+  gcpDataflow: `<path d="M16 22 H34 L44 36 L34 50 H16" fill="none" stroke="currentColor"/><path d="M84 22 H66 L56 36 L66 50 H84" fill="none" stroke="currentColor"/><circle cx="50" cy="36" r="8" fill="currentColor" fill-opacity="0.18" stroke="currentColor"/>`,
+  gcpMonitoring: `<rect x="18" y="16" width="64" height="40" rx="4" fill="none" stroke="currentColor"/><polyline points="26,46 36,36 44,42 56,26 66,34 74,28" fill="none" stroke="currentColor"/><circle cx="56" cy="26" r="2.5" fill="currentColor"/>`,
+  gcpSecret: `<rect x="30" y="26" width="40" height="30" rx="4" fill="none" stroke="currentColor"/><path d="M38 26 V20 A12 12 0 0 1 62 20 V26" fill="none" stroke="currentColor"/><circle cx="50" cy="40" r="4" fill="currentColor"/><path d="M50 44 V50" stroke="currentColor"/>`,
+
   gcpHex: (inner) =>
     `<polygon points="32,10 68,10 86,36 68,62 32,62 14,36" fill="currentColor" fill-opacity="0.12" stroke="currentColor"/>${inner}`,
 };
@@ -134,6 +157,29 @@ export const DEVOPS_CLOUD_STENCILS = [
   gcp('gcp-vpc', 'Google Cloud VPC', 'GCP VPC', 'vpc network subnet firewall', G.gcpHex(`<circle cx="38" cy="36" r="4" fill="currentColor"/><circle cx="62" cy="26" r="4" fill="currentColor"/><circle cx="62" cy="46" r="4" fill="currentColor"/><path d="M42 35 L58 27 M42 37 L58 45" fill="none" stroke="currentColor"/>`), '#1A73E8'),
   gcp('gcp-lb', 'Cloud Load Balancing', 'Cloud LB', 'lb load balancer ingress cdn', G.gcpHex(`<circle cx="50" cy="24" r="4" fill="currentColor"/><circle cx="36" cy="46" r="4" fill="currentColor"/><circle cx="64" cy="46" r="4" fill="currentColor"/><path d="M50 28 V36 M36 36 H64 M36 36 V42 M64 36 V42" fill="none" stroke="currentColor"/>`), '#1A73E8'),
   gcp('gcp-iam', 'Google Cloud IAM', 'Cloud IAM', 'iam security service account auth', G.gcpHex(`<circle cx="50" cy="30" r="6" fill="none" stroke="currentColor"/><path d="M38 48 C38 41 62 41 62 48" fill="none" stroke="currentColor"/>`), '#1A73E8'),
+
+  // Expanded Azure services
+  azure('az-appservice', 'Azure App Service', 'App Service', 'appservice web app paas', G.azAppSvc, '#0078D4'),
+  azure('az-containerapps', 'Azure Container Apps', 'Container Apps', 'containerapps serverless container', G.azContApps, '#0078D4'),
+  azure('az-servicebus', 'Azure Service Bus', 'Service Bus', 'servicebus queue topic messaging', G.azSvcBus, '#0078D4'),
+  azure('az-eventgrid', 'Azure Event Grid', 'Event Grid', 'eventgrid events pubsub', G.azEventGrid, '#0078D4'),
+  azure('az-devops', 'Azure DevOps', 'Azure Pipelines', 'devops pipelines cicd build release', G.azDevOps, '#0078D4'),
+  azure('az-firewall', 'Azure Firewall', 'Azure Firewall', 'firewall waf security network', G.azFirewall, '#0078D4'),
+  azure('az-dns', 'Azure DNS', 'Azure DNS', 'dns zone domain resolver', G.azDns, '#0078D4'),
+  azure('az-acr', 'Azure Container Registry', 'ACR', 'acr registry container image', G.azAcr, '#0078D4'),
+  azure('az-backup', 'Azure Backup / Site Recovery', 'Azure Backup', 'backup dr recovery vault', G.azBackup, '#0078D4'),
+
+  // Expanded GCP services
+  gcp('gcp-pubsub', 'Google Cloud Pub/Sub', 'Pub/Sub', 'pubsub queue topic messaging', G.gcpHex(`${G.gcpPubSub}`), '#1A73E8'),
+  gcp('gcp-eventarc', 'Eventarc', 'Eventarc', 'eventarc events triggers', G.gcpHex(`${G.gcpEventarc}`), '#1A73E8'),
+  gcp('gcp-build', 'Cloud Build', 'Cloud Build', 'build cicd pipeline', G.gcpHex(`${G.gcpBuild}`), '#1A73E8'),
+  gcp('gcp-artifact', 'Artifact Registry', 'Artifact Registry', 'artifact registry container image', G.gcpHex(`${G.gcpArtifact}`), '#1A73E8'),
+  gcp('gcp-router', 'Cloud Router', 'Cloud Router', 'router bgp nat network', G.gcpHex(`${G.gcpRouter}`), '#1A73E8'),
+  gcp('gcp-interconnect', 'Cloud Interconnect', 'Interconnect', 'interconnect hybrid network link', G.gcpHex(`${G.gcpInterconnect}`), '#1A73E8'),
+  gcp('gcp-dns', 'Cloud DNS', 'Cloud DNS', 'dns zone domain', G.gcpHex(`${G.gcpDns}`), '#1A73E8'),
+  gcp('gcp-dataflow', 'Dataflow', 'Dataflow', 'dataflow stream batch pipeline', G.gcpHex(`${G.gcpDataflow}`), '#1A73E8'),
+  gcp('gcp-monitoring', 'Cloud Monitoring', 'Cloud Monitoring', 'monitoring logs metrics observability', G.gcpHex(`${G.gcpMonitoring}`), '#1A73E8'),
+  gcp('gcp-secret', 'Secret Manager', 'Secret Manager', 'secret manager kms credentials', G.gcpHex(`${G.gcpSecret}`), '#1A73E8'),
 
   // Vendor-neutral Cloud Teaching Concepts (explicitly badged CLOUD, never AWS)
   genericCloud('cloud-generic', 'Public Cloud Region', 'Cloud Region', 'multi cloud hybrid region zone', `<path d="M30 52 H70 A12 12 0 0 0 72 28 A18 18 0 0 0 36 24 A14 14 0 0 0 30 52 Z" fill="none" stroke="currentColor"/>`, '#0284C7'),

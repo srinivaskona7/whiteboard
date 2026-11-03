@@ -105,8 +105,33 @@ export function pasteTsvIntoTable(el, text, startRow = 0, startCol = 0) {
   return { filled, rows: el.rows, cols: el.cols };
 }
 
+// Replaces the whole table with the pasted grid: exact rows/columns, no leftover
+// cells from the previous shape. The undoable, data-destroying counterpart of
+// `pasteTsvIntoTable`, which fills from a start cell and only grows.
+export function replaceTsvIntoTable(el, text) {
+  if (!el || el.type !== 'table') return { filled: 0, rows: el?.rows || 0, cols: el?.cols || 0 };
+  const lines = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+$/, '')
+    .split('\n');
+  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
+    return { filled: 0, rows: el.rows || 0, cols: el.cols || 0 };
+  }
+  const grid = lines.map((line) => line.split('\t'));
+  const rows = Math.max(1, Math.min(200, grid.length));
+  const cols = Math.max(1, Math.min(200, Math.max(...grid.map((r) => r.length))));
+  el.rows = rows;
+  el.cols = cols;
+  el.cells = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => String(grid[r]?.[c] ?? ''))
+  );
+  resetSpans(el);
+  const filled = el.cells.reduce((n, row) => n + row.filter((v) => v !== '').length, 0);
+  return { filled, rows, cols };
+}
+
 export function createTableElementData({ rows = 3, cols = 3, headerRow = true, striped = false, textAlign = 'center' } = {}) {
-  const r = Math.min(50, Math.max(1, Math.round(rows) || 3));
+  const r = Math.min(200, Math.max(1, Math.round(rows) || 3));
   const c = Math.min(20, Math.max(1, Math.round(cols) || 3));
   return {
     rows: r,

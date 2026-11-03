@@ -55,7 +55,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Top Bar & Document Title / Save Status / Workspace Presets */
 .wb-topbar {
-  position: fixed; top: 10px; left: 12px; right: 12px; height: 44px;
+  position: fixed; top: 6px; left: 6px; right: 6px; height: 28px;
   display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
   background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
   box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); z-index: 25; gap: 8px;
@@ -124,7 +124,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Floating Left Toolbar & Popovers */
 .wb-toolbar {
-  position: fixed; top: 64px; left: 12px; bottom: 58px; width: 50px;
+  position: fixed; top: 40px; left: 6px; bottom: 40px; width: 42px;
   display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 5px 4px;
   background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
   box-shadow: var(--shadow-lg); z-index: 24;
@@ -170,12 +170,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Side Panels */
 .wb-side-panel {
-  position: fixed; top: 64px; bottom: 58px; background: var(--bg-surface);
+  position: fixed; top: 40px; bottom: 40px; background: var(--bg-surface);
   border: 1px solid var(--border-color); border-radius: 10px;
   box-shadow: var(--shadow-lg); overflow-y: auto; z-index: 22;
 }
-.wb-left-panel { left: 70px; width: 318px; }
-.wb-right-panel { right: 12px; width: 252px; padding: 10px; }
+.wb-left-panel { left: 54px; width: 292px; }
+.wb-right-panel { right: 6px; width: 196px; padding: 8px; }
 .wb-panel-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-size: 13px;
@@ -366,7 +366,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .wb-participant-chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .wb-footer {
-  position: fixed; left: 12px; right: 12px; bottom: 8px; height: 40px;
+  position: fixed; left: 6px; right: 6px; bottom: 4px; height: 30px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px; pointer-events: none; z-index: 20;
 }
 .wb-zoom-controls {
@@ -421,6 +421,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex; align-items: center; gap: 8px; pointer-events: auto;
 }
 .wb-pages-bar, .wb-zoom-bar {
+  padding: 2px 6px;
   pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 4px 8px;
   background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 9px; box-shadow: var(--shadow-lg);
 }
@@ -450,6 +451,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Presentation Mode & Teaching Focus Mode */
 body.wb-presenting .wb-topbar, body.wb-presenting .wb-toolbar, body.wb-presenting .wb-side-panel, body.wb-presenting .wb-bottombar, body.wb-presenting .wb-pages-bar, body.wb-presenting .wb-canvas-settings-chip {
+  display: none;
   display: none !important;
 }
 body.wb-focus-mode .wb-side-panel,
@@ -506,7 +508,10 @@ body.wb-focus-mode #btn-dock-insert {
 .wb-shortcut-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; background: var(--bg-muted); border-radius: 5px; gap: 6px; }
 kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 4px; flex-shrink: 0; }
 .wb-palette-search { width: 100%; padding: 12px 14px; border: none; border-bottom: 1px solid var(--border-color); font-size: 14px; background: transparent; }
-.wb-palette-list { max-height: 320px; overflow-y: auto; padding: 6px; }
+.wb-palette-list { max-height: 320px; overflow-y: auto; padding: 6px; position: relative; }
+.wb-palette-saved .wb-chip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-palette-save { margin-left: 6px; }
+.wb-palette-count { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wb-palette-item {
   width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px;
   border: none; border-radius: 6px; background: transparent; cursor: pointer; font-size: 13px; text-align: left;
@@ -635,6 +640,7 @@ kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var
   border: 1px dashed var(--text-secondary); background: var(--bg-muted); max-width: 44px; max-height: 44px;
 }
 .wb-canvas-settings-chip {
+  display: none;
   position: absolute; top: 74px; right: 16px; z-index: 14;
   padding: 6px 10px; border-radius: 18px; border: 1px solid var(--border-color);
   background: var(--bg-elevated); color: var(--text-primary); font-size: 12px;
@@ -698,3 +704,64 @@ kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var
 
 #wb-print-root { display: none; }
 
+
+/* Search palette — scopes, filters, previews and favourites */
+.wb-palette-chips { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 10px 0; }
+.wb-chip {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.wb-chip.active { background: var(--accent-soft); border-color: var(--accent-color); color: var(--accent-color); }
+.wb-palette-count { padding: 4px 12px 2px; font-size: 11px; color: var(--text-muted, #64748b); }
+.wb-palette-item { display: flex; align-items: center; gap: 8px; cursor: pointer; width: 100%; text-align: left; height: 56px; overflow: hidden; }
+.wb-icon-info p { margin: 2px 0; font-size: 12px; line-height: 1.35; }
+.wb-palette-main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.wb-palette-title { font-size: 13px; }
+.wb-palette-subtitle { font-size: 11px; color: var(--text-muted, #64748b); }
+.wb-palette-preview {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.wb-palette-match { font-size: 10px; color: var(--accent-color); }
+.wb-palette-fav { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 14px; padding: 0 2px; }
+.wb-palette-fav.active { color: #f59e0b; }
+
+/* Teaching animation bar */
+.wb-anim-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--panel-bg, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  padding: 8px 12px;
+  max-width: min(960px, 94vw);
+}
+.wb-anim-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wb-anim-title { font-size: 12px; }
+.wb-anim-progress { font-size: 11px; color: var(--text-muted, #64748b); }
+.wb-anim-narration { font-size: 12px; flex: 1; min-width: 120px; }
+.wb-anim-controls { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.wb-anim-speed { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+
+/* Configuration drawer: keep the decisions visible while the form scrolls */
+.wb-config-actions {
+  position: sticky;
+  bottom: -14px;
+  margin: 6px -16px -14px;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-color);
+}

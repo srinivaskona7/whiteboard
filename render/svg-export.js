@@ -24,6 +24,7 @@ import {
   roughenConnectorPoints,
   connectorRoughness,
   wrapCellLines,
+  wrapCodeLines,
 } from './shapes.js';
 
 // Offscreen measuring context, so exported table text wraps at the same width as
@@ -62,6 +63,35 @@ function getSvgDashAttr(strokeStyle, strokeWidth = 2) {
   return '';
 }
 
+
+const patternIdFor = (el) => `wb-pat-${String(el.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+function buildPatternDefs(elements, theme) {
+  const defs = [];
+  for (const el of elements) {
+    if (!el.fillPattern || el.fillPattern === 'solid') continue;
+    const base =
+      el.fill && el.fill !== 'transparent'
+        ? resolveThemeColor(el.fill, theme.name, 'fill')
+        : theme.name === 'dark'
+          ? '#1e293b'
+          : '#f1f5f9';
+    const ink = el.fillPatternColor || (theme.name === 'dark' ? '#94a3b8' : '#64748b');
+    const cross =
+      el.fillPattern === 'cross-hatch'
+        ? `<path d="M0,8 l8,-8" stroke="${ink}" stroke-width="1" opacity="0.55"/>`
+        : '';
+    defs.push(
+      `<pattern id="${patternIdFor(el)}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+        `<rect width="8" height="8" fill="${base}"/>` +
+        `<path d="M0,0 l0,8" stroke="${ink}" stroke-width="1" opacity="0.55"/>` +
+        cross +
+        `</pattern>`
+    );
+  }
+  return defs.length ? `<defs>${defs.join('')}</defs>` : '';
+}
+
 function renderSvgArrowhead(type, tipX, tipY, fromX, fromY, strokeWidth, strokeColor) {
   if (!type || type === 'none') return '';
   const angleDeg = (Math.atan2(tipY - fromY, tipX - fromX) * 180) / Math.PI;
@@ -71,6 +101,8 @@ function renderSvgArrowhead(type, tipX, tipY, fromX, fromY, strokeWidth, strokeC
     inner = `<polyline points="${-size},${-size * 0.55} 0,0 ${-size},${size * 0.55}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`;
   } else if (type === 'triangle') {
     inner = `<polygon points="0,0 ${-size},${-size * 0.58} ${-size},${size * 0.58}" fill="${strokeColor}"/>`;
+  } else if (type === 'triangle-outline') {
+    inner = `<polygon points="0,0 ${-size},${-size * 0.58} ${-size},${size * 0.58}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/>`;
   } else if (type === 'diamond') {
     inner = `<polygon points="0,0 ${-size * 0.65},${-size * 0.45} ${-size * 1.3},0 ${-size * 0.65},${size * 0.45}" fill="${strokeColor}"/>`;
   } else if (type === 'circle') {
@@ -151,6 +183,8 @@ export function exportToSvgString(scene, page = null, options = {}) {
     parts.push(`<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${theme.canvasBg}"/>`);
   }
 
+  parts.push(buildPatternDefs(elements, theme));
+
   for (const el of elements) {
     parts.push(elementToSvg(el, resolvedPage, scene, theme));
   }
@@ -181,7 +215,9 @@ function elementToSvg(el, page, scene, theme) {
       ? ` transform="rotate(${rotDeg} ${cx} ${cy})"`
       : '';
 
-  const commonAttrs = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" ${dash}`;
+  const fillAttr =
+    el.fillPattern && el.fillPattern !== 'solid' ? `url(#${patternIdFor(el)})` : fill;
+  const commonAttrs = `fill="${fillAttr}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" ${dash}`;
 
   let inner = '';
 
@@ -381,16 +417,45 @@ function elementToSvg(el, page, scene, theme) {
     const hlSet = parseHighlightSet(el.highlightLines);
     const fontSize = el.fontSize || 14;
     const lineH = fontSize * 1.45;
+    const gutterW = 40;
+    const innerW = Math.max(8, el.w - gutterW - 12);
     inner += `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" rx="8" fill="#0f172a" stroke="#334155" stroke-width="2"/>`;
-    String(el.text || '')
-      .split(String.fromCharCode(10))
-      .forEach((line, idx) => {
-        const ly = el.y + 36 + idx * lineH;
-        if (hlSet.has(idx + 1)) {
-          inner += `<rect x="${el.x + 4}" y="${ly - lineH / 2}" width="${el.w - 8}" height="${lineH}" fill="rgba(250,204,21,0.2)"/>`;
+    const measure = (() => {
+      if (_measureCtx === undefined) {
+        try {
+          _measureCtx = document.createElement('canvas').getContext('2d');
+        } catch {
+          _measureCtx = null;
         }
-        inner += `<text x="${el.x + 40}" y="${ly}" font-family="monospace" font-size="${fontSize}" fill="#f8fafc" dominant-baseline="central">${escapeXml(line)}</text>`;
-      });
+      }
+      if (_measureCtx) _measureCtx.font = `${fontSize}px ${FONT_MAP.mono}`;
+      return _measureCtx;
+    })();
+    const display = el.codeWrap && measure
+      ? wrapCodeLines(measure, el.text || '', innerW)
+      : String(el.text || '')
+          .split(String.fromCharCode(10))
+          .map((line, idx) => ({ text: line, sourceLine: idx + 1, continuation: false }));
+    let drawn = 0;
+    display.forEach((row) => {
+      const ly = el.y + 36 + drawn * lineH;
+      if (ly + lineH / 2 > el.y + el.h - 6) return;
+      if (hlSet.has(row.sourceLine)) {
+        inner += `<rect x="${el.x + 4}" y="${ly - lineH / 2}" width="${el.w - 8}" height="${lineH}" fill="rgba(250,204,21,0.2)"/>`;
+      }
+      if (!row.continuation) {
+        inner += `<text x="${el.x + 12}" y="${ly}" font-family="monospace" font-size="${fontSize}" fill="#64748b" dominant-baseline="central">${escapeXml(String(row.sourceLine).padStart(2, ' '))}</text>`;
+      }
+      let line = row.text;
+      if (!el.codeWrap && measure && measure.measureText(line).width > innerW) {
+        while (line.length > 1 && measure.measureText(`${line}…`).width > innerW) {
+          line = line.slice(0, -1);
+        }
+        line = `${line}…`;
+      }
+      inner += `<text x="${el.x + gutterW}" y="${ly}" font-family="monospace" font-size="${fontSize}" fill="#f8fafc" dominant-baseline="central">${escapeXml(line)}</text>`;
+      drawn += 1;
+    });
   } else if (el.type === 'image') {
     const fileEntry = scene.files?.[el.fileId];
     if (fileEntry?.dataUrl) {

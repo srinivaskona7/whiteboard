@@ -10,6 +10,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'Amazon Web Services, Inc. or its affiliates. Used for architectural diagramming.',
     usageNotes:
       'Use service icons only to represent AWS services, resource icons for AWS resources, and boundary containers for Accounts, Regions, VPCs, and Subnets. Do not alter icon proportions.',
+    reviewedAt: '2026-11-03',
   },
   azure: {
     provider: 'Microsoft Azure',
@@ -20,6 +21,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'Microsoft Corporation. Used for Azure architecture diagrams.',
     usageNotes:
       'Maintain original aspect ratio, do not crop or flip icons, and pair with clear service labels.',
+    reviewedAt: '2026-11-03',
   },
   gcp: {
     provider: 'Google Cloud',
@@ -30,6 +32,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'Google LLC. Used for Google Cloud architectural diagrams.',
     usageNotes:
       'Preserve 1:1 aspect ratio and official hexagonal/service silhouette with editable text label.',
+    reviewedAt: '2026-11-03',
   },
   kubernetes: {
     provider: 'Kubernetes / CNCF',
@@ -40,6 +43,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'The Kubernetes Authors / Linux Foundation (CNCF).',
     usageNotes:
       'Use Kubernetes heptagon badge and resource symbols (pod, deploy, sts, ds, svc, ing, cm, secret, pvc, hpa) with standard abbreviations.',
+    reviewedAt: '2026-11-03',
   },
   cncf: {
     provider: 'Cloud Native Computing Foundation',
@@ -50,6 +54,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'The Linux Foundation / Cloud Native Computing Foundation.',
     usageNotes:
       'Covers Prometheus, Envoy/Istio, Helm, Argo, Flux, OpenTelemetry, Falco, Cilium, etcd, containerd, Rook/Ceph, and NATS.',
+    reviewedAt: '2026-11-03',
   },
   devicon: {
     provider: 'Devicon Open Source',
@@ -60,6 +65,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'Devicon contributors (https://devicon.dev).',
     usageNotes:
       'Covers Linux distributions (Ubuntu, RHEL, Debian, Alpine), Docker, Git, GitHub Actions, GitLab CI, Jenkins, Terraform, OpenTofu, Ansible, Grafana, Vault, Trivy, PostgreSQL, Redis, Kafka, and RabbitMQ.',
+    reviewedAt: '2026-11-03',
   },
   concepts: {
     provider: 'StudioBoard Teaching Symbol Set',
@@ -71,6 +77,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'StudioBoard Educational Vector Pack',
     usageNotes:
       'Vendor-neutral conceptual diagrams for OS processes, sockets, packets, disks, routers, firewalls, DNS, TLS, and Linux kernel/user space.',
+    reviewedAt: '2026-11-03',
   },
   legacy: {
     provider: 'StudioBoard Legacy Primitives',
@@ -82,6 +89,7 @@ export const ICON_PACK_SOURCES = {
     attribution: 'StudioBoard Legacy Vector Primitives',
     usageNotes:
       'Retained for backward compatibility with v1 documents. Prefer Current Official Cloud, Kubernetes, CNCF, and Devicon packs for new architecture diagrams.',
+    reviewedAt: '2026-11-03',
   },
 };
 
@@ -169,6 +177,7 @@ export function getIconProvenance(stencil) {
     generation: isLegacy ? 'legacy' : pack.generation || 'current',
     isLegacy,
     license: pack.license,
+    reviewedAt: pack.reviewedAt || null,
     attribution: pack.attribution,
     usageNotes: pack.usageNotes,
     usageRequirements: pack.usageNotes,
@@ -181,5 +190,36 @@ export function getIconProvenance(stencil) {
     },
     assetHash: computeStencilAssetHash(stencil),
     preservesAspectRatio: true,
+  };
+}
+
+/** Teaching metadata: what it is, its role, and a safe interaction example. */
+export function describeIcon(stencil) {
+  if (!stencil) return null;
+  const provenance = getIconProvenance(stencil);
+  const kind = provenance.iconKind;
+  const isConcept = provenance.collection === 'teaching-illustrations';
+  const what = isConcept
+    ? `${stencil.name} is a conceptual systems symbol, not a provider service.`
+    : `${stencil.name} represents the ${provenance.provider} service in an architecture diagram.`;
+  const role = stencil.defaultText
+    ? `the labelled component "${stencil.defaultText}"`
+    : kind === 'boundary'
+      ? 'groups and scopes the components inside it'
+      : 'a component in the drawn flow';
+  const example = isConcept
+    ? 'an arrow into or out of this symbol shows a local process or data path'
+    : 'connect it with an arrow to show a request, event or data dependency';
+  return {
+    whatItIs: what,
+    roleHere: role,
+    exampleInteraction: example,
+    source: {
+      provider: provenance.provider,
+      version: provenance.version,
+      license: provenance.license,
+      attribution: provenance.attribution,
+      reviewedAt: provenance.reviewedAt,
+    },
   };
 }

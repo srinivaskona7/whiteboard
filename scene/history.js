@@ -1,5 +1,28 @@
 // scene/history.js
 
+// A snapshot covers every page-level field an edit can change. Elements were
+// the only one for a long time; diagram configuration now lives beside them, so
+// undoing an apply must restore the settings too or the drawer reports values
+// that are no longer on the board.
+const snapshotOf = (page) =>
+  JSON.stringify({
+    elements: page.elements || [],
+    architectureConfigs: page.architectureConfigs || {},
+    animationTrack: page.animationTrack || null,
+  });
+
+const applySnapshot = (page, raw) => {
+  const parsed = JSON.parse(raw);
+  page.elements = parsed.elements || [];
+  if (parsed.architectureConfigs && Object.keys(parsed.architectureConfigs).length) {
+    page.architectureConfigs = parsed.architectureConfigs;
+  } else {
+    delete page.architectureConfigs;
+  }
+  if (parsed.animationTrack) page.animationTrack = parsed.animationTrack;
+  else delete page.animationTrack;
+};
+
 export class HistoryManager {
   constructor(maxDepth = 100) {
     this.maxDepth = maxDepth;
@@ -14,30 +37,24 @@ export class HistoryManager {
     }
     if (!pageOrId.id) return null;
     if (!this.stacks.has(pageOrId.id)) {
-      const snap = JSON.stringify(pageOrId.elements || []);
-      this.stacks.set(pageOrId.id, {
-        undoStack: [],
-        redoStack: [],
-        currentSnapshot: snap,
-      });
+      this.initPage(pageOrId);
     }
     return this.stacks.get(pageOrId.id);
   }
 
   initPage(page) {
     if (!page || !page.id) return;
-    const snap = JSON.stringify(page.elements || []);
     this.stacks.set(page.id, {
       undoStack: [],
       redoStack: [],
-      currentSnapshot: snap,
+      currentSnapshot: snapshotOf(page),
     });
   }
 
   commit(page) {
     const state = this._ensurePage(page);
     if (!state) return false;
-    const nextSnap = JSON.stringify(page.elements || []);
+    const nextSnap = snapshotOf(page);
     if (nextSnap === state.currentSnapshot) {
       return false; // No change -> do not pollute undo stack
     }
@@ -70,7 +87,7 @@ export class HistoryManager {
     state.redoStack.push(state.currentSnapshot);
     const prevSnap = state.undoStack.pop();
     state.currentSnapshot = prevSnap;
-    page.elements = JSON.parse(prevSnap);
+    applySnapshot(page, prevSnap);
     return true;
   }
 
@@ -80,7 +97,7 @@ export class HistoryManager {
     state.undoStack.push(state.currentSnapshot);
     const nextSnap = state.redoStack.pop();
     state.currentSnapshot = nextSnap;
-    page.elements = JSON.parse(nextSnap);
+    applySnapshot(page, nextSnap);
     return true;
   }
 

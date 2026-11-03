@@ -55,6 +55,15 @@ export function drawArrowhead(ctx, type, tipX, tipY, fromX, fromY, strokeWidth =
     ctx.lineTo(-size, size * 0.58);
     ctx.closePath();
     ctx.fill();
+  } else if (type === 'triangle-outline') {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-size, -size * 0.58);
+    ctx.lineTo(-size, size * 0.58);
+    ctx.closePath();
+    ctx.fillStyle = 'transparent';
+    ctx.fill();
+    ctx.stroke();
   } else if (type === 'diamond') {
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -94,6 +103,63 @@ export function drawSloppyPolygon(ctx, pts, seed) {
     if (pass === 0) ctx.fill();
     ctx.stroke();
   }
+}
+
+
+/** Deterministic non-photographic fill patterns: solid, hachure, cross-hatch. */
+export const FILL_PATTERNS = ['solid', 'hachure', 'cross-hatch'];
+
+export function isFillPattern(value) {
+  return FILL_PATTERNS.includes(value);
+}
+
+/**
+ * Overlay a hatch pattern clipped to the current path. The caller must have
+ * already built the path and filled the base colour.
+ */
+export function drawFillPatternOverlay(ctx, el, fillColor) {
+  const pattern = el.fillPattern && el.fillPattern !== 'solid' ? el.fillPattern : null;
+  if (!pattern) return;
+  const seed = hashId(el.id || 'pattern');
+  const spacing = 9;
+  const base = fillColor === 'transparent' ? '#e2e8f0' : fillColor;
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = el.fillPatternColor || shadeColor(base, -0.35);
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  const { x, y, w, h } = el;
+  const span = Math.abs(w) + Math.abs(h) + spacing * 2;
+  const start = -Math.abs(h) + (seed % spacing);
+  const line = (offsetX) => {
+    ctx.beginPath();
+    ctx.moveTo(x + offsetX, y - spacing);
+    ctx.lineTo(x + offsetX + span, y + span);
+    ctx.stroke();
+  };
+  for (let ox = start; ox < Math.abs(w) + spacing * 2; ox += spacing) line(ox);
+  if (pattern === 'cross-hatch') {
+    const start2 = -Math.abs(w) + (seed % spacing);
+    for (let ox = start2; ox < Math.abs(w) + Math.abs(h) + spacing * 2; ox += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y - spacing);
+      ctx.lineTo(x + ox - span, y + span);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function shadeColor(hex, amount) {
+  const value = String(hex || '#ffffff').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(value)) return '#64748b';
+  const n = parseInt(value, 16);
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(((n >> 16) & 255) * (1 + amount));
+  const g = clamp(((n >> 8) & 255) * (1 + amount));
+  const b = clamp((n & 255) * (1 + amount));
+  return `rgb(${r},${g},${b})`;
 }
 
 export function wrapTextLines(ctx, text, maxWidth) {
@@ -499,6 +565,55 @@ export function drawTableElement(ctx, el, themeName) {
   ctx.restore();
 }
 
+// Visual wrapping for code blocks. The source text is never modified: this returns
+// display rows that each remember the source line they came from, so highlight
+// ranges and the line-number gutter still refer to the original file.
+// Long unbreakable tokens hard-break at a character boundary.
+export function wrapCodeLines(ctx, text, maxWidth) {
+  const result = [];
+  const width = Math.max(8, maxWidth);
+  String(text ?? '')
+    .split(String.fromCharCode(10))
+    .forEach((source, idx) => {
+      const sourceLine = idx + 1;
+      if (source === '') {
+        result.push({ text: '', sourceLine, continuation: false });
+        return;
+      }
+      if (ctx.measureText(source).width <= width) {
+        result.push({ text: source, sourceLine, continuation: false });
+        return;
+      }
+      const indent = (source.match(/^\s+/) || [''])[0];
+      let rest = source;
+      let firstPiece = true;
+      while (rest.length > 0) {
+        const prefix = firstPiece ? '' : indent;
+        let lo = 1;
+        let hi = rest.length;
+        let fit = 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (ctx.measureText(prefix + rest.slice(0, mid)).width <= width) {
+            fit = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        if (fit < rest.length) {
+          const space = rest.lastIndexOf(' ', fit);
+          if (space > 2) fit = space;
+        }
+        const piece = rest.slice(0, fit).replace(/\s+$/, '');
+        result.push({ text: prefix + piece, sourceLine, continuation: !firstPiece });
+        rest = rest.slice(fit).replace(/^\s+/, '');
+        firstPiece = false;
+      }
+    });
+  return result;
+}
+
 export function drawCodeElement(ctx, el) {
   const { x, y, w, h, text = '', highlightLines = '' } = el;
   const hlSet = parseHighlightSet(highlightLines);
@@ -522,24 +637,60 @@ export function drawCodeElement(ctx, el) {
 
   const fontSize = el.fontSize || 14;
   const lineH = fontSize * 1.45;
-  const lines = String(text).split(String.fromCharCode(10));
   ctx.font = `${fontSize}px ${FONT_MAP.mono}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
-  lines.forEach((line, idx) => {
-    const lineNum = idx + 1;
-    const ly = y + 36 + idx * lineH;
-    if (ly + lineH / 2 > y + h - 6) return;
-    if (hlSet.has(lineNum)) {
+  const gutterW = 40;
+  const innerW = Math.max(8, w - gutterW - 12);
+  // Wrapped mode re-flows visually only; unwrapped mode keeps one row per source
+  // line and clips at the right edge with an overflow marker.
+  const display = el.codeWrap
+    ? wrapCodeLines(ctx, text, innerW)
+    : String(text)
+        .split(String.fromCharCode(10))
+        .map((line, idx) => ({ text: line, sourceLine: idx + 1, continuation: false }));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x + 4, y + 26, w - 8, Math.max(1, h - 30));
+  ctx.clip();
+
+  let overflow = false;
+  let drawn = 0;
+  display.forEach((row) => {
+    const ly = y + 36 + drawn * lineH;
+    if (ly + lineH / 2 > y + h - 6) {
+      overflow = true;
+      return;
+    }
+    if (hlSet.has(row.sourceLine)) {
       ctx.fillStyle = 'rgba(250, 204, 21, 0.2)';
       ctx.fillRect(x + 4, ly - lineH / 2, w - 8, lineH);
     }
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(String(lineNum).padStart(2, ' '), x + 12, ly);
+    if (!row.continuation) {
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(String(row.sourceLine).padStart(2, ' '), x + 12, ly);
+    }
     ctx.fillStyle = '#f8fafc';
-    ctx.fillText(line, x + 40, ly);
+    if (!el.codeWrap && ctx.measureText(row.text).width > innerW) {
+      overflow = true;
+      let clipped = row.text;
+      while (clipped.length > 1 && ctx.measureText(`${clipped}…`).width > innerW) {
+        clipped = clipped.slice(0, -1);
+      }
+      ctx.fillText(`${clipped}…`, x + gutterW, ly);
+    } else {
+      ctx.fillText(row.text, x + gutterW, ly);
+    }
+    drawn += 1;
   });
+  if (overflow && drawn > 0) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'right';
+    ctx.fillText('⋯', x + w - 12, y + h - 14);
+  }
+  ctx.restore();
   ctx.restore();
 }
 
@@ -780,11 +931,13 @@ export function drawShapeElement(ctx, el, themeTokens) {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
     if (fill !== 'transparent') ctx.fill();
+    drawFillPatternOverlay(ctx, el, fill);
     ctx.stroke();
   } else if (el.type === 'ellipse') {
     ctx.beginPath();
     ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
     if (fill !== 'transparent') ctx.fill();
+    drawFillPatternOverlay(ctx, el, fill);
     ctx.stroke();
     if (el.sloppy) {
       ctx.beginPath();
@@ -807,6 +960,7 @@ export function drawShapeElement(ctx, el, themeTokens) {
     ctx.lineTo(x, y + h / 2);
     ctx.closePath();
     if (fill !== 'transparent') ctx.fill();
+    drawFillPatternOverlay(ctx, el, fill);
     ctx.stroke();
   }
 

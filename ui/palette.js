@@ -1,10 +1,22 @@
 // ui/palette.js
 import { TOOL_REGISTRY, getShortcutLabel } from './registry.js';
-import { ALL_STENCILS } from '../stencils/index.js';
+import { ALL_STENCILS, SEARCH_ALIASES } from '../stencils/index.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { BRUSH_PRESETS } from '../scene/brushes.js';
 import { ARROW_QUICK_PRESETS } from '../scene/arrow-presets.js';
 import { escapeXml } from '../render/svg-export.js';
+import {
+  SEARCH_SCOPES,
+  SEARCH_FILTERS,
+  buildSearchEntries,
+  searchEntriesDetailed,
+  loadSearchPrefs,
+  saveSearchPrefs,
+  pushRecent,
+  pushRecentQuery,
+  toggleFavourite,
+  toggleFavouriteQuery,
+} from '../scene/search.js';
 
 export function initCommandPalette(app) {
   const backdrop = document.getElementById('wb-palette-backdrop');
@@ -13,6 +25,17 @@ export function initCommandPalette(app) {
 
   let query = '';
   let activeIndex = 0;
+  let scope = 'all';
+  let filter = 'any';
+  let entries = [];
+  let prefs = loadSearchPrefs();
+  let searchTimer = null;
+  let items = [];
+  let totalCount = 0;
+  const ROW_H = 56;
+
+  // A student surface must never index or show teacher-private notes.
+  const isStudentSurface = () => (app.collab ? !app.collab.canEditBoard() : false);
 
   function buildCommands() {
     const cmds = [];
@@ -63,12 +86,14 @@ export function initCommandPalette(app) {
       { id: 'act:lesson10', title: 'File: Add 10 Lesson Pages and Open Notebook', shortcut: '', run: () => { app.addPages(10); app.setViewMode('notebook'); } },
       { id: 'act:present', title: 'Present: Start Presentation Mode', shortcut: '', run: () => app.presentUI.enter() },
       { id: 'act:reveal', title: 'Teaching: Open Step-by-Step Reveal Timeline', shortcut: '', run: () => app.dialogs.openRevealTimelineModal() },
+      { id: 'act:animation', title: 'Teaching: Open animation timeline (play, step, markers)', shortcut: '', run: () => app.animationUI.toggle() },
       { id: 'act:spotlight', title: 'Teaching: Toggle Spotlight & Magnifier', shortcut: '', run: () => app.toggleSpotlight() },
       { id: 'act:annotate', title: 'Teaching: Toggle Live Annotation Mode', shortcut: '', run: () => app.toggleAnnotationMode() },
       { id: 'act:timer', title: 'Teaching: Open Classroom Timer', shortcut: '', run: () => app.timerUI.toggle() },
       { id: 'act:ruler', title: 'Math: Insert Ruler Overlay', shortcut: '', run: () => app.insertMathOverlay('ruler') },
       { id: 'act:protractor', title: 'Math: Insert Protractor Overlay', shortcut: '', run: () => app.insertMathOverlay('protractor') },
       { id: 'act:mermaid', title: 'Diagram: Import Mermaid Flowchart / Sequence', shortcut: '', run: () => app.dialogs.openMermaidModal() },
+      { id: 'act:diagram-config', title: 'Diagram configuration: Configure a cloud architecture…', shortcut: '', run: () => app.dialogs.openDiagramConfigModal() },
       { id: 'act:export', title: 'File: Export PNG / SVG / Student Handout PDF', shortcut: '', run: () => app.dialogs.openExportModal() },
       { id: 'act:save', title: 'File: Save .whiteboard.json', shortcut: '', run: () => app.saveWhiteboardFile() },
       { id: 'act:open', title: 'File: Open .whiteboard.json', shortcut: '', run: () => app.openWhiteboardFilePicker() },
@@ -130,11 +155,67 @@ export function initCommandPalette(app) {
     return cmds;
   }
 
+  function refreshIndex() {
+    entries = buildSearchEntries({
+      commands: buildCommands(),
+      stencils: ALL_STENCILS,
+      templates: BUILTIN_TEMPLATES,
+      pages: app.scene?.pages || [],
+      activePageId: app.getPage?.()?.id || null,
+      aliases: SEARCH_ALIASES,
+    });
+  }
+
+  function attachRun(item) {
+    if (item.run) return item;
+    if (item.kind === 'stencil') return { ...item, run: () => app.placeStencil(item.data.id) };
+    if (item.kind === 'template') return { ...item, run: () => app.applyTemplate(item.data.id) };
+    if (item.kind === 'element' || item.kind === 'note') {
+      return {
+        ...item,
+        run: () => {
+          const { pageId, elementId } = item.data || {};
+          if (pageId) app.switchPage(pageId);
+          app.selectedIds = new Set(elementId ? [elementId] : []);
+          app.updateUI?.();
+          app.requestRender?.();
+        },
+      };
+    }
+    if (item.kind === 'group') {
+      return {
+        ...item,
+        run: () => {
+          const { pageId, elementIds } = item.data || {};
+          if (pageId) app.switchPage(pageId);
+          app.selectedIds = new Set(elementIds || []);
+          app.updateUI?.();
+          app.requestRender?.();
+        },
+      };
+    }
+    return item;
+  }
+
   function getFiltered() {
-    const all = buildCommands();
-    const q = query.trim().toLowerCase();
-    if (!q) return all.slice(0, 32);
-    return all.filter((c) => c.title.toLowerCase().includes(q) || c.shortcut.toLowerCase() === q).slice(0, 32);
+    const result = searchEntriesDetailed(entries, query, {
+      scope,
+      filter,
+      // No cap: the windowed renderer already bounds DOM cost, and a cap made
+      // every match past the 40th unreachable no matter what the count said.
+      limit: entries.length,
+      studentMode: isStudentSurface(),
+    });
+    items = result.items.map(attachRun);
+    totalCount = result.total;
+    if (!query.trim()) {
+      // Surface favourites and recents ahead of the generic list on an empty query.
+      const pinned = new Set([...(prefs.favourites || []), ...(prefs.recents || [])]);
+      items = items
+        .slice()
+        .sort((a, b) => Number(pinned.has(b.id)) - Number(pinned.has(a.id)));
+    }
+    return items;
   }
 
   function isOpen() {
@@ -149,96 +230,223 @@ export function initCommandPalette(app) {
   function open() {
     query = '';
     activeIndex = 0;
+    prefs = loadSearchPrefs();
+    refreshIndex();
     backdrop.classList.remove('wb-hidden');
     render();
     box.querySelector('#wb-palette-input')?.focus();
   }
 
+  function choose(item) {
+    if (!item) return;
+    prefs = pushRecentQuery(prefs, query);
+    prefs = pushRecent(prefs, item.id);
+    saveSearchPrefs(prefs);
+    close();
+    item.run?.();
+  }
+
+  function rowHtml(it, idx, favouriteSet) {
+    return `
+      <div
+        class="wb-palette-item ${idx === activeIndex ? 'active' : ''}"
+        id="wb-palette-opt-${idx}"
+        role="option"
+        aria-selected="${idx === activeIndex}"
+        data-cmd-idx="${idx}"
+      >
+        <span class="wb-palette-main">
+          <span class="wb-palette-title">${escapeXml(it.title)}</span>
+          ${it.subtitle ? `<span class="wb-palette-subtitle">${escapeXml(it.subtitle)}</span>` : ''}
+          ${it.preview ? `<span class="wb-palette-preview">${escapeXml(it.preview)}</span>` : ''}
+        </span>
+        ${it.matchedTerms?.length ? `<span class="wb-palette-match">${escapeXml(it.matchedTerms.join(', '))}</span>` : ''}
+        <button type="button" class="wb-palette-fav ${favouriteSet.has(it.id) ? 'active' : ''}" data-fav="${escapeXml(it.id)}" aria-label="${favouriteSet.has(it.id) ? 'Remove from favourites' : 'Add to favourites'}" aria-pressed="${favouriteSet.has(it.id)}">★</button>
+        ${it.data?.shortcut ? `<kbd>${escapeXml(it.data.shortcut)}</kbd>` : ''}
+      </div>
+    `;
+  }
+
+  // Only the rows inside the scroll window are in the DOM, so a large board
+  // does not build hundreds of nodes per keystroke.
+  function paintRows() {
+    const list = box.querySelector('#wb-palette-results');
+    if (!list) return;
+    if (items.length === 0) {
+      list.innerHTML = `<div class="wb-palette-empty">No matches. Try a shorter word or a different scope.</div>`;
+      return;
+    }
+    const favouriteSet = new Set(prefs.favourites || []);
+    const height = list.clientHeight || 360;
+    const first = Math.max(0, Math.floor(list.scrollTop / ROW_H) - 4);
+    const last = Math.min(items.length, first + Math.ceil(height / ROW_H) + 8);
+    const topPad = first * ROW_H;
+    const bottomPad = Math.max(0, (items.length - last) * ROW_H);
+    list.innerHTML = `
+      <div style="height:${topPad}px" aria-hidden="true"></div>
+      ${items.slice(first, last).map((it, i) => rowHtml(it, first + i, favouriteSet)).join('')}
+      <div style="height:${bottomPad}px" aria-hidden="true"></div>
+    `;
+  }
+
+  function scrollActiveIntoView() {
+    const list = box.querySelector('#wb-palette-results');
+    if (!list) return;
+    const top = activeIndex * ROW_H;
+    const bottom = top + ROW_H;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+  }
+
   function render() {
-    const items = getFiltered();
+    getFiltered();
     if (activeIndex >= items.length) activeIndex = 0;
+    const favouriteSet = new Set(prefs.favourites || []);
+    const savedQueries = [
+      ...(prefs.favouriteQueries || []),
+      ...(prefs.recentQueries || []),
+    ].filter((q, i, arr) => arr.indexOf(q) === i);
+    const canFavouriteQuery = Boolean(query.trim());
 
     box.innerHTML = `
       <input
         type="search"
         id="wb-palette-input"
         class="wb-palette-search"
-        placeholder="Search any tool, action, shortcut, stencil, or template..."
+        placeholder="Search tools, commands, icons, templates, objects or lesson notes..."
         value="${escapeXml(query)}"
-        aria-label="Command Palette Search"
+        aria-label="Search actions, library, board objects and lesson notes"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls="wb-palette-results"
+        aria-activedescendant="${items[activeIndex] ? `wb-palette-opt-${activeIndex}` : ''}"
       />
-      <div class="wb-palette-list" role="listbox">
-        ${
-          items.length === 0
-            ? `<div class="wb-palette-empty">No matching commands found.</div>`
-            : items
+      <div class="wb-palette-chips" role="group" aria-label="Search scope">
+        ${SEARCH_SCOPES.map(
+          (sc) =>
+            `<button type="button" class="wb-chip ${scope === sc.id ? 'active' : ''}" data-scope="${sc.id}" aria-pressed="${scope === sc.id}">${sc.label}</button>`
+        ).join('')}
+      </div>
+      <div class="wb-palette-chips" role="group" aria-label="Result type filter">
+        ${SEARCH_FILTERS.map(
+          (f) =>
+            `<button type="button" class="wb-chip ${filter === f.id ? 'active' : ''}" data-filter="${f.id}" aria-pressed="${filter === f.id}">${f.label}</button>`
+        ).join('')}
+      </div>
+      ${
+        savedQueries.length
+          ? `<div class="wb-palette-chips wb-palette-saved" role="group" aria-label="Saved searches">
+              ${savedQueries
                 .map(
-                  (it, idx) => `
-              <button
-                type="button"
-                class="wb-palette-item ${idx === activeIndex ? 'active' : ''}"
-                role="option"
-                aria-selected="${idx === activeIndex}"
-                data-cmd-idx="${idx}"
-              >
-                <span>${escapeXml(it.title)}</span>
-                ${it.shortcut ? `<kbd>${escapeXml(it.shortcut)}</kbd>` : ''}
-              </button>
-            `
+                  (q) =>
+                    `<button type="button" class="wb-chip ${prefs.favouriteQueries?.includes(q) ? 'active' : ''}" data-query="${escapeXml(q)}" title="Run saved search">${prefs.favouriteQueries?.includes(q) ? '★ ' : ''}${escapeXml(q)}</button>`
                 )
-                .join('')
+                .join('')}
+            </div>`
+          : ''
+      }
+      <div class="wb-palette-count" aria-live="polite">
+        ${totalCount} match${totalCount === 1 ? '' : 'es'}${query.trim() ? ` for “${escapeXml(query.trim())}”` : ''}
+        ${
+          canFavouriteQuery
+            ? `<button type="button" class="wb-chip wb-palette-save" id="wb-palette-save-search" aria-pressed="${prefs.favouriteQueries?.includes(query.trim())}">${prefs.favouriteQueries?.includes(query.trim()) ? '★ Saved' : '☆ Save search'}</button>`
+            : ''
         }
       </div>
+      <div class="wb-palette-list" id="wb-palette-results" role="listbox" aria-label="Search results" tabindex="0"></div>
     `;
+
+    paintRows();
+    const list = box.querySelector('#wb-palette-results');
+    list?.addEventListener('scroll', paintRows, { passive: true });
 
     const input = box.querySelector('#wb-palette-input');
     input?.addEventListener('input', (e) => {
       query = e.target.value;
       activeIndex = 0;
-      render();
-      const nextInput = box.querySelector('#wb-palette-input');
-      if (nextInput) {
-        nextInput.focus();
-        nextInput.setSelectionRange(query.length, query.length);
-      }
+      clearTimeout(searchTimer);
+      // Debounce so long boards do not re-rank on every keystroke.
+      searchTimer = setTimeout(() => {
+        render();
+        const nextInput = box.querySelector('#wb-palette-input');
+        if (nextInput) {
+          nextInput.focus();
+          nextInput.setSelectionRange(query.length, query.length);
+        }
+      }, 90);
     });
 
     input?.addEventListener('keydown', (ev) => {
       ev.stopPropagation();
-      const filtered = getFiltered();
       if (ev.key === 'ArrowDown') {
         ev.preventDefault();
-        activeIndex = filtered.length ? (activeIndex + 1) % filtered.length : 0;
-        render();
-        box.querySelector('#wb-palette-input')?.focus();
+        activeIndex = items.length ? (activeIndex + 1) % items.length : 0;
+        paintRows();
+        scrollActiveIntoView();
+        input.setAttribute('aria-activedescendant', items[activeIndex] ? `wb-palette-opt-${activeIndex}` : '');
       } else if (ev.key === 'ArrowUp') {
         ev.preventDefault();
-        activeIndex = filtered.length
-          ? (activeIndex - 1 + filtered.length) % filtered.length
+        activeIndex = items.length
+          ? (activeIndex - 1 + items.length) % items.length
           : 0;
-        render();
-        box.querySelector('#wb-palette-input')?.focus();
+        paintRows();
+        scrollActiveIntoView();
+        input.setAttribute('aria-activedescendant', items[activeIndex] ? `wb-palette-opt-${activeIndex}` : '');
       } else if (ev.key === 'Enter') {
         ev.preventDefault();
-        const chosen = filtered[activeIndex];
-        if (chosen) {
-          close();
-          chosen.run();
-        }
+        choose(items[activeIndex]);
       } else if (ev.key === 'Escape') {
         ev.preventDefault();
         close();
       }
     });
 
-    box.querySelectorAll('[data-cmd-idx]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const chosen = items[Number(b.dataset.cmdIdx)];
-        if (chosen) {
-          close();
-          chosen.run();
-        }
+    // One delegated handler survives every windowed repaint.
+    list?.addEventListener('click', (ev) => {
+      const star = ev.target.closest('[data-fav]');
+      if (star) {
+        ev.stopPropagation();
+        prefs = toggleFavourite(prefs, star.dataset.fav);
+        saveSearchPrefs(prefs);
+        paintRows();
+        return;
+      }
+      const row = ev.target.closest('[data-cmd-idx]');
+      if (row) choose(items[Number(row.dataset.cmdIdx)]);
+    });
+
+    box.querySelectorAll('[data-scope]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        scope = chip.dataset.scope;
+        activeIndex = 0;
+        render();
+        box.querySelector('#wb-palette-input')?.focus();
       });
+    });
+
+    box.querySelectorAll('[data-filter]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        filter = chip.dataset.filter;
+        activeIndex = 0;
+        render();
+        box.querySelector('#wb-palette-input')?.focus();
+      });
+    });
+
+    box.querySelectorAll('[data-query]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        query = chip.dataset.query || '';
+        activeIndex = 0;
+        render();
+        box.querySelector('#wb-palette-input')?.focus();
+      });
+    });
+
+    box.querySelector('#wb-palette-save-search')?.addEventListener('click', () => {
+      prefs = toggleFavouriteQuery(prefs, query);
+      saveSearchPrefs(prefs);
+      render();
+      box.querySelector('#wb-palette-input')?.focus();
     });
   }
 

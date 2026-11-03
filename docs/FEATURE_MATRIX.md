@@ -180,3 +180,65 @@ All rows were checked or re-checked on 2026-11-03.
 | Caches invalidated on change | PARTIAL | Per-element grain/nib caches are derived from element identity and are deterministic; there is no explicit cache-invalidation layer beyond that |
 | Versioned brush/arrow settings + migrations with backups | PARTIAL | The workspace prefs object carries the new fields and unknown values are filtered; there is no schema version number or one-time backup for it |
 | Bounded collaboration strokes | PASS(unit) | Raw samples capped at 1500 per element before they reach the socket or storage |
+
+## 13. Stage C/D evidence added 2026-11-03
+
+| Capability | Status | Evidence |
+|---|---|---|
+| Azure templates AZ-01…AZ-10 | IMPLEMENTED, TESTED(unit), PASSED(browser) | `templates/azure-gcp.js`; 7–9 native stencil components each, arrows bound; unit test asserts 6–14 components and known stencil ids; browser applied `tpl-az-02-aks-platform` on a scratch page (9 stencils, 8 arrows) then deleted the page |
+| GCP templates GCP-01…GCP-10 | IMPLEMENTED, TESTED(unit) | Same file and test; provider column is `GCP`; teaching notes on every frame |
+| New Azure/GCP service icons | IMPLEMENTED, TESTED(unit) | 19 stencils added to `stencils/devops-cloud.js`; unit test asserts the required ids exist |
+| Diagram configuration drawer | IMPLEMENTED, TESTED(unit), PASSED(browser) | `scene/architecture-config.js`, `ui/dialogs.js`; 4 patterns × 15 typed params; invalid combos block Apply; browser Apply produced 6 nodes + 5 edges with tracked config metadata |
+| Atomic update, stable ids, manual positions | TESTED(unit) | Second apply keeps every element id; moved node keeps x/y; `relayout:'full'` moves it |
+| Duplicate/Reset/Preview/Cancel | IMPLEMENTED, PARTIAL | Variants persist in localStorage; Preview renders a summary and element delta without mutating the page; the visual preview is textual, not a ghost diagram |
+| Unified local search | IMPLEMENTED, TESTED(unit), PASSED(browser) | `scene/search.js`; scopes (All/Actions/Library/This board/Lesson), type filters, typo tolerance, matched terms, recents and favourites; browser query "azur sql" returned 5 scoped results |
+| Teacher-private notes excluded from student surfaces | TESTED(unit) | `searchEntries(..., { studentMode: true })` drops `visibility: 'teacher'` entries |
+| Icon manifest provenance + review date | IMPLEMENTED, TESTED(unit) | Every pack carries `reviewedAt: 2026-11-03`; `describeIcon()` returns what/role/example/source |
+| Fill patterns solid/hachure/cross-hatch | IMPLEMENTED, TESTED(unit) | Canvas overlay plus SVG `<pattern>` defs; exported patterns referenced by `fill="url(#wb-pat-…)"`; survives round trip |
+| Declarative teaching animation | IMPLEMENTED, TESTED(unit), PARTIAL(browser) | `scene/animation.js` allowlist of 12 actions, deterministic `sampleTrack`, 103-test suite; bar opens and controls render; playback itself was not watched frame-by-frame in the browser |
+| One playback clock, no history/collab writes | TESTED(unit) | Sampling does not mutate the page (`JSON.stringify` unchanged); UI clock is a single rAF loop |
+| Reduced motion | TESTED(unit) | Steps jump to their end state |
+| Request vs response markers | TESTED(unit) | Opposite direction; only the newest marker step is drawn |
+| Tracks persist with the page | TESTED(unit) | Round trip through `serializeScene`/`parseSceneJson`; stripped with `stripNotes` |
+
+## 14. Gap-closure pass 2026-11-03 (later)
+
+Every row below was verified in the running dev server at `http://localhost:5177` after the change, not from source presence.
+
+| Capability | Status | Evidence |
+|---|---|---|
+| CIDR parameter | PASS(browser) | Typed text param validated `/16`–`/28` with per-octet range check; appended to the boundary label; shown on the GCP compute edge. Browser: `10.42.0.0/16` appeared on the board and in the explanation |
+| `detail: internals` | PASS(browser) | Adds `concept-process`, `concept-socket`, `concept-kernel-user` plus `runs`/`accepts`/`syscalls` edges; removing the setting deletes them again (board 16 → 23 → 15 elements) |
+| `showExplanation` | PASS(browser) | Writes a real `text` element tagged `configExplanation`, positioned below the configured graph; turning it off removes it |
+| `variant: high-availability` | PASS(browser) | Adds a `<host>-z2` node at +150 y with a `zone-redundant` connector; requires ≥2 replicas via cross-field validation |
+| `connectivity` public vs private | TESTED(unit) | Data path reads `1433 public` / `1433 private`; GCP edge reads `public IP` / `private IP · <cidr>` |
+| `relayout` passed to apply | PASS(browser) | Drawer select offers `preserve` / `group` / `full` and passes it; `group` restores configured node positions and leaves foreign objects untouched |
+| No duplication when configuring its own template | PASS(browser) | Templates stamp `templateId`; apply adopts matching stencils/arrows. Browser: 16 → 23 elements, no second copy (stencils 7 → 10 = 7 adopted + 3 internals) |
+| Applied settings survive reopening the drawer | PASS(browser) | `page.architectureConfigs[patternId]` persisted through `sanitizeSceneForPersistence`; reopen prefilled `internals` / `high-availability` / `10.99.0.0/16` and re-applied to 23 elements |
+| `describeIcon()` rendered | PASS(browser) | Inspector "Icon reference" shows what/role/example plus provider, license, version, review date (prefixes no longer duplicated) |
+| Library tooltip provenance | IMPLEMENTED | Tooltip carries license and attribution |
+| Student search surface | PASS(browser) | `studentMode` derives from `collab.canEditBoard()`; querying a teacher-note phrase returned 1 result as teacher, 0 as student |
+| Search aliases | PASS(browser) | `SEARCH_ALIASES` folded into stencil keywords; `r53` → 1 result, Amazon Route 53 |
+| Group results | PASS(browser) | Groups emit `kind: 'group'` with member ids; unnamed groups fall back to member text, never the raw id |
+| No silent 40-result truncation | PASS(browser) | `searchEntriesDetailed` returns `{items,total}`; query "a" reported 558 matches and rendered only ~10 DOM rows |
+| Recents/favourites store searches | PASS(browser) | `recentQueries` / `favouriteQueries` persist and dedupe (8 / 12 cap); saved-search chips reopen and re-run |
+| `hide` → `reveal` restores an element | TESTED(unit) | Reveal clears the earlier hide from `hidden` and adds to `visible` |
+| Distinct failure / retry / backlog badges | PASS(browser) | Separate colours and shapes plus counts (`retry` ×3); drawn at the element corner from `animationState.badges` |
+| Stop restores the camera | PASS(browser) | Camera moved to x −1365, zoom 2.5 during playback and returned exactly to x −72, zoom 0.802 on Stop; replaying afterwards moved it again. Also restored after stepping with ▶| instead of Play |
+
+## 15. Review round on the gap-closure pass (same day)
+
+Three reviewers read the diff. Six confirmed defects, all fixed and re-verified.
+
+| Defect | Fix | Evidence |
+|---|---|---|
+| Preview wrote unapplied values into `page.architectureConfigs` (shallow page copy) | Preview page deep-clones `architectureConfigs` | browser: apply `/16` → preview `/24` → live config still `/16` |
+| Template adoption's "any unclaimed stencil" fallback rewrote the DNS zone into the monitor and orphaned a VMSS | Adopt on exact `stencilId` only; unmatched specs are created fresh | script + unit test: DNS keeps `az-dns`, `az-monitor` added |
+| Undo reverted elements but not the stored configuration | `HistoryManager` snapshots and restores `architectureConfigs` and `animationTrack` alongside `elements` | unit test: undo returns `/24` → `/16` |
+| Stop after ▶| left the camera moved (snapshot only taken in `play()`) | `applyCameraStep` takes the snapshot when none exists; a page switch skips camera moves | browser: step onto a camera step, Stop restores x 3 / zoom 0.423 |
+| Building or clearing a track was never saved or broadcast | `setTrack` and Clear call `history.commit`, `scheduleAutosave` and `broadcastSceneChange` | browser: track present in `classroom_whiteboard_scene_v2` after the debounce and after reload |
+| `createTableElementData` threw `ReferenceError: r` (exported, uncalled) | Restored the clamped `r` binding | unit test: rows/cols clamp |
+| Matches past the 40th were unreachable however the count read | Palette passes `limit: entries.length`; the windowed list bounds DOM cost | browser: "cloud" → 135 matches, 135 reachable, 9 rows in the DOM |
+| `connectivity` inert on `azure-aks` and `gcp-gke` | Entry edge labelled `public` / `private endpoint` / `hybrid ExpressRoute` in every pattern | unit |
+
+

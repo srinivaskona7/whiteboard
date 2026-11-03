@@ -28,6 +28,7 @@ import {
   buildGrainPoints,
   strokeOpacity,
 } from '../scene/brushes.js';
+import { describeIcon, getStencilById } from '../stencils/index.js';
 
 function getSharedProp(elements, getter, fallback) {
   if (!elements || elements.length === 0) {
@@ -88,6 +89,18 @@ export function initPropsPanel(app) {
               <span class="wb-brush-name">${escapeXml(p.name)}</span>
             </button>`
           ).join('')}
+        </div>
+        <div class="wb-color-grid" role="group" aria-label="Ink Colour">
+          ${(preset.kind === 'highlighter'
+            ? ['#facc15', '#4ade80', '#60a5fa', '#f472b6', '#fb923c', '#a78bfa']
+            : PALETTE_STROKE_COLORS
+          )
+            .map(
+              (c) =>
+                `<button type="button" class="wb-color-swatch ${(ref?.stroke || app.currentStyle?.stroke) === c ? 'active' : ''}" style="background:${c}" data-brush-color="${c}" aria-label="Ink colour ${c}"></button>`
+            )
+            .join('')}
+          <input type="color" id="prop-brush-color" value="${ref?.stroke || app.currentStyle?.stroke || '#1e293b'}" aria-label="Custom ink colour"/>
         </div>
         <label class="wb-prop-row">
           <span>Size (${Math.round(width)}px)</span>
@@ -210,6 +223,22 @@ export function initPropsPanel(app) {
         app.setBrushPreset(btn.dataset.brush, { applyToSelection: hasInk });
       });
     });
+    const setInkColor = (color) => {
+      if (!color) return;
+      const freehand = app.getPage().elements.filter(
+        (el) => app.selectedIds.has(el.id) && (el.type === 'pen' || el.type === 'highlighter') && !el.locked
+      );
+      if (freehand.length > 0) {
+        for (const el of freehand) el.stroke = color;
+        app.commitChange();
+      }
+      app.currentStyle = { ...app.currentStyle, stroke: color };
+      app.requestRender();
+    };
+    container.querySelectorAll('[data-brush-color]').forEach((btn) => {
+      btn.addEventListener('click', () => setInkColor(btn.dataset.brushColor));
+    });
+    container.querySelector('#prop-brush-color')?.addEventListener('input', (e) => setInkColor(e.target.value));
     container.querySelector('#prop-brush-size')?.addEventListener('input', (e) => {
       const v = Number(e.target.value) || 2;
       app.setBrushOverrides?.({ strokeWidth: v }, { silent: true });
@@ -483,6 +512,25 @@ export function initPropsPanel(app) {
           </div>
         `);
       }
+      if (el.type === 'stencil') {
+        const info = describeIcon(getStencilById(el.stencilId));
+        if (info) {
+          sections.push(`
+            <div class="wb-prop-section wb-icon-info">
+              <div class="wb-prop-title">Icon reference</div>
+              <p><strong>What it is:</strong> ${escapeXml(info.whatItIs)}</p>
+              <p><strong>Role here:</strong> ${escapeXml(info.roleHere)}</p>
+              <p><strong>Example interaction:</strong> ${escapeXml(info.exampleInteraction)}</p>
+              <p class="wb-muted">Source: ${escapeXml(info.source.provider || 'Original illustration')} · ${escapeXml(
+                info.source.license || 'project license'
+              )} · version ${escapeXml(info.source.version || 'n/a')} · reviewed ${escapeXml(
+                info.source.reviewedAt || 'n/a'
+              )}</p>
+              ${info.source.attribution ? `<p class="wb-muted">${escapeXml(info.source.attribution)}</p>` : ''}
+            </div>
+          `);
+        }
+      }
     } else if (selected.length > 1) {
       const uniqueGroups = new Set(selected.map((e) => e.groupId).filter(Boolean));
       sections.push(`
@@ -565,6 +613,14 @@ export function initPropsPanel(app) {
       isConnector ||
       selected.some((e) => e.type === 'text' || e.type === 'code');
     const isImage = selected.some((e) => e.type === 'image');
+    // Ink and eraser have their own canonical controls; the generic stroke/fill
+    // block under them was a duplicate (and showed dash styles a pen cannot use).
+    const inkSelection = selected.filter((e) => e.type === 'pen' || e.type === 'highlighter');
+    const inkContext = tool === 'pen' || tool === 'highlighter' || inkSelection.length > 0;
+    const eraserContext = tool === 'eraser';
+    const codeOnlySelection = types.has('code') && !isShape && !isConnector;
+    const showStrokeSection = !isImage && !inkContext && !eraserContext && !codeOnlySelection;
+    const showStrokeGeometry = isShape || isConnector;
 
     const strokeMeta = getSharedProp(selected, (e) => e.stroke, ref.stroke || '#1e293b');
     const swMeta = getSharedProp(selected, (e) => e.strokeWidth || 2, ref.strokeWidth || 2);
@@ -678,7 +734,7 @@ export function initPropsPanel(app) {
     }
 
     // Stroke & Fill
-    if (!isImage) {
+    if (showStrokeSection) {
       sections.push(`
         <div class="wb-prop-section">
           <div class="wb-prop-row" style="margin-top:0;">
@@ -692,7 +748,9 @@ export function initPropsPanel(app) {
             ).join('')}
             <input type="color" id="prop-stroke-custom" value="${strokeMeta.value && String(strokeMeta.value).startsWith('#') ? strokeMeta.value : '#1e293b'}" aria-label="Custom stroke color"/>
           </div>
-          <label class="wb-prop-row">
+          ${
+            showStrokeGeometry
+              ? `<label class="wb-prop-row">
             <span>Width (${swMeta.mixed ? 'Mixed' : `${swMeta.value}px`})</span>
             <input type="range" id="prop-stroke-width" min="1" max="24" value="${swMeta.value || 2}"/>
           </label>
@@ -703,7 +761,9 @@ export function initPropsPanel(app) {
                   `<button type="button" class="wb-btn wb-sm ${!ssMeta.mixed && ssMeta.value === st ? 'active' : ''}" data-stroke-style="${st}">${st}</button>`
               )
               .join('')}
-          </div>
+          </div>`
+              : ''
+          }
           <label class="wb-prop-row">
             <span>Opacity (${opacityMeta.mixed ? 'Mixed' : `${opacityPct}%`})</span>
             <input type="range" id="prop-opacity" min="5" max="100" value="${opacityMeta.mixed ? 100 : opacityPct}"/>
@@ -713,6 +773,7 @@ export function initPropsPanel(app) {
     }
 
     if (isShape) {
+      const patternMeta = getSharedProp(selected, (e) => e.fillPattern || 'solid', 'solid');
       sections.push(`
         <div class="wb-prop-section">
           <div class="wb-prop-row" style="margin-top:0;">
@@ -725,6 +786,21 @@ export function initPropsPanel(app) {
                 `<button type="button" class="wb-color-swatch ${!fillMeta.mixed && fillMeta.value === c ? 'active' : ''} ${c === 'transparent' ? 'wb-swatch-clear' : ''}" style="background:${c === 'transparent' ? 'transparent' : c}" data-fill="${c}" aria-label="Fill ${c}"></button>`
             ).join('')}
             <input type="color" id="prop-fill-custom" value="${fillMeta.value && String(fillMeta.value).startsWith('#') ? fillMeta.value : '#ffffff'}" aria-label="Custom fill color"/>
+          </div>
+          <div class="wb-prop-row">
+            <span>Fill Pattern</span>
+            <div class="wb-btn-group" role="group" aria-label="Fill pattern">
+              ${[
+                ['solid', 'Solid'],
+                ['hachure', 'Hachure'],
+                ['cross-hatch', 'Cross-hatch'],
+              ]
+                .map(
+                  ([id, label]) =>
+                    `<button type="button" class="wb-btn wb-sm ${!patternMeta.mixed && patternMeta.value === id ? 'wb-primary' : ''}" data-fill-pattern="${id}" aria-pressed="${!patternMeta.mixed && patternMeta.value === id}">${label}</button>`
+                )
+                .join('')}
+            </div>
           </div>
           <label class="wb-prop-row">
             <span>Corner Roundness</span>
@@ -746,7 +822,15 @@ export function initPropsPanel(app) {
     if (isConnector) {
       const connEls = selected.filter((e) => e.type === 'line' || e.type === 'arrow');
       const routeMeta = getSharedProp(connEls, (e) => e.routing || 'orthogonal', ref.routing || 'orthogonal');
-      const arrowTypes = ['none', 'arrow', 'triangle', 'diamond', 'circle', 'bar'];
+      const arrowTypes = [
+        ['none', 'No arrowhead'],
+        ['arrow', 'Open'],
+        ['triangle', 'Filled triangle'],
+        ['triangle-outline', 'Outline triangle'],
+        ['diamond', 'Diamond'],
+        ['circle', 'Circle'],
+        ['bar', 'Bar'],
+      ];
       const routingModes = [
         ['auto', 'Auto Clean'],
         ['straight', 'Straight'],
@@ -756,7 +840,7 @@ export function initPropsPanel(app) {
       ];
       const dirPreset = getConnectorDirectionPreset(ref);
       const dirPresets = [
-        ['plain', '— Plain'],
+        ['plain', 'No arrowheads'],
         ['one-way', '→ One-Way'],
         ['two-way', '↔ Two-Way'],
       ];
@@ -855,7 +939,8 @@ export function initPropsPanel(app) {
             <select id="prop-start-arrow" aria-label="Start Arrowhead">
               ${arrowTypes
                 .map(
-                  (a) => `<option value="${a}" ${ref.startArrow === a ? 'selected' : ''}>${a}</option>`
+                  ([value, label]) =>
+                    `<option value="${value}" ${ref.startArrow === value ? 'selected' : ''}>${label}</option>`
                 )
                 .join('')}
             </select>
@@ -865,7 +950,8 @@ export function initPropsPanel(app) {
             <select id="prop-end-arrow" aria-label="End Arrowhead">
               ${arrowTypes
                 .map(
-                  (a) => `<option value="${a}" ${ref.endArrow === a ? 'selected' : ''}>${a}</option>`
+                  ([value, label]) =>
+                    `<option value="${value}" ${ref.endArrow === value ? 'selected' : ''}>${label}</option>`
                 )
                 .join('')}
             </select>
@@ -1144,6 +1230,9 @@ export function initPropsPanel(app) {
     container.querySelectorAll('[data-stroke-style]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.strokeStyle = b.dataset.strokeStyle))));
     container.querySelectorAll('[data-fill]').forEach((b) => b.addEventListener('click', () => applyProp((t) => (t.fill = b.dataset.fill))));
     container.querySelector('#prop-fill-custom')?.addEventListener('input', (e) => applyProp((t) => (t.fill = e.target.value)));
+    container.querySelectorAll('[data-fill-pattern]').forEach((b) =>
+      b.addEventListener('click', () => applyProp((t) => (t.fillPattern = b.dataset.fillPattern)))
+    );
     container.querySelector('#prop-roundness')?.addEventListener('change', (e) => applyProp((t) => (t.roundness = Number(e.target.value))));
     container.querySelector('#prop-sloppy')?.addEventListener('change', (e) => applyProp((t) => (t.sloppy = e.target.checked)));
     container.querySelector('#prop-autogrow')?.addEventListener('change', (e) => applyProp((t) => (t.autoGrow = e.target.checked)));
