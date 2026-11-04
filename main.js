@@ -1347,7 +1347,11 @@ export class WhiteboardApp {
       ensureIconPackLoaded().then(
         () => {
           this.requestRender();
-          this.insertStencilFromLibrary(stencilId, worldPos);
+          // A pk- id that loads the pack but is not in it would recurse
+          // placeStencil → ensure (cached resolve) → insertStencil forever;
+          // only retry when the id actually registered.
+          if (isStencilLoaded(stencilId)) this.insertStencilFromLibrary(stencilId, worldPos);
+          else this.dialogs.showToast('Unknown icon — not found in the DevOps Pack.');
         },
         () => {
           this.dialogs.showToast('Icon pack failed to load — placement cancelled.');

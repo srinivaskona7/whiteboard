@@ -41,8 +41,10 @@ const slugify = (s) =>
 
 // Rejects script tags, event handlers, external/embedded references and
 // non-local URLs. Local fragment references (href="#pk…") stay allowed.
+// The quote class covers single AND double quotes — a single-quoted
+// href='https://…' must not slip past a double-quote-only pattern.
 const FORBIDDEN_MARKUP =
-  /<script|<foreignObject|<image|javascript:|xlink:|data:|\son[a-z]+\s*=|\shref\s*=\s*"(?!#)|\ssrc\s*=/i;
+  /<script|<foreignObject|<image|javascript:|xlink:|data:|\son[a-z]+\s*=|\shref\s*=\s*(["'])(?!#)|\ssrc\s*=/i;
 
 // The source is an IIFE: `var ICONS=[ ... ]; ...`. Extract the array as
 // pure JSON — the entries are plain JSON objects (verified by inspection).
