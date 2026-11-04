@@ -354,3 +354,106 @@ server-op unit tests only.
 
 
 
+
+## 22. Quick-add dots, icon-size stepper, equidistant guides, wrap toggle (2026-11-04)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Quick-add dots on the sole selection | PASS(unit) | `render/canvas.js` `drawQuickAddDots` — 4 dots (7 px screen radius, accent fill, white outline) at the four `dotAnchor` edge midpoints, drawn in world space like the selection handles; shown only when the select tool is active, editing is allowed (`quickAddEnabled` from `main.js` renderNow), not presenting, not text-editing, and `isQuickAddable(el)` |
+| Clicking a dot duplicates + connects | PASS(unit) | `tools/select.js` step 1b checks the dots before the port/scene hit tests (they share edge midpoints with connection ports); `main.js` `applyQuickAdd` creates the clone and arrow from `buildQuickAdd`, binds both ends with auto ports, selects the clone, commits; `scene/quick-add.js` `buildQuickAdd` is pure (no app, no DOM), placement via `quickAddPlacement` (80 px base gap, +40 scan, never-fail walled-in fallback) |
+| Arrow follows the connector tool idiom | PASS(unit) | Arrow spec copies `stroke`/`strokeWidth`/`strokeStyle`/`routing` from the current style with `startArrow: 'none'`, `endArrow: 'arrow'`; `tests/quick-add-wiring.test.js` asserts spec fields, non-overlapping origin, edge-to-edge endpoints, refusals (arrow/ink/boundary/locked), finite walled-in coordinates and page-clear placement |
+| Icon-size stepper in the library panel | PASS(unit) | `ui/library-panel.js` stepper over `ICON_SIZE_LEVELS`, persisted in the workspace prefs key `libraryIconSize`; `tests/icon-size.test.js` |
+| Equidistant (equal-gap) smart guides | PASS(unit) | `scene/geometry.js` `computeSmartGuides` equal-gap snaps compete only when strictly closer than edge/midpoint snaps, then replace that axis's guides with one guide per equalized gap; the same `{type, x/y, y1/x1, y2/x2}` field shape, so the existing `render/canvas.js` guide loop (all `smartGuides`, dash style) draws the two-guide win unchanged; `tests/smart-guides.test.js` |
+| Alt+W wrap / unwrap toggle | PASS(unit) | `main.js` `toggleTextWrap`: selected text folds into the topmost `canWrap` shape (`wrapTextIntoShape`, text element removed, anchors cleaned via `commitChange([removedId])`); selected labelled shape detaches via `unwrapShapeText` into a new text element with both `stroke` and `textColor` set (rendering reads `textColor`); W alone stays the Point tool; guarded like other editing shortcuts (present mode, `canEditBoard`); `tests/text-wrap.test.js`; registered in `ui/registry.js` `SHORTCUT_REFERENCE` |
+
+Known limits: the dots are click-only — no drag-from-dot placement, and no frame-children
+copying (a frame quick-adds as the frame only). The dot size and hit radius are screen-stable
+(`7/zoom` and `11/zoom` world px), matching the selection-handle idiom rather than fixed world
+units. Not yet browser-verified by hand; the wiring is covered by pure unit tests only.
+
+## 23. Locked-tool (padlock) mode (2026-11-04)
+
+Excalidraw-style tool lock: with the padlock active, the shape, connector and text
+tools stay selected after each element instead of one-shotting back to Select, so a
+sequence can be drawn without re-picking the tool. Pen, highlighter, eraser, laser,
+stamp and pointer were already persistent and are untouched by this.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Shape, connector and text tools stay active when locked | PASS(source) | `tools/draw.js` (`if (!this.app.toolLock)` guards the pointerup one-shot), `tools/connector.js`, `tools/text.js` — the same guards that `ui/classroom.js` relies on; pen/highlighter/eraser/laser/stamp never one-shot |
+| Toggle via Shift+Q and the dock padlock | PASS(source) | `main.js` `toggleToolLock()` behind the `Shift+Q` handler (toasts "Tool lock on — tools stay active" / "Tool lock off"); the dock button (`#btn-tool-lock`, `ui/toolbar.js`) is the pressed-state indicator, already in `ui/registry.js` `SHORTCUT_REFERENCE` as "Shift + Q — Toggle Keep Active Tool Locked" |
+| Persists across reloads | PASS(unit) | `app.toolLock` is a get/set accessor in `main.js`: every write (dock button, Shift+Q) mirrors the flag into the workspace prefs key `toolLockEnabled` and saves via `saveWorkspacePreferences`; the constructor seeds it from `loadWorkspacePreferences`; `scene/storage.js` `loadWorkspacePrefs` whitelists `Boolean(parsed.toolLockEnabled)` (default false); `tests/tool-lock.test.js` |
+
+Known limits: the dock padlock button persists and reflects state but does not toast
+(it lives in `ui/toolbar.js` and renders its own active class + `aria-pressed`). The
+toggle wiring is source-verified only, not browser-verified by hand; the pref contract
+is covered by `tests/tool-lock.test.js`.
+
+## 24. Social layer: cursor chat and anchored emotes (2026-11-04)
+
+FigJam/Miro-style social features, open to every role (viewer included) — they are
+social, never board content.
+
+- **Cursor chat** — press `/` to open a small floating input at the last canvas pointer
+  position; Enter sends, Esc cancels. The message becomes a speech bubble drawn at the
+  sender's world cursor position (offset up-right, author name in the participant colour,
+  word-wrapped body), fading out over the last ~2 s of a **15 s lifetime**. Server op
+  `chat:cursor` (student-writable, before the teacher gate): empty/whitespace text → 400,
+  text capped at 140 chars, non-finite position → 400. The sender applies its own bubble
+  optimistically; the WS broadcast therefore **excludes the sender's socket**
+  (`vote:cast` is the deliberate counter-example — see the vote echo test).
+- **Element-anchored emotes** — right-click → "Emote 👍" flyout (👍 ❤️ 😂 🎉 ❓ 👏) sends the
+  existing `reaction:send` op with an optional `elementId` and world `x`/`y` (point above
+  the element's bounds; on empty canvas, the world point alone). Anchored reactions draw as
+  a floating emoji rising and fading over **~8 s** near the element/point, in addition to
+  the existing classroom toast — the toast behaviour is unchanged. Garbage anchors
+  (non-string `elementId`, NaN coords) are stripped server-side, never rejected; a
+  reaction whose anchor element has been deleted simply stops drawing (toast already fired).
+- **Ephemeral by design** — cursor chats are never persisted, never stored in the room
+  scene, and never replayed: late joiners see nothing. Reactions remain what they were
+  (ephemeral toasts in the classroom panel) plus the new anchored float.
+
+Evidence: `server/collab-server.js` (`chat:cursor`, anchored `reaction:send`),
+`scene/collab-client.js` (`broadcastCursorChat`, `activeCursorChats`, `cursorChats` cap 12,
+`sendReaction(emoji, anchor)`), `render/canvas.js` (`drawCursorChatBubbles`,
+`drawAnchoredReactions`), `ui/cursor-chat.js`, `main.js` (`/` keydown, render-state wiring,
+`_lastCanvasPointer`), `ui/context-menu.js` (Emote flyout), `ui/registry.js`
+`SHORTCUT_REFERENCE`; `tests/cursor-chat.test.js` (store + client unit tests) and
+`tests/collab.test.js` §24 (real-socket: teacher receives the bubble, sender never echoes).
+
+Known limits: cursor chat is unavailable while Presentation mode is active (its keydown
+branch returns early, as for all other shortcuts), and the input is single-line. Bubbles
+are screen-stable (`1/zoom` scaling) like the remote cursor labels. Not yet
+browser-verified with two devices by hand; the delivery path is covered by the real-socket
+tests.
+
+## 25. Research pass: what was adopted, and what was deliberately not (2026-11-04)
+
+A research pass over ~20 popular drawing/whiteboard apps (Excalidraw, tldraw, Miro,
+FigJam, draw.io, Lucidchart, Mural, Milanote, Conceptboard, Figma, MS Whiteboard, Jamboard,
+Sketchboard, Eraser, IcePanel, Zoom Whiteboard, Whimsical, Ziteboard, AWW App) produced
+the adopt-list behind sections 22–24. Much of it was already in the product — verified
+present and left alone: double-click-to-edit text, Alt-drag duplicate, snap-to-grid with
+Alt bypass, Shift angle/ratio constraints, 1px/10px arrow-key nudge, Ctrl+D duplicate,
+port-anchored connectors, and the (then un-persisted) Shift+Q tool lock.
+
+**Deliberately NOT adopted, with reasons** (this list exists so the next session doesn't
+re-litigate them):
+- **AI diagramming / AI sticky clustering** (Miro AI, FigJam AI, Zoom AI Companion,
+  Eraser, Excalidraw+ text-to-diagram) — no AI service in the product's zero-dependency
+  offline-first architecture; adopting one would break both the offline promise and the
+  no-runtime-deps rule.
+- **MS-Whiteboard ink-to-shape / ink-to-table** — a handwriting recognizer project
+  (rough.js-class dependencies or a model); the product is shapes-first for classrooms,
+  and Excalidraw-style hand-drawn look was not a goal.
+- **Excalidraw+ double-click arrowhead toggle** — double-click on arrows/lines already
+  opens the label editor (`_onDoubleClick`); the toggle would regress that gesture.
+- **FigJam stamp wheel / high-five** — the emote flyout (§24) covers the classroom need
+  with less UI surface; high-five needs a presence affordance we don't have.
+- **Model-based reusable objects across diagrams** (IcePanel C4) — a data-model layer
+  change, not a canvas feature; revisit if architecture teaching ever needs one-edit-
+  propagates-everywhere semantics.
+- **Rate-limiting note** — the student-writable social ops (`chat:cursor`,
+  `reaction:send`) remain unthrottled server-side (parity with the pre-existing
+  `reaction:send`); `op.color` is capped at 24 chars. A per-clientId token bucket is the
+  recorded follow-up if room abuse becomes real.

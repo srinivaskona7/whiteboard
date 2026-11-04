@@ -130,6 +130,7 @@ export const SHORTCUT_REFERENCE = [
   { key: 'Shift + Q', desc: 'Toggle Keep Active Tool Locked' },
   { key: 'I', desc: 'Insert Image from File' },
   { key: 'Double-Click', desc: 'Edit Shape, Connector, or Table Cell Text' },
+  { key: 'Alt + W', desc: 'Wrap Text into Shape / Unwrap Shape Label' },
   { key: 'Ctrl/Cmd + Z', desc: 'Undo (Isolated per Page)' },
   { key: 'Ctrl/Cmd + Shift + Z', desc: 'Redo (Isolated per Page)' },
   { key: 'Ctrl/Cmd + C / X / V', desc: 'Copy / Cut / Paste (Cascading Offset)' },
@@ -143,6 +144,7 @@ export const SHORTCUT_REFERENCE = [
   { key: '+ / - / 0 / 1', desc: 'Zoom In / Out / 100% / Fit to Content' },
   { key: 'F / Shift+F', desc: 'Toggle Full Screen / Teaching Focus Mode' },
   { key: 'Ctrl/Cmd + K', desc: 'Open Command Palette' },
+  { key: '/', desc: 'Cursor Chat — Type at Your Pointer, Enter to Send' },
   { key: '?', desc: 'Open Keyboard Shortcuts Reference' },
 ];
 

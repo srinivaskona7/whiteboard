@@ -215,6 +215,8 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
     inspectorOpen: true,
     pinnedToolsVersion: PINNED_TOOLS_VERSION,
     pinnedToolsStamp: PINNED_TOOLS_STAMP,
+    libraryIconSize: 'comfortable',
+    toolLockEnabled: false,
   };
   if (!storage) return defaults;
   try {
@@ -270,6 +272,11 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
         ? parsed.eraserScope
         : 'all',
       activeTool: typeof parsed.activeTool === 'string' ? parsed.activeTool : null,
+      // Tool lock only accepts a real stored true; a garbage string like
+      // 'yes' must not read as on.
+      toolLockEnabled: parsed.toolLockEnabled === true,
+      libraryIconSize:
+        parsed.libraryIconSize === 'large' ? 'large' : parsed.libraryIconSize === 'compact' ? 'compact' : 'comfortable',
       pinnedToolsVersion: PINNED_TOOLS_VERSION,
       pinnedToolsStamp: PINNED_TOOLS_STAMP,
     };

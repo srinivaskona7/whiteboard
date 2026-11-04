@@ -33,6 +33,7 @@ import {
   updateConnectorBindings,
 } from '../scene/bindings.js';
 import { projectPointOntoConnectorT } from '../scene/routing.js';
+import { QUICK_ADD_DIRECTIONS, dotAnchor, isQuickAddable } from '../scene/quick-add.js';
 
 export class SelectTool {
   constructor(app) {
@@ -114,6 +115,30 @@ export class SelectTool {
       this.app.updateUI();
       this.app.requestRender();
       return;
+    }
+
+    // 1. Quick-add dots: clicking a "+" dot on the sole selection duplicates
+    // the element in that direction with a connector. This must run BEFORE the
+    // resize handles — the dots sit at exactly the n/s/e/w edge midpoints the
+    // handles occupy, so the dot has to win there (corner handles still
+    // resize; that is also how Miro/FigJam trade the edge affordance).
+    if (
+      this.app.selectedIds.size === 1 &&
+      this.app.activeTool === 'select' &&
+      !this.app.presentState?.active &&
+      !this.app.textTool.isOpen()
+    ) {
+      const onlyId = Array.from(this.app.selectedIds)[0];
+      const selEl = page.elements.find((e) => e.id === onlyId);
+      if (selEl && isQuickAddable(selEl)) {
+        for (const direction of QUICK_ADD_DIRECTIONS) {
+          const a = dotAnchor(selEl, direction);
+          if (Math.hypot(world.x - a.x, world.y - a.y) <= 11 / zoom) {
+            this.app.applyQuickAdd(selEl, direction);
+            return;
+          }
+        }
+      }
     }
 
     if (this.app.selectedIds.size === 1) {

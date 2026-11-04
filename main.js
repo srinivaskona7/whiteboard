@@ -48,6 +48,8 @@ import {
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
+import { buildQuickAdd } from './scene/quick-add.js';
+import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
 import { CanvasRenderer } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
@@ -74,6 +76,7 @@ import { initCommandPalette } from './ui/palette.js';
 import { initAnimationUI } from './ui/animation.js';
 import { initNotebookView } from './ui/notebook.js';
 import { initContextMenu, buildContextItems } from './ui/context-menu.js';
+import { initCursorChatUI } from './ui/cursor-chat.js';
 import { initDialogs } from './ui/dialogs.js';
 import { ClassroomTool, initClassroomUI, parseClassroomHash } from './ui/classroom.js';
 
@@ -100,7 +103,9 @@ export class WhiteboardApp {
 
     // 3. Transient UI & pointer interaction state
     this.activeTool = 'select';
-    this.toolLock = false;
+    // Tool lock is the one "transient" flag that persists: it lives in the
+    // workspace prefs, and the accessor below keeps later writes in sync.
+    this._toolLock = this.workspacePrefs.toolLockEnabled;
     this.selectedIds = new Set();
     this.clipboard = [];
     this.formatPainterStyle = null;
@@ -187,6 +192,7 @@ export class WhiteboardApp {
     this.paletteUI = initCommandPalette(this);
     this.animationUI = initAnimationUI(this);
     this.contextMenu = initContextMenu(this);
+    this.cursorChat = initCursorChatUI(this);
 
     this.scheduleAutosave = createDebouncedAutosave(
       350,
@@ -711,6 +717,17 @@ export class WhiteboardApp {
     const activeTrail =
       typeof this.laserTool?.prune === 'function' ? this.laserTool.prune(now) : [];
     const remoteCursors = this.collab.getInterpolatedRemoteCursors(page.id);
+    // Ephemeral social layer: cursor chat bubbles (15s life) for the active
+    // page only, and emotes anchored to an element or world point (~8s rise).
+    const cursorChats = this.collab.activeCursorChats().filter((c) => c.pageId === page.id);
+    const anchoredReactions = this.collab.recentReactions.filter(
+      (r) =>
+        // Element anchors resolve on the active page at draw time; world-point
+        // anchors float at raw coordinates and must not leak onto other pages.
+        (r.elementId || r.pageId === page.id || (!r.pageId && !r.elementId)) &&
+        ((Number.isFinite(r.x) && Number.isFinite(r.y)) || r.elementId) &&
+        now - (r.receivedAt ?? r.createdAt ?? now) < 8000
+    );
 
     this.renderer.render(this.scene, {
       page: this.getRenderPage(),
@@ -720,6 +737,8 @@ export class WhiteboardApp {
       connectorPreview: this.connectorPreview,
       placementPreview: this.placementPreview,
       remoteCursors,
+      cursorChats,
+      anchoredReactions,
       smartGuides: this.smartGuides,
       marqueeBox: this.marqueeBox,
       laserTrail: activeTrail,
@@ -733,6 +752,8 @@ export class WhiteboardApp {
       eraserSize: this.eraserSettings?.size || 12,
       editingElementId: this.textTool.editingEl?.id || null,
       minimapOpen: this.minimapOpen,
+      // Whether the quick-add dots are live: select tool, editing allowed.
+      quickAddEnabled: this.activeTool === 'select' && this.collab.canEditBoard(),
       now,
     });
 
@@ -740,7 +761,9 @@ export class WhiteboardApp {
       activeTrail.length > 0 ||
       hasFading ||
       this.studentPointers.length > 0 ||
-      remoteCursors.length > 0
+      remoteCursors.length > 0 ||
+      cursorChats.length > 0 ||
+      anchoredReactions.length > 0
     );
   }
 
@@ -1085,6 +1108,106 @@ export class WhiteboardApp {
     updateConnectorBindings(this.getPage());
     this.commitChange();
     this.requestRender();
+  }
+
+  // Quick-add: duplicate the element in a cardinal direction and connect the
+  // pair with an arrow bound to both (the "+" dots on the selection).
+  applyQuickAdd(source, direction) {
+    if (!this.collab.canEditBoard()) return false;
+    const page = this.getPage();
+    const built = buildQuickAdd(page, source, direction, this.currentStyle);
+    if (!built.ok) {
+      this.dialogs.showToast(`Quick add unavailable: ${built.reason}`);
+      return false;
+    }
+    // A frame duplicates as the frame only; copying its children along is a
+    // later feature.
+    const clone = built.clone;
+    const arrow = createElement('arrow', built.arrowSpec);
+    const check = validateElementsBatch([clone, arrow]);
+    if (!check.valid) {
+      this.dialogs.showToast(`Quick add rejected: ${check.reason}`);
+      return false;
+    }
+    // Auto ports so the arrow keeps facing each shape as either is dragged.
+    bindConnectorEndpoint(arrow, 'start', source, 'auto');
+    bindConnectorEndpoint(arrow, 'end', clone, 'auto');
+    page.elements.push(clone, arrow);
+    updateConnectorBindings(page, [clone.id, arrow.id]);
+    this.selectedIds = new Set([clone.id]);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    return true;
+  }
+
+  // Shift+Q / dock padlock: keep the active tool instead of one-shotting the
+  // shape, connector and text tools back to Select after each element. The
+  // dock button assigns app.toolLock directly, so the property write is the
+  // one funnel every toggle passes through — persist there, and the pref can
+  // never drift from the flag.
+  get toolLock() {
+    return this._toolLock;
+  }
+
+  set toolLock(value) {
+    this._toolLock = Boolean(value);
+    this.workspacePrefs = { ...this.workspacePrefs, toolLockEnabled: this._toolLock };
+    saveWorkspacePreferences(this.workspacePrefs);
+    this.toolbarUI?.update();
+  }
+
+  toggleToolLock() {
+    this.toolLock = !this.toolLock;
+    this.dialogs?.showToast(
+      this.toolLock ? 'Tool lock on — tools stay active' : 'Tool lock off',
+      'info'
+    );
+  }
+
+  // Alt+W: fold the selected standalone text into the shape under it, or
+  // detach a labelled shape's text back out into a standalone element.
+  toggleTextWrap() {
+    if (this.presentState.active) return;
+    if (!this.collab.canEditBoard()) return;
+    const page = this.getPage();
+    const sel = this.getSelectedElements();
+    if (sel.length !== 1) return;
+    const el = sel[0];
+
+    if (el.type === 'text') {
+      // Topmost first: the shape visually on top is the one the text reads as.
+      for (let i = page.elements.length - 1; i >= 0; i--) {
+        const shape = page.elements[i];
+        if (shape.id === el.id || !canWrap(el, shape)) continue;
+        const res = wrapTextIntoShape(el, shape, this.currentStyle);
+        if (!res.ok) continue;
+        page.elements = page.elements.filter((e) => e.id !== res.removedId);
+        this.selectedIds.clear();
+        this.commitChange([res.removedId]);
+        this.updateUI();
+        this.requestRender();
+        this.dialogs.showToast('Text wrapped into shape.');
+        return;
+      }
+      this.dialogs.showToast('Place the text over a shape to wrap it.');
+      return;
+    }
+
+    const res = unwrapShapeText(el, this.currentStyle);
+    if (!res.ok) {
+      this.dialogs.showToast(res.reason);
+      return;
+    }
+    // The unwrap spec carries the colour in `stroke`, but text rendering reads
+    // `textColor` — set both so the unwrapped text keeps its look.
+    const text = createElement('text', { ...res.element, textColor: res.element.stroke });
+    page.elements.push(text);
+    this.selectedIds = new Set([text.id]);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    this.dialogs.showToast('Shape label unwrapped into text.');
   }
 
   reorderSelection(dir) {
@@ -2109,6 +2232,8 @@ export class WhiteboardApp {
     const rect = this.canvas.getBoundingClientRect();
     this.spotlight.x = ev.clientX - rect.left;
     this.spotlight.y = ev.clientY - rect.top;
+    // The cursor chat input opens at the last canvas pointer position.
+    this._lastCanvasPointer = { x: ev.clientX, y: ev.clientY };
 
     if (this.textTool.isOpen()) this.textTool.commit();
 
@@ -2173,6 +2298,7 @@ export class WhiteboardApp {
       return;
     }
 
+    this._lastCanvasPointer = { x: ev.clientX, y: ev.clientY };
     const world = this.screenToWorld(ev.clientX, ev.clientY);
     this.collab.sendCursorUpdate(world, Array.from(this.selectedIds));
     this._getToolHandler().onPointerMove(world, ev);
@@ -2277,6 +2403,7 @@ export class WhiteboardApp {
 
   _isEditingInput(target) {
     if (this.textTool.isOpen()) return true;
+    if (this.cursorChat?.isOpen()) return true;
     if (!target || typeof target !== 'object') return false;
     const tag = (target.tagName || '').toUpperCase();
     return (
@@ -2506,8 +2633,7 @@ export class WhiteboardApp {
     const key = ev.key.toLowerCase();
     if (!mod && ev.shiftKey && key === 'q') {
       ev.preventDefault();
-      this.toolLock = !this.toolLock;
-      this.toolbarUI.update();
+      this.toggleToolLock();
       return;
     }
     if (!mod && key === 'f') {
@@ -2525,6 +2651,14 @@ export class WhiteboardApp {
     if (!mod && ev.shiftKey && key === 'v') {
       ev.preventDefault();
       this.votingUI?.toggle();
+      return;
+    }
+    // Alt+W toggles text wrap: W alone stays the Point tool, so the wrap needs
+    // the Alt modifier without ctrl/meta. Match on KeyW too — Alt on Mac
+    // remaps the printed character.
+    if (!mod && ev.altKey && (key === 'w' || ev.code === 'KeyW')) {
+      ev.preventDefault();
+      this.toggleTextWrap();
       return;
     }
 
@@ -2600,6 +2734,13 @@ export class WhiteboardApp {
     if (!mod && (ev.key === '2' || ev.key === '@' || (ev.shiftKey && ev.code === 'Digit2'))) {
       ev.preventDefault();
       this.zoomToSelection();
+      return;
+    }
+    // Cursor chat: open the floating input at the last canvas pointer
+    // position. Reachable in every role — viewers chat too.
+    if (!mod && ev.key === '/') {
+      ev.preventDefault();
+      this.cursorChat?.open();
       return;
     }
     if (!mod && ev.key === '?') {

@@ -10,9 +10,19 @@ import {
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
+import { saveWorkspacePreferences } from '../scene/storage.js';
 
 export const FAVORITE_STENCILS_KEY = 'studioboard_fav_stencils_v1';
 export const RECENT_STENCILS_KEY = 'studioboard_recent_stencils_v1';
+
+// Icon preview sizes per level: svg size, hit-box size, grid class and the
+// arrow-key focus step, which must match the grid column count.
+const ICON_SIZE_LEVELS = ['compact', 'comfortable', 'large'];
+const ICON_SIZE_PRESETS = {
+  compact: { label: 'Compact', iconW: 38, iconH: 34, box: 32, gridClass: 'wb-grid-compact', focusStep: 4 },
+  comfortable: { label: 'Comfortable', iconW: 48, iconH: 44, box: 40, gridClass: '', focusStep: 3 },
+  large: { label: 'Large', iconW: 64, iconH: 58, box: 56, gridClass: 'wb-grid-large', focusStep: 2 },
+};
 
 function loadJsonList(key, fallback = []) {
   try {
@@ -39,7 +49,9 @@ export function initLibraryPanel(app) {
   let activeTab = 'stencils'; // 'stencils' | 'packs' | 'user' | 'templates'
   let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
   let searchQuery = '';
-  let previewDensity = 'comfortable'; // 'comfortable' | 'compact'
+  let iconSize = ICON_SIZE_LEVELS.includes(app.workspacePrefs?.libraryIconSize)
+    ? app.workspacePrefs.libraryIconSize
+    : 'comfortable'; // 'compact' | 'comfortable' | 'large'
   let multiSelectMode = false;
   let previewLayoutMode = 'flow'; // 'grid' | 'row' | 'column' | 'flow'
   let visibleLimit = 64;
@@ -67,12 +79,24 @@ export function initLibraryPanel(app) {
     }
   }
 
+  function stepIconSize(direction) {
+    const idx = ICON_SIZE_LEVELS.indexOf(iconSize);
+    const next = ICON_SIZE_LEVELS[Math.max(0, Math.min(ICON_SIZE_LEVELS.length - 1, idx + direction))];
+    if (next === iconSize) return;
+    iconSize = next;
+    app.workspacePrefs = { ...app.workspacePrefs, libraryIconSize: next };
+    saveWorkspacePreferences(app.workspacePrefs);
+    render();
+  }
+
   function render() {
+    const size = ICON_SIZE_PRESETS[iconSize];
     panel.innerHTML = `
       <div class="wb-panel-header">
         <strong>DevOps & Cloud Library (${ALL_STENCILS.length})</strong>
         <div style="display:flex;gap:4px;align-items:center;">
-          <button type="button" class="wb-btn wb-sm" id="btn-lib-density" title="Toggle Compact vs Comfortable icon preview size">${previewDensity === 'compact' ? '⊞ Compact' : '⊟ Comfort'}</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-lib-size-down" title="Icon size: ${size.label} (smaller)" ${iconSize === 'compact' ? 'disabled' : ''}>−</button>
+          <button type="button" class="wb-btn wb-sm" id="btn-lib-size-up" title="Icon size: ${size.label} (larger)" ${iconSize === 'large' ? 'disabled' : ''}>+</button>
           <button type="button" class="wb-icon-btn" id="btn-close-library" aria-label="Close Library">✕</button>
         </div>
       </div>
@@ -91,10 +115,8 @@ export function initLibraryPanel(app) {
       app.toolbarUI?.update();
     });
 
-    panel.querySelector('#btn-lib-density')?.addEventListener('click', () => {
-      previewDensity = previewDensity === 'comfortable' ? 'compact' : 'comfortable';
-      render();
-    });
+    panel.querySelector('#btn-lib-size-down')?.addEventListener('click', () => stepIconSize(-1));
+    panel.querySelector('#btn-lib-size-up')?.addEventListener('click', () => stepIconSize(1));
 
     panel.querySelectorAll('[data-tab]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -133,7 +155,7 @@ export function initLibraryPanel(app) {
         </div>
         <div id="wb-lib-multiselect-bar" class="wb-lib-multiselect-bar ${multiSelectMode || selectedStencils.size > 0 ? '' : 'wb-hidden'}"></div>
       </div>
-      <div id="wb-lib-results" class="wb-lib-results wb-density-${previewDensity}" role="listbox" aria-label="Architecture Icons"></div>
+      <div id="wb-lib-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Architecture Icons"></div>
     `;
 
     const searchInput = content.querySelector('#lib-search');
@@ -203,10 +225,10 @@ export function initLibraryPanel(app) {
       const isSelected = selectedStencils.has(s.id);
       const provenance = getIconProvenance(s);
       const isFav = favorites.has(s.id);
-      const iconW = previewDensity === 'compact' ? 38 : 48;
-      const iconH = previewDensity === 'compact' ? 38 : 44;
-      const boxW = previewDensity === 'compact' ? 32 : 40;
-      const boxH = previewDensity === 'compact' ? 32 : 36;
+      const iconW = ICON_SIZE_PRESETS[iconSize].iconW;
+      const iconH = ICON_SIZE_PRESETS[iconSize].iconH;
+      const boxW = ICON_SIZE_PRESETS[iconSize].box;
+      const boxH = ICON_SIZE_PRESETS[iconSize].box;
       return `
         <div class="wb-stencil-item ${isSelected ? 'selected' : ''}" role="option" tabindex="0" aria-selected="${isSelected}" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) · ${escapeXml(provenance.provider)} ${escapeXml(provenance.version)} · ${escapeXml(provenance.license || 'project license')}${provenance.attribution ? ` · ${escapeXml(provenance.attribution)}` : ''}, reviewed ${escapeXml(provenance.reviewedAt || 'not recorded')} — Click to place, drag onto canvas">
           <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
@@ -252,7 +274,7 @@ export function initLibraryPanel(app) {
               <span>${escapeXml(grp.category)}</span>
               <span class="wb-lib-category-count">${grp.items.length}</span>
             </div>
-            <div class="wb-stencil-grid ${previewDensity === 'compact' ? 'wb-grid-compact' : ''}">
+            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
               ${slice.map(renderCardHtml).join('')}
             </div>
           </div>
@@ -329,11 +351,11 @@ export function initLibraryPanel(app) {
             cards[idx - 1].focus();
           } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
-            const step = previewDensity === 'compact' ? 4 : 3;
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
             if (cards[idx + step]) cards[idx + step].focus();
           } else if (ev.key === 'ArrowUp') {
             ev.preventDefault();
-            const step = previewDensity === 'compact' ? 4 : 3;
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
             if (cards[idx - step]) cards[idx - step].focus();
           }
         });

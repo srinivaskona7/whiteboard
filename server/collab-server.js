@@ -275,6 +275,14 @@ export class CollabStore {
     if (op.type === 'reaction:send') {
       const emoji = String(op.emoji || '👍').slice(0, 8);
       const authorName = String(op.authorName || 'Participant').slice(0, 40);
+      // Optional anchoring pins the emote to a board element or world point so
+      // it can float beside it; garbage anchors are stripped, never rejected —
+      // an unanchorable emote still fires as a plain toast reaction.
+      const elementId = typeof op.elementId === 'string' && op.elementId.length <= 64 ? op.elementId : null;
+      // Page scoping for world-point anchors (element anchors look up on the
+      // viewer's active page and need none).
+      const pageId = typeof op.pageId === 'string' && op.pageId.length <= 64 ? op.pageId : null;
+      const hasPoint = Number.isFinite(op.x) && Number.isFinite(op.y);
       return {
         ok: true,
         broadcast: {
@@ -283,8 +291,39 @@ export class CollabStore {
             id: generateShortId('rx', 4),
             emoji,
             authorName,
-            color: op.color || '#2563eb',
+            color: String(op.color || '#2563eb').slice(0, 24),
             createdAt: Date.now(),
+            ...(elementId ? { elementId } : {}),
+            ...(pageId ? { pageId } : {}),
+            ...(hasPoint ? { x: op.x, y: op.y } : {}),
+          },
+          senderClientId: op.clientId,
+        },
+      };
+    }
+
+    // Cursor chat: a short speech bubble pinned at the sender's world cursor
+    // position. Ephemeral social layer — open to viewers, never persisted.
+    if (op.type === 'chat:cursor') {
+      const text = String(op.text || '').trim().slice(0, 140);
+      if (!text) return { ok: false, code: 400, error: 'Chat text required.' };
+      if (!Number.isFinite(op.x) || !Number.isFinite(op.y)) {
+        return { ok: false, code: 400, error: 'Invalid chat position.' };
+      }
+      return {
+        ok: true,
+        broadcast: {
+          type: 'chat:cursor',
+          chat: {
+            id: generateShortId('cx', 4),
+            clientId: op.clientId,
+            name: String(op.authorName || 'Participant').slice(0, 40),
+            color: String(op.color || '#2563eb').slice(0, 24),
+            text,
+            pageId: page.id,
+            x: op.x,
+            y: op.y,
+            at: Date.now(),
           },
           senderClientId: op.clientId,
         },

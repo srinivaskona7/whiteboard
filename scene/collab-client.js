@@ -73,6 +73,7 @@ export class CollabClient {
     this.teacherViewport = null;
     this.handRaised = false;
     this.recentReactions = [];
+    this.cursorChats = [];
     this._lastCursorSentAt = 0;
     this._suppressOutboundSync = false;
   }
@@ -655,6 +656,18 @@ export class CollabClient {
       if (this.recentReactions.length > 12) this.recentReactions.shift();
       this.app.dialogs?.showToast(`${msg.reaction.emoji} ${msg.reaction.authorName}`, 'info');
       this.app.classroomUI?.update();
+      this.app.requestRender?.();
+      return;
+    }
+
+    if (msg.type === 'chat:cursor' && msg.chat) {
+      // The server excludes the sender's socket (see the WS route) because the
+      // sender already applied its own bubble optimistically; this guard makes
+      // that pairing explicit against a stray echo.
+      if (msg.chat.clientId === this.clientId) return;
+      this.cursorChats.push({ ...msg.chat, receivedAt: Date.now() });
+      if (this.cursorChats.length > 12) this.cursorChats.shift();
+      this.app.requestRender?.();
       return;
     }
 
@@ -810,7 +823,7 @@ export class CollabClient {
     this.app.classroomUI?.update();
   }
 
-  sendReaction(emoji = '👍') {
+  sendReaction(emoji = '👍', anchor = null) {
     const authorName =
       this.app.classroomUI?.getStudentName() || (this.role === 'teacher' ? 'Teacher' : 'Student');
     const rx = {
@@ -819,19 +832,84 @@ export class CollabClient {
       authorName,
       color: this.color,
       createdAt: Date.now(),
+      // World-point anchors are only meaningful on the page they were sent
+      // from; without this, an emote on page B floats over page A's content
+      // at the same world coordinates. Element anchors are looked up on the
+      // active page at draw time and need no scoping.
+      pageId: this.app.getPage?.()?.id ?? null,
     };
+    const payload = {
+      type: 'reaction:send',
+      emoji,
+      authorName,
+      color: this.color,
+      pageId: rx.pageId,
+    };
+    // An optional anchor floats the emote beside a board element or world
+    // point; garbage fields are stripped by the server like anywhere else.
+    if (anchor) {
+      if (anchor.elementId) {
+        rx.elementId = anchor.elementId;
+        payload.elementId = anchor.elementId;
+      }
+      if (Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
+        rx.x = anchor.x;
+        rx.y = anchor.y;
+        payload.x = anchor.x;
+        payload.y = anchor.y;
+      }
+    }
     this.recentReactions.push(rx);
     if (this.recentReactions.length > 12) this.recentReactions.shift();
     if (this.status === 'live' && this.roomId) {
-      this._sendWsOrRest({
-        type: 'reaction:send',
-        emoji,
-        authorName,
-        color: this.color,
-      });
+      this._sendWsOrRest(payload);
     }
     this.app.dialogs?.showToast(`${emoji} ${authorName}`, 'info');
     this.app.classroomUI?.update();
+  }
+
+  // Cursor chat: a short speech bubble at the world cursor position. Open to
+  // every role — it is social, not board content — and never persisted, so
+  // late joiners never see past bubbles.
+  broadcastCursorChat(text, pageId = null, worldPt = null) {
+    const trimmed = String(text || '').trim().slice(0, 140);
+    if (!trimmed) return null;
+    if (!worldPt || !Number.isFinite(worldPt.x) || !Number.isFinite(worldPt.y)) return null;
+    const page = this.app.getPage();
+    const chat = {
+      id: uid('cx'),
+      clientId: this.clientId,
+      name: this.app.classroomUI?.getStudentName() || (this.role === 'teacher' ? 'Teacher' : 'Student'),
+      color: this.color,
+      text: trimmed,
+      pageId: pageId || page.id,
+      x: worldPt.x,
+      y: worldPt.y,
+      at: Date.now(),
+    };
+    // The sender applies its own bubble optimistically so it draws identically
+    // to remote ones; the server broadcast then excludes this socket.
+    this.cursorChats.push({ ...chat, receivedAt: Date.now() });
+    if (this.cursorChats.length > 12) this.cursorChats.shift();
+    if (this.status === 'live' && this.roomId) {
+      this._sendWsOrRest({
+        type: 'chat:cursor',
+        pageId: chat.pageId,
+        text: chat.text,
+        authorName: chat.name,
+        color: chat.color,
+        x: chat.x,
+        y: chat.y,
+      });
+    }
+    this.app.requestRender?.();
+    return chat;
+  }
+
+  // Bubbles live 15 seconds; anything older stops rendering.
+  activeCursorChats() {
+    const now = Date.now();
+    return this.cursorChats.filter((c) => now - (c.receivedAt ?? c.at ?? now) < 15000);
   }
 
   broadcastTimerState(timerState) {

@@ -600,6 +600,87 @@ export function translateElement(el, dx, dy) {
   }
 }
 
+// Equal-gap snap: while the moving bounds sit between two candidates on one
+// axis, snap to the position that makes both gaps equal. Returns the best
+// snap (smallest delta) as { diff, delta, guides }, or null when none applies.
+function findEqualGapSnap(movingBounds, candidates, threshold, axis) {
+  const horiz = axis === 'x';
+  const center = horiz
+    ? movingBounds.minX + movingBounds.w / 2
+    : movingBounds.minY + movingBounds.h / 2;
+  const size = horiz ? movingBounds.w : movingBounds.h;
+  const nears = [];
+  const fars = [];
+  for (const cand of candidates) {
+    const cb = getElementBounds(cand);
+    // Cross-axis overlap: only candidates the element could sit between.
+    if (horiz) {
+      if (cb.maxY < movingBounds.minY || cb.minY > movingBounds.maxY) continue;
+    } else {
+      if (cb.maxX < movingBounds.minX || cb.minX > movingBounds.maxX) continue;
+    }
+    const nearEdge = horiz ? cb.maxX : cb.maxY;
+    const farEdge = horiz ? cb.minX : cb.minY;
+    if (nearEdge <= center) nears.push(cb);
+    else if (farEdge >= center) fars.push(cb);
+  }
+
+  let best = null;
+  for (const near of nears) {
+    for (const far of fars) {
+      const nearEdge = horiz ? near.maxX : near.maxY;
+      const farEdge = horiz ? far.minX : far.minY;
+      const span = farEdge - nearEdge;
+      if (span < size) continue; // element does not fit between
+      const targetMin = nearEdge + (span - size) / 2;
+      const minNow = horiz ? movingBounds.minX : movingBounds.minY;
+      const delta = targetMin - minNow;
+      if (Math.abs(delta) > threshold) continue;
+      if (best && Math.abs(delta) >= best.diff) continue;
+      if (horiz) {
+        best = {
+          diff: Math.abs(delta),
+          delta,
+          guides: [
+            {
+              type: 'vertical',
+              x: nearEdge,
+              y1: Math.min(movingBounds.minY, near.minY, far.minY) - 16,
+              y2: Math.max(movingBounds.maxY, near.maxY, far.maxY) + 16,
+            },
+            {
+              type: 'vertical',
+              x: farEdge,
+              y1: Math.min(movingBounds.minY, near.minY, far.minY) - 16,
+              y2: Math.max(movingBounds.maxY, near.maxY, far.maxY) + 16,
+            },
+          ],
+        };
+      } else {
+        best = {
+          diff: Math.abs(delta),
+          delta,
+          guides: [
+            {
+              type: 'horizontal',
+              y: nearEdge,
+              x1: Math.min(movingBounds.minX, near.minX, far.minX) - 16,
+              x2: Math.max(movingBounds.maxX, near.maxX, far.maxX) + 16,
+            },
+            {
+              type: 'horizontal',
+              y: farEdge,
+              x1: Math.min(movingBounds.minX, near.minX, far.minX) - 16,
+              x2: Math.max(movingBounds.maxX, near.maxX, far.maxX) + 16,
+            },
+          ],
+        };
+      }
+    }
+  }
+  return best;
+}
+
 export function computeSmartGuides(movingBounds, candidates, threshold = 6) {
   const guides = [];
   let snapDx = 0;
@@ -646,6 +727,29 @@ export function computeSmartGuides(movingBounds, candidates, threshold = 6) {
         }
       }
     }
+  }
+
+  // Equal-gap snaps compete only when strictly closer than edge/midpoint
+  // snaps, so existing behavior keeps priority. When one wins, it replaces
+  // the guides of its axis with one guide per gap it equalizes.
+  const gapX = findEqualGapSnap(movingBounds, candidates, threshold, 'x');
+  if (gapX && gapX.diff < bestX) {
+    bestX = gapX.diff;
+    snapDx = gapX.delta;
+    for (let i = guides.length - 1; i >= 0; i--) {
+      if (guides[i].type === 'vertical') guides.splice(i, 1);
+    }
+    guides.push(...gapX.guides);
+  }
+
+  const gapY = findEqualGapSnap(movingBounds, candidates, threshold, 'y');
+  if (gapY && gapY.diff < bestY) {
+    bestY = gapY.diff;
+    snapDy = gapY.delta;
+    for (let i = guides.length - 1; i >= 0; i--) {
+      if (guides[i].type === 'horizontal') guides.splice(i, 1);
+    }
+    guides.push(...gapY.guides);
   }
 
   return {

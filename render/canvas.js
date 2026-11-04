@@ -18,6 +18,7 @@ import {
   getConnectionPorts,
 } from '../scene/geometry.js';
 import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
+import { QUICK_ADD_DIRECTIONS, dotAnchor, isQuickAddable } from '../scene/quick-add.js';
 import { markerPoint } from '../scene/animation.js';
 import {
   resolveBrush,
@@ -25,6 +26,38 @@ import {
   buildGrainPoints,
   buildNibOffsets,
 } from '../scene/brushes.js';
+
+// Word-wraps a cursor chat line for the bubble body, hard-breaking words
+// wider than the bubble so a 140-char unbroken string cannot overflow.
+function wrapChatText(ctx, text, maxWidth) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    let rest = word;
+    while (ctx.measureText(rest).width > maxWidth && rest.length > 1) {
+      let cut = rest.length - 1;
+      while (cut > 1 && ctx.measureText(rest.slice(0, cut)).width > maxWidth) cut--;
+      if (line) {
+        lines.push(line);
+        line = '';
+      }
+      if (ctx.measureText(rest).width > maxWidth) {
+        lines.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+      }
+    }
+    const candidate = line ? `${line} ${rest}` : rest;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = rest;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
 
 export class CanvasRenderer {
   constructor(canvas, minimapCanvas = null) {
@@ -110,6 +143,7 @@ export class CanvasRenderer {
       eraserSize = 12,
       editingElementId = null,
       minimapOpen = false,
+      quickAddEnabled = false,
     } = appState;
 
     const ctx = this.ctx;
@@ -332,11 +366,34 @@ export class CanvasRenderer {
       }
     }
 
+    // Cursor chat bubbles and anchored emotes belong to the sender, so they
+    // ride with the remote-cursor pass (page filtering happens upstream).
+    if (appState.cursorChats && appState.cursorChats.length > 0) {
+      try {
+        this.drawCursorChatBubbles(ctx, appState.cursorChats, cam.zoom, now);
+      } catch (err) {
+        this._reportRenderError('cursorChats', err);
+      }
+    }
+
+    if (appState.anchoredReactions && appState.anchoredReactions.length > 0) {
+      try {
+        this.drawAnchoredReactions(ctx, appState.anchoredReactions, page, cam.zoom, now);
+      } catch (err) {
+        this._reportRenderError('anchoredReactions', err);
+      }
+    }
+
     if (!presentState?.active && selectedIds.size > 0) {
       try {
         const selectedEls = page.elements.filter((e) => selectedIds.has(e.id) && !e.hidden);
         if (selectedEls.length === 1) {
           this.drawSelectionHandles(ctx, selectedEls[0], page, cam.zoom, theme);
+          // Quick-add dots: the Miro-style "+" handles on the sole selection,
+          // only while the select tool can actually act on them.
+          if (quickAddEnabled && !editingElementId && isQuickAddable(selectedEls[0])) {
+            this.drawQuickAddDots(ctx, selectedEls[0], cam.zoom, theme);
+          }
         } else if (selectedEls.length > 1) {
           const gb = getSelectionBounds(selectedEls);
           if (gb) {
@@ -738,6 +795,24 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
+  // Quick-add dots sit at the selection's edge midpoints, drawn in world space
+  // like the selection handles so they track the element under the camera.
+  drawQuickAddDots(ctx, el, zoom, theme) {
+    const r = 7 / zoom;
+    ctx.save();
+    for (const direction of QUICK_ADD_DIRECTIONS) {
+      const p = dotAnchor(el, direction);
+      ctx.fillStyle = theme.portFill;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.6 / zoom;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   drawCropOverlay(ctx, cropState, zoom) {
     const element = cropState.element;
     const rect = cropState.rect || cropState.box;
@@ -889,6 +964,100 @@ export class CanvasRenderer {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, 16, 21.5);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Cursor chat bubbles sit at the sender's stored world position, offset
+  // up-right with a small tail, and keep a stable screen size like the remote
+  // cursor labels. The final ~2s of the 15s lifetime fades out.
+  drawCursorChatBubbles(ctx, chats, zoom, now) {
+    ctx.save();
+    const s = 1 / zoom;
+    for (const chat of chats) {
+      if (!chat || !Number.isFinite(chat.x) || !Number.isFinite(chat.y)) continue;
+      const age = now - (chat.receivedAt ?? chat.at ?? now);
+      const alpha = Math.min(1, Math.max(0, (15000 - age) / 2000));
+      if (alpha <= 0) continue;
+      const color = chat.color || '#2563eb';
+      const name = chat.name || 'Participant';
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(chat.x, chat.y);
+      ctx.scale(s, s);
+      ctx.font = `12px ${FONT_MAP.sans}`;
+      const lines = wrapChatText(ctx, chat.text, 190);
+      ctx.font = `600 11px ${FONT_MAP.sans}`;
+      const nameW = ctx.measureText(name).width;
+      ctx.font = `12px ${FONT_MAP.sans}`;
+      const textW = Math.max(0, ...lines.map((l) => ctx.measureText(l).width));
+      const bw = Math.max(nameW + 24, textW + 24);
+      const bh = 20 + lines.length * 15 + 12;
+      // Bubble body up-right of the cursor point, with a small tail.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(12, -bh - 12, bw, bh, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(12, -12);
+      ctx.lineTo(10, -2);
+      ctx.lineTo(24, -12);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
+      ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.font = `600 11px ${FONT_MAP.sans}`;
+      ctx.fillStyle = color;
+      ctx.fillText(name, 24, -bh - 12 + 15);
+      ctx.font = `12px ${FONT_MAP.sans}`;
+      ctx.fillStyle = '#0f172a';
+      lines.forEach((line, i) => ctx.fillText(line, 24, -bh - 12 + 31 + i * 15));
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Element-anchored emotes float up from the element (or world point) and
+  // fade over ~8s. The classroom toast still fires too — this is an addition,
+  // not a move. A reaction whose anchor element is gone is simply not drawn.
+  drawAnchoredReactions(ctx, reactions, page, zoom, now) {
+    ctx.save();
+    const s = 1 / zoom;
+    for (const rx of reactions) {
+      const age = now - (rx.receivedAt ?? rx.createdAt ?? now);
+      const t = Math.min(1, Math.max(0, age / 8000));
+      if (t >= 1) continue;
+      let px = rx.x;
+      let py = rx.y;
+      if (rx.elementId) {
+        const target = page.elements.find((e) => e.id === rx.elementId);
+        if (!target) continue;
+        // Connectors carry their far endpoint in x2/y2 (possibly drawn
+        // right-to-left), so their visual midpoint is between the endpoints —
+        // x + w/2 drifts off the drawn line. Point-anchored reactions already
+        // arrive with a correct world x/y; only the element lookup recomputes.
+        if ((target.type === 'arrow' || target.type === 'line') && Number.isFinite(target.x2)) {
+          px = (target.x + target.x2) / 2;
+          py = Math.min(target.y, target.y2);
+        } else {
+          px = target.x + (target.w || 0) / 2;
+          py = target.y;
+        }
+      }
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      ctx.save();
+      ctx.globalAlpha = 1 - t;
+      ctx.translate(px, py);
+      ctx.scale(s, s);
+      ctx.font = `22px ${FONT_MAP.sans}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(rx.emoji || '👍', 0, -14 - t * 34);
       ctx.restore();
     }
     ctx.restore();

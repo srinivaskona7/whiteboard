@@ -216,6 +216,25 @@ export function buildContextItems(app, hit, world) {
   const selArrow = selected.length === 1 && (selected[0].type === 'line' || selected[0].type === 'arrow');
   const selTable = selected.length === 1 && selected[0].type === 'table';
 
+  // Emotes are social, not board content: open to every role (viewer included),
+  // like reaction:send. Anchored to the right-clicked element when there is
+  // one, otherwise to the raw world point.
+  const emoteItems = (anchor) => ({
+    label: 'Emote 👍',
+    children: ['👍', '❤️', '😂', '🎉', '❓', '👏'].map((emoji) => ({
+      label: emoji,
+      action: () => app.collab?.sendReaction(emoji, anchor),
+    })),
+  });
+  const elementAnchor = (el) => {
+    if (!el) return null;
+    // Connectors carry endpoints instead of w/h — float above their midpoint.
+    if (el.x2 !== undefined) {
+      return { elementId: el.id, x: (el.x + el.x2) / 2, y: Math.min(el.y, el.y2) - 24 };
+    }
+    return { elementId: el.id, x: el.x + (el.w || 0) / 2, y: el.y - 24 };
+  };
+
   const editItem = {
     label: 'Edit text / content',
     shortcut: 'F2',
@@ -312,6 +331,7 @@ export function buildContextItems(app, hit, world) {
         },
       },
       { type: 'separator' },
+      emoteItems(elementAnchor(hit)),
       { label: 'Duplicate', shortcut: 'Ctrl/⌘D', disabled: !canEdit || locked, action: () => app.duplicateSelection() },
       { label: 'Delete', shortcut: 'Del', disabled: !canEdit || locked, action: () => app.deleteSelection() },
     ];
@@ -357,6 +377,7 @@ export function buildContextItems(app, hit, world) {
         action: () => mutate((e) => (e.headerRow = e.headerRow === false)),
       },
       { type: 'separator' },
+      emoteItems(elementAnchor(hit)),
       { label: 'Duplicate', disabled: !canEdit || locked, action: () => app.duplicateSelection() },
       { label: 'Delete', disabled: !canEdit || locked, action: () => app.deleteSelection() },
     ];
@@ -405,6 +426,8 @@ export function buildContextItems(app, hit, world) {
       { label: 'Add to library', disabled: !canEdit, action: () => app.addSelectionToLibrary?.() },
       { label: 'Export selection as PNG', action: () => app.exportPngDownload({ selectionOnly: true, selectedIds: app.selectedIds }) },
       { type: 'separator' },
+      emoteItems(elementAnchor(hit || selected[0])),
+      { type: 'separator' },
       { label: 'Delete', shortcut: 'Del', disabled: !canEdit, action: () => app.deleteSelection() },
     ];
   }
@@ -439,6 +462,7 @@ export function buildContextItems(app, hit, world) {
       label: 'Arrow preset',
       children: (app.arrowPresetItems?.() || []).map((it) => ({ ...it })),
     },
+    emoteItems({ x: world.x, y: world.y }),
     { type: 'separator' },
     {
       label: `${app.scene.settings.snapToGrid ? '✓ ' : ''}Snap to grid`,

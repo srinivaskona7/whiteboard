@@ -1025,3 +1025,130 @@ describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Brea
   });
 });
 
+
+describe('24. Cursor chat and anchored emotes over live sockets', () => {
+  const setupChatRoom = async () => {
+    const srv = createStandaloneCollabServer({ port: 0 });
+    const port = await srv.start();
+    if (!port) return null; // Skip only if OS sandbox blocks loopback listen
+
+    const scene = createScene('light');
+    const sticky = createElement('sticky', { x: 120, y: 120, w: 200, h: 120, text: 'Chat anchor' });
+    scene.pages[0].elements.push(sticky);
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Cursor chat room', scene }),
+    });
+    const room = await createRes.json();
+
+    const connectClient = (queryObj) => {
+      const qs = new URLSearchParams(queryObj).toString();
+      return connectNodeWsClient(`ws://127.0.0.1:${port}/ws?${qs}`);
+    };
+    const teacher = await connectClient({
+      roomId: room.roomId,
+      token: room.teacherToken,
+      clientId: 'cli_teacher',
+      name: 'Prof. Lin',
+      color: '#2563eb',
+    });
+    await teacher.waitFor((m) => m.type === 'room:welcome');
+    const student = await connectClient({
+      roomId: room.roomId,
+      clientId: 'cli_student',
+      name: 'Alex',
+      color: '#059669',
+    });
+    await student.waitFor((m) => m.type === 'room:welcome');
+
+    return { srv, teacher, student, sticky, scene, pageId: scene.pages[0].id };
+  };
+
+  test('a viewer cursor chat reaches the teacher with the full bubble payload', async () => {
+    const ctx = await setupChatRoom();
+    if (!ctx) return;
+    const { srv, teacher, student, pageId } = ctx;
+    try {
+      student.ws.send(
+        JSON.stringify({
+          type: 'chat:cursor',
+          text: 'Look at the left box please!',
+          authorName: 'Alex',
+          color: '#059669',
+          x: 140,
+          y: 180,
+        })
+      );
+      const got = await teacher.waitFor((m) => m.type === 'chat:cursor');
+      assert.equal(got.chat.text, 'Look at the left box please!');
+      assert.equal(got.chat.name, 'Alex');
+      assert.equal(got.chat.color, '#059669');
+      assert.equal(got.chat.clientId, 'cli_student');
+      assert.equal(got.chat.pageId, pageId);
+      assert.equal(got.chat.x, 140);
+      assert.equal(got.chat.y, 180);
+      assert.ok(got.chat.id && Number.isFinite(got.chat.at));
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  test("the sender's socket never receives its own chat:cursor — the optimistic pairing", async () => {
+    // chat:cursor broadcasts exclude the sender's socket: the sender already
+    // applied its own bubble optimistically on send, so an echo would draw the
+    // same bubble twice. vote:cast is the deliberate counter-example (the
+    // viewer never mutates locally, so the caster needs its own echo) — that
+    // pairing rule is what this test pins for chat.
+    const ctx = await setupChatRoom();
+    if (!ctx) return;
+    const { srv, teacher, student } = ctx;
+    try {
+      student.ws.send(
+        JSON.stringify({
+          type: 'chat:cursor',
+          text: 'anyone else see this?',
+          authorName: 'Alex',
+          x: 50,
+          y: 60,
+        })
+      );
+      // The teacher got it — the message really did broadcast.
+      await teacher.waitFor((m) => m.type === 'chat:cursor' && m.chat.clientId === 'cli_student');
+      // Wait out the delivery window, then prove the sender heard no echo.
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(
+        student.inbox.filter((m) => m.type === 'chat:cursor').length,
+        0,
+        'the sender must apply its own bubble optimistically, not from an echo'
+      );
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  test('an anchored emote round-trips its elementId over the socket', async () => {
+    const ctx = await setupChatRoom();
+    if (!ctx) return;
+    const { srv, teacher, student, sticky } = ctx;
+    try {
+      student.ws.send(
+        JSON.stringify({
+          type: 'reaction:send',
+          emoji: '🎉',
+          authorName: 'Alex',
+          elementId: sticky.id,
+          x: 220,
+          y: 96,
+        })
+      );
+      const got = await teacher.waitFor((m) => m.type === 'reaction:burst');
+      assert.equal(got.reaction.emoji, '🎉');
+      assert.equal(got.reaction.elementId, sticky.id);
+      assert.equal(got.reaction.x, 220);
+      assert.equal(got.reaction.y, 96);
+    } finally {
+      await srv.stop();
+    }
+  });
+});

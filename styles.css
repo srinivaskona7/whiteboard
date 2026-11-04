@@ -284,6 +284,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .wb-multiselect-tray-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
 .wb-stencil-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
 .wb-stencil-grid.wb-grid-compact { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.wb-stencil-grid.wb-grid-large { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.wb-density-large .wb-stencil-item span { font-size: 11px; }
 .wb-stencil-item {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px;
   border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-elevated); cursor: pointer;
@@ -724,6 +726,14 @@ kbd { padding: 2px 5px; font-size: 11px; font-family: monospace; background: var
 .wb-context-shortcut { font-size: 10px; color: var(--text-secondary); }
 .wb-context-arrow { color: var(--text-secondary); font-size: 14px; line-height: 1; }
 .wb-context-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
+
+/* Cursor chat input — opens with / at the last canvas pointer position */
+.wb-cursor-chat-input {
+  position: fixed; z-index: 82; width: 240px; padding: 7px 10px;
+  border: 1px solid var(--accent-color); border-radius: 8px;
+  background: var(--bg-elevated); color: var(--text-primary);
+  font-size: 12px; box-shadow: var(--shadow-lg); outline: none;
+}
 
 /* Expanded code editor */
 .wb-code-editor-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
