@@ -9,7 +9,7 @@ import {
   getConnectorTangentFromPoint,
   buildRoundedElbowSvgPath,
 } from '../scene/routing.js';
-import { getStencilById } from '../stencils/index.js';
+import { getStencilById, isStencilLoaded, ensureIconPackLoaded, ICON_PACK_ID_PREFIX } from '../stencils/index.js';
 import {
   resolveBrush,
   buildStrokeSegments,
@@ -308,8 +308,21 @@ function elementToSvg(el, page, scene, theme) {
     const stickyFill = el.fill && el.fill !== 'transparent' ? el.fill : '#fef08a';
     inner = `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" rx="4" fill="${stickyFill}" stroke="rgba(15,23,42,0.18)" stroke-width="1"/>${renderSvgTextBlock({ ...el, textColor: '#1e293b' }, 'light', 14)}`;
   } else if (el.type === 'stencil') {
-    const stencil = getStencilById(el.stencilId);
-    inner = `<g color="${stroke}">${stencil.toSvg(el.x, el.y, el.w, el.h, commonAttrs)}</g>${renderSvgTextBlock(el, theme.name, 16)}`;
+    // An unloaded `pk-` element (export racing the lazy pack load) has no
+    // registry entry — embed a placeholder instead of the wrong icon.
+    if (el.stencilId?.startsWith(ICON_PACK_ID_PREFIX) && !isStencilLoaded(el.stencilId)) {
+      ensureIconPackLoaded().then(
+        () => window.__WHITEBOARD_APP__?.requestRender?.(),
+        () => {} // chunk load failed: placeholder stays; next render retries
+      );
+      const side = Math.max(0, Math.min(el.w, el.h));
+      const gx = el.x + (el.w - side) / 2;
+      const gy = el.y + (el.h - side) / 2;
+      inner = `<rect x="${gx + 3}" y="${gy + 3}" width="${Math.max(0, side - 6)}" height="${Math.max(0, side - 6)}" rx="8" fill="none" stroke="rgba(37,99,235,0.45)" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    } else {
+      const stencil = getStencilById(el.stencilId);
+      inner = `<g color="${stroke}">${stencil.toSvg(el.x, el.y, el.w, el.h, commonAttrs)}</g>${renderSvgTextBlock(el, theme.name, 16)}`;
+    }
   } else if (el.type === 'text') {
     inner = renderSvgTextBlock(el, theme.name, 4);
   } else if (el.type === 'frame') {

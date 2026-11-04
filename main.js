@@ -54,7 +54,7 @@ import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.j
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
 import { CanvasRenderer, spotlightEscapeAction } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
-import { getStencilById } from './stencils/index.js';
+import { getStencilById, isStencilLoaded, ensureIconPackLoaded } from './stencils/index.js';
 import { BUILTIN_TEMPLATES } from './templates/index.js';
 import { SelectTool } from './tools/select.js';
 import { DrawTool, ShapeTool, EraserTool } from './tools/draw.js';
@@ -1337,6 +1337,24 @@ export class WhiteboardApp {
       return false;
     }
     const page = this.getPage();
+    // A lazy icon-pack id whose chunk has not landed yet would resolve to the
+    // fallback stencil and place the WRONG icon — kick the load and bail.
+    if (
+      typeof stencilId === 'string' &&
+      stencilId.startsWith('pk-') &&
+      !isStencilLoaded(stencilId)
+    ) {
+      ensureIconPackLoaded().then(
+        () => {
+          this.requestRender();
+          this.insertStencilFromLibrary(stencilId, worldPos);
+        },
+        () => {
+          this.dialogs.showToast('Icon pack failed to load — placement cancelled.');
+        }
+      );
+      return false;
+    }
     const st = getStencilById(stencilId);
     if (!st) {
       this.dialogs.showToast('Insertion rejected: unknown stencil ID.');

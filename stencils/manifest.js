@@ -78,6 +78,17 @@ export const ICON_PACK_SOURCES = {
       'General-purpose 24x24 stroke icons (education, office, media, arrows, status). Safe for any diagram context; recolour freely — the set has no brand restrictions.',
     reviewedAt: '2026-11-04',
   },
+  iconpack: {
+    provider: 'DevOps, Cloud & Teaching Icon Pack (user-supplied)',
+    name: 'DevOps, Cloud, Networking & Teaching Icon Pack',
+    upstreamUrl: 'local://~/Downloads/aws-keys/icons.js (offline pack)',
+    version: '2 (2015 icons, 38 groups)',
+    license: 'Unstated by the pack author — user-supplied, internal use',
+    attribution: 'Anonymous pack author; SVG markup baked in verbatim with per-icon defs namespacing.',
+    usageNotes:
+      'Full-colour 64x64 icons (gradients, clip paths, text labels) covering AWS, Azure, GCP, Kubernetes, Istio, Docker, Ansible, Terraform, Linux, networking, testing and teaching sets. Overlaps exist with the curated stencil packs (e.g. pk-aws-amazon-ec2 vs aws-ec2) by design — both stay available; the curated pack renders as geometry, this pack renders as rasterized SVG. Canvas rasterizes via Image + data URL; exports embed the markup directly.',
+    reviewedAt: '2026-11-04',
+  },
   concepts: {
     provider: 'StudioBoard Teaching Symbol Set',
     name: 'Generic Systems & Networking Teaching Concepts',
@@ -156,6 +167,7 @@ export function inferIconPackKey(stencil = {}) {
   if (id.startsWith('k8s-') || id.startsWith('k8s') || cat.includes('Kubernetes')) return 'kubernetes';
   if (id.startsWith('concept-') || cat.includes('Teaching Concepts')) return 'concepts';
   if (id.startsWith('lucide-') || cat.startsWith('icons/')) return 'lucide';
+  if (id.startsWith('pk-') || cat.startsWith('pack/')) return 'iconpack';
   if (
     /^(cicd-argocd|cicd-flux|cicd-tekton|cnt-helm|cnt-containerd|obs-prometheus|obs-otel|obs-jaeger|obs-fluent|sec-opa|sec-falco|sec-certmgr|db-nats|db-ceph)/.test(
       id

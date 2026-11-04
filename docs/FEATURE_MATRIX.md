@@ -548,3 +548,43 @@ Confirmed defects, all fixed and test-locked (suite 366):
   alignment already did (the new fill previously looked like it didn't apply).
 
 Remaining known limits are unchanged from §26–28 above.
+
+## 29. DevOps Pack: 2015 full-colour icons in 38 groups (2026-11-04)
+
+A user-supplied offline pack (`~/Downloads/aws-keys/icons.js`, "DevOps, Cloud, Networking &
+Teaching Icon Pack") is fully integrated as a fourth icon source. Unlike Lucide's stroke
+geometry, these SVGs use gradients, clip paths and `<text>` labels, so they are baked
+verbatim and rasterized by the browser: canvas draws them via `Image` + data URL (dashed
+placeholder for the first frame, auto re-render on load); SVG export embeds the same markup
+as a nested `<svg>` at the identical contain-fit geometry — draw and `toSvg` share
+`packIconGeometry` and an equivalence test pins the lockstep.
+
+**Organization** ("folders/types"): the pack's own `group` field (AWS, Azure, Google Cloud,
+Kubernetes Resources, Kubernetes Components & kubectl, Docker, Ansible, Terraform, Linux,
+Networking, Firewall & Security, Testing, Demo & Teaching Content, … — 38 groups) becomes
+the category pills of a dedicated **DevOps Pack** tab: search, group pills with counts,
+windowed All view (64 cards, Show-all button), favourites, recents, click-place and drag.
+Pack categories are deliberately kept out of the main Icons tab's category strip (they
+would add 38 pills); the icons stay reachable from the main tab's search once registered.
+
+**Performance**: the generated module is ~2.6 MB of markup, so it is **lazily code-split** —
+the initial bundle is unchanged (281 KB gzip); the pack loads as its own chunk (185 KB gzip)
+when the tab is first opened, and render/SVG-export paths trigger the same load when they
+meet a `pk-*` element that is not yet registered (placeholder → auto re-render), so saved
+boards self-heal after reload without visiting the tab.
+
+**Definitional hygiene**: the pack's generic defs ids (`g1`, `k1`) are per-icon namespaced at
+generation time, so many icons can coexist in one exported SVG or one library DOM without
+gradient/clip hijacking. Pack ids are `pk-*` (e.g. `pk-aws-amazon-ec2`); they intentionally
+coexist with the curated geometry packs (`aws-ec2`), both reachable in search. Provenance is
+recorded in the manifest (`iconpack`, license unstated — user-supplied).
+
+Regeneration: `node scripts/gen-icon-pack-icons.js` (env `ICON_PACK_SOURCE`/`ICON_PACK_OUT`
+for tests) — idempotent (sha256 compare), refuses zero-icon/malformed sources with exit 1.
+
+Evidence: `scripts/gen-icon-pack-icons.js`, `stencils/icon-pack-icons.js` (generated),
+`stencils/index.js` (`registerIconPackStencils` / `ensureIconPackLoaded`),
+`render/shapes.js`, `render/svg-export.js`, `ui/library-panel.js`, `stencils/manifest.js`,
+`tests/icon-pack.test.js` (11; suite 377). Browser-verified: tab + group pills, search,
+placement, canvas raster (EC2 gradient sampled on the live canvas), SVG export at
+geometry, reload self-heal; `vite build` splits the chunk.

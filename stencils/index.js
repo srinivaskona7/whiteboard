@@ -103,6 +103,47 @@ export function getStencilById(id) {
   return STENCIL_MAP.get(id) || ALL_STENCILS[0];
 }
 
+// The DevOps icon pack (~2.6 MB of baked SVG markup, 2015 icons) is too
+// large to merge into the initial bundle, so it registers lazily: the
+// library's Icon Pack tab imports it on first open, and the render/export
+// paths trigger the same load when they meet an unloaded `pk-` element.
+export const ICON_PACK_ID_PREFIX = 'pk-';
+
+export function isStencilLoaded(id) {
+  return STENCIL_MAP.has(id);
+}
+
+export function registerIconPackStencils(stencils) {
+  const registered = [];
+  for (const s of stencils || []) {
+    if (STENCIL_MAP.has(s.id)) continue; // first registration wins
+    ALL_STENCILS.push(s);
+    STENCIL_MAP.set(s.id, s);
+    registered.push(s.id);
+  }
+  return registered;
+}
+
+let iconPackPromise = null;
+export function ensureIconPackLoaded() {
+  if (!iconPackPromise) {
+    iconPackPromise = import('./icon-pack-icons.js').then(
+      (m) => {
+        registerIconPackStencils(m.PACK_STENCILS);
+        return m;
+      },
+      // Don't cache a rejection — a transient failure (e.g. the dev server
+      // hiccup) must not turn every pk-* element into a placeholder for the
+      // rest of the session; the next render frame retries the import.
+      (err) => {
+        iconPackPromise = null;
+        throw err;
+      }
+    );
+  }
+  return iconPackPromise;
+}
+
 export function getAllCategories() {
   const seen = new Set();
   for (const s of ALL_STENCILS) seen.add(s.category);

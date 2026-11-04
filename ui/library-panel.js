@@ -5,6 +5,9 @@ import {
   getStencilsByCategory,
   getStencilById,
   scoreStencilSearchMatch,
+  ensureIconPackLoaded,
+  isStencilLoaded,
+  ICON_PACK_ID_PREFIX,
   ICON_PACK_SOURCES,
   getIconProvenance,
 } from '../stencils/index.js';
@@ -48,11 +51,16 @@ export function initLibraryPanel(app) {
   const panel = document.getElementById('wb-library-panel');
   if (!panel) return { update() {}, recordRecent() {} };
 
-  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'packs' | 'user' | 'templates'
+  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'iconpack' | 'packs' | 'user' | 'templates'
   let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
   let lucideActiveCategory = 'all'; // 'all' | 'icons/<sub>'
   let lucideSearchQuery = '';
   let lucideVisibleLimit = 64;
+  let iconPackModule = null; // cached lazy import of stencils/icon-pack-icons.js
+  let packRenderToken = 0; // guards async tab renders against tab switches
+  let packActiveGroup = 'all'; // 'all' | pack group slug
+  let packSearchQuery = '';
+  let packVisibleLimit = 64;
   let searchQuery = '';
   let iconSize = ICON_SIZE_LEVELS.includes(app.workspacePrefs?.libraryIconSize)
     ? app.workspacePrefs.libraryIconSize
@@ -68,6 +76,20 @@ export function initLibraryPanel(app) {
     if (!stencilId) return;
     recentIds = [stencilId, ...recentIds.filter((id) => id !== stencilId)].slice(0, 14);
     saveJsonList(RECENT_STENCILS_KEY, recentIds);
+  }
+
+  // Saved recents/favourites may reference lazy icon-pack ids; loading the
+  // pack lets the Recent/Favorite pills show them instead of skipping them.
+  {
+    const needsPack = [...recentIds, ...favorites].some((id) => typeof id === 'string' && id.startsWith(ICON_PACK_ID_PREFIX));
+    if (needsPack) {
+      ensureIconPackLoaded().then(
+        () => {
+          if (!panel.classList.contains('wb-hidden')) render();
+        },
+        () => {} // the DevOps Pack tab surfaces load errors on its own
+      );
+    }
   }
 
   function toggleFavorite(stencilId) {
@@ -108,6 +130,7 @@ export function initLibraryPanel(app) {
       <div class="wb-tabs" role="tablist">
         <button type="button" role="tab" class="wb-tab ${activeTab === 'stencils' ? 'active' : ''}" data-tab="stencils">Icons (${ALL_STENCILS.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'lucide' ? 'active' : ''}" data-tab="lucide">Lucide Icons (${LUCIDE_STENCILS.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'iconpack' ? 'active' : ''}" data-tab="iconpack">DevOps Pack (2015)</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'packs' ? 'active' : ''}" data-tab="packs">Diagram Packs</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'user' ? 'active' : ''}" data-tab="user">My Library (${app.userLibrary.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'templates' ? 'active' : ''}" data-tab="templates">Templates</button>
@@ -134,13 +157,16 @@ export function initLibraryPanel(app) {
     const content = panel.querySelector('#wb-library-content');
     if (activeTab === 'stencils') renderStencilsTab(content);
     else if (activeTab === 'lucide') renderLucideIconsTab(content);
+    else if (activeTab === 'iconpack') renderIconPackTab(content);
     else if (activeTab === 'packs') renderDiagramPacksTab(content);
     else if (activeTab === 'user') renderUserLibraryTab(content);
     else renderTemplatesTab(content);
   }
 
   function renderStencilsTab(content) {
-    const categories = getAllCategories();
+    // pack/* categories belong to the DevOps Pack tab (38 groups would flood
+    // this strip); the pack icons stay reachable here via the All search.
+    const categories = getAllCategories().filter((c) => !c.startsWith('pack/'));
     content.innerHTML = `
       <div class="wb-lib-controls">
         <div class="wb-lib-search-row">
@@ -254,7 +280,13 @@ export function initLibraryPanel(app) {
         const favItems = ALL_STENCILS.filter((s) => favorites.has(s.id));
         groups = favItems.length ? [{ category: '★ Favorite Icons', items: favItems }] : [];
       } else if (activeCategory === 'recent') {
-        const recItems = recentIds.map((id) => getStencilById(id)).filter(Boolean);
+        // getStencilById falls back to the first stencil for unknown ids, so
+        // an unloaded lazy `pk-` id would render — and place — the WRONG
+        // icon. Skip ids that have no registry entry yet; the pack loads on
+        // panel init when recents/favourites reference it, and they reappear.
+        const recItems = recentIds
+          .map((id) => (isStencilLoaded(id) ? getStencilById(id) : null))
+          .filter(Boolean);
         groups = recItems.length ? [{ category: '🕒 Recently Used', items: recItems }] : [];
       } else {
         groups = getStencilsByCategory(activeCategory, searchQuery);
@@ -564,6 +596,188 @@ export function initLibraryPanel(app) {
         lucideActiveCategory = pill.dataset.lcat;
         content.querySelectorAll('[data-lcat]').forEach((p) =>
           p.classList.toggle('active', p.dataset.lcat === lucideActiveCategory)
+        );
+        updateResults();
+      });
+    });
+
+    updateResults();
+  }
+
+  // DevOps, Cloud, Networking & Teaching Icon Pack (2015 icons, 38 groups).
+  // The pack module (~2.6 MB) is imported lazily on first open — it registers
+  // its stencils into the shared registry, so placement, canvas render, SVG
+  // export and the All search all pick them up from then on.
+  async function renderIconPackTab(content) {
+    packRenderToken++;
+    const token = packRenderToken;
+    content.innerHTML = `<p class="wb-muted">Loading icon pack (2.6 MB, first open only)…</p>`;
+    let m;
+    try {
+      m = iconPackModule || (await ensureIconPackLoaded());
+    } catch (err) {
+      content.innerHTML = `<p class="wb-muted">Icon pack failed to load: ${escapeXml(String(err?.message || err))}</p>`;
+      return;
+    }
+    iconPackModule = m;
+    if (token !== packRenderToken || activeTab !== 'iconpack') return;
+    const stencils = m.PACK_STENCILS;
+    const groupBySlug = Object.fromEntries(m.PACK_GROUPS.map((g) => [g.slug, g]));
+    const groupLabel = (slug) => groupBySlug[slug]?.label || slug;
+
+    content.innerHTML = `
+      <div class="wb-lib-controls">
+        <div class="wb-lib-search-row">
+          <input type="search" id="pack-search" class="wb-input" placeholder="Search pack icons: EC2, kubectl, ansible, firewall, chaos…" value="${escapeXml(packSearchQuery)}" aria-label="Search Icon Pack"/>
+        </div>
+        <div class="wb-cat-pills" role="group" aria-label="Icon Pack Groups">
+          <button type="button" class="wb-cat-pill ${packActiveGroup === 'all' ? 'active' : ''}" data-pcat="all">All (${stencils.length})</button>
+          ${m.PACK_GROUPS
+            .map(
+              (g) =>
+                `<button type="button" class="wb-cat-pill ${packActiveGroup === g.slug ? 'active' : ''}" data-pcat="${escapeXml(g.slug)}">${escapeXml(g.label)} (${g.count})</button>`
+            )
+            .join('')}
+        </div>
+      </div>
+      <div id="pack-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Icon Pack"></div>
+    `;
+
+    const searchInput = content.querySelector('#pack-search');
+    const resultsBox = content.querySelector('#pack-results');
+    const size = ICON_SIZE_PRESETS[iconSize];
+
+    const renderCardHtml = (s) => {
+      const isFav = favorites.has(s.id);
+      // Embed the baked 64x64 markup directly — defs ids are per-icon
+      // namespaced, so several previews can coexist in one DOM.
+      const svg = s.svgInner.replace('<svg ', `<svg width="${size.iconH}" height="${size.iconH}" `);
+      return `
+        <div class="wb-stencil-item" role="option" tabindex="0" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(groupLabel(s.category.slice('pack/'.length)))}) · DevOps, Cloud & Teaching Icon Pack — Click to place, drag onto canvas">
+          <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
+          ${svg}
+          <span>${escapeXml(s.name)}</span>
+        </div>
+      `;
+    };
+
+    const updateResults = () => {
+      const tokens = packSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const inGroup = stencils.filter((s) => packActiveGroup === 'all' || s.category === `pack/${packActiveGroup}`);
+      const matched = inGroup
+        .map((s) => ({ s, score: scoreStencilSearchMatch(s, tokens) }))
+        .filter((m2) => m2.score > 0);
+      if (tokens.length > 0) matched.sort((a, b) => b.score - a.score);
+
+      const groups = new Map();
+      for (const { s } of matched) {
+        const slug = s.category.slice('pack/'.length);
+        if (!groups.has(slug)) groups.set(slug, []);
+        groups.get(slug).push(s);
+      }
+
+      if (groups.size === 0) {
+        resultsBox.innerHTML = `<p class="wb-muted">No matching pack icons for "${escapeXml(packSearchQuery || groupLabel(packActiveGroup))}".</p>`;
+        return;
+      }
+
+      const totalCount = matched.length;
+      const isWindowed = packActiveGroup === 'all' && tokens.length === 0 && totalCount > packVisibleLimit;
+      const htmlParts = [];
+      let renderedCount = 0;
+      for (const [slug, items] of groups) {
+        const remaining = isWindowed ? Math.max(0, packVisibleLimit - renderedCount) : items.length;
+        if (remaining <= 0) break;
+        const slice = items.slice(0, remaining);
+        renderedCount += slice.length;
+        htmlParts.push(`
+          <div class="wb-lib-category-section">
+            <div class="wb-lib-category-header">
+              <span>${escapeXml(groupLabel(slug))}</span>
+              <span class="wb-lib-category-count">${items.length}</span>
+            </div>
+            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
+              ${slice.map(renderCardHtml).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (isWindowed && renderedCount < totalCount) {
+        htmlParts.push(`
+          <button type="button" class="wb-btn wb-sm" id="pack-load-more" style="width:100%;margin-top:8px;">
+            Show All ${totalCount} Icons (${totalCount - renderedCount} more)
+          </button>
+        `);
+      }
+
+      htmlParts.push(`
+        <div class="wb-muted" style="font-size:10px;margin-top:10px;padding-top:6px;border-top:1px solid var(--border-subtle);">
+          <strong>DevOps Pack:</strong> 2015 icons · 38 groups · user-supplied offline pack, license unstated · gradients baked in, rasterized on demand
+        </div>
+      `);
+
+      resultsBox.innerHTML = htmlParts.join('');
+
+      resultsBox.querySelector('#pack-load-more')?.addEventListener('click', () => {
+        packVisibleLimit = 999;
+        updateResults();
+      });
+
+      resultsBox.querySelectorAll('[data-fav-stencil]').forEach((starBtn) => {
+        starBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          toggleFavorite(starBtn.dataset.favStencil);
+          updateResults();
+        });
+      });
+
+      const cards = Array.from(resultsBox.querySelectorAll('[data-stencil]'));
+      cards.forEach((item, idx) => {
+        item.addEventListener('click', () => {
+          recordRecent(item.dataset.stencil);
+          app.placeStencil(item.dataset.stencil);
+        });
+        item.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            recordRecent(item.dataset.stencil);
+            app.placeStencil(item.dataset.stencil);
+          } else if (ev.key === 'ArrowRight' && cards[idx + 1]) {
+            ev.preventDefault();
+            cards[idx + 1].focus();
+          } else if (ev.key === 'ArrowLeft' && cards[idx - 1]) {
+            ev.preventDefault();
+            cards[idx - 1].focus();
+          } else if (ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            if (cards[idx + step]) cards[idx + step].focus();
+          } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            if (cards[idx - step]) cards[idx - step].focus();
+          }
+        });
+        item.addEventListener('dragstart', (ev) => {
+          recordRecent(item.dataset.stencil);
+          ev.dataTransfer?.setData('text/plain', `stencil:${item.dataset.stencil}`);
+        });
+      });
+    };
+
+    searchInput?.addEventListener('input', (e) => {
+      packSearchQuery = e.target.value;
+      packVisibleLimit = 64;
+      updateResults();
+    });
+
+    content.querySelectorAll('[data-pcat]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        packActiveGroup = pill.dataset.pcat;
+        packVisibleLimit = 64;
+        content.querySelectorAll('[data-pcat]').forEach((p) =>
+          p.classList.toggle('active', p.dataset.pcat === packActiveGroup)
         );
         updateResults();
       });

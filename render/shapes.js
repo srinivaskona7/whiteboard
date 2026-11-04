@@ -1,6 +1,6 @@
 // render/shapes.js
 import { FONT_MAP, resolveThemeColor } from './themes.js';
-import { getStencilById } from '../stencils/index.js';
+import { getStencilById, isStencilLoaded, ensureIconPackLoaded, ICON_PACK_ID_PREFIX } from '../stencils/index.js';
 import {
   getConnectorPoints,
   getPointAlongConnector,
@@ -857,6 +857,26 @@ export function drawShapeElement(ctx, el, themeTokens) {
   const { x, y, w, h } = el;
 
   if (el.type === 'stencil') {
+    // Icon-pack stencils load lazily; before the chunk arrives a saved `pk-`
+    // element has no registry entry — kick the load, draw a placeholder for
+    // this frame, and re-render when the pack registers.
+    if (el.stencilId?.startsWith(ICON_PACK_ID_PREFIX) && !isStencilLoaded(el.stencilId)) {
+      ensureIconPackLoaded().then(
+        () => window.__WHITEBOARD_APP__?.requestRender?.(),
+        () => {} // chunk load failed: placeholder stays; next render retries
+      );
+      ctx.save();
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.45)';
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      // roundRect exists in every target browser; guard for Node stubs.
+      if (typeof ctx.roundRect === 'function') ctx.roundRect(x + 3, y + 3, w - 6, h - 6, 8);
+      else ctx.rect(x + 3, y + 3, w - 6, h - 6);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     const stencil = getStencilById(el.stencilId);
     if (stencil.isCard && fill === 'transparent') {
       ctx.fillStyle = themeTokens.name === 'dark' ? '#1e293b' : '#ffffff';
