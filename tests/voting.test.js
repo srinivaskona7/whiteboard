@@ -306,6 +306,24 @@ describe('Vote casting paths', () => {
     assert.equal(page.elements.find((e) => e.id === el.id).votes, 1);
   });
 
+  test('a viewer at the cap is warned from the last broadcast count, without casting', () => {
+    const { scene, page, el } = sceneWithSticky();
+    const { app, casts, calls } = votingApp(scene, page, { viewer: true });
+    const voting = initVotingUI(app);
+    voting.applyRemoteSession({ active: true });
+    // The local view already shows the maximum from the server's broadcasts.
+    voting.applyRemoteVote(page.id, el.id, MAX_VOTES_PER_ELEMENT);
+
+    const ok = voting.castVoteOn(el);
+    assert.equal(ok, false);
+    assert.equal(casts.length, 0, 'an at-cap click must not travel to the server');
+    assert.ok(
+      calls.toasts.some((m) => m.includes('maximum')),
+      `no cap feedback: ${JSON.stringify(calls.toasts)}`
+    );
+    assert.equal(page.elements.find((e) => e.id === el.id).votes, MAX_VOTES_PER_ELEMENT);
+  });
+
   test('a board owner commits locally and never uses the cast channel', () => {
     const { scene, page, el } = sceneWithSticky();
     const { app, casts, calls } = votingApp(scene, page, { viewer: false });

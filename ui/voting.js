@@ -82,6 +82,15 @@ export function initVotingUI(app) {
   function castVoteOn(el) {
     if (!active || !el) return false;
     if (app.collab ? !app.collab.canEditBoard() : false) {
+      // The local count is the server's last broadcast, so it is the right
+      // thing to warn from even though the server stays authoritative.
+      if ((el.votes || 0) >= MAX_VOTES_PER_ELEMENT) {
+        app.dialogs?.showToast(
+          `"${String(el.text || '').trim().split('\n')[0] || el.name || 'item'}" already has the maximum of ${MAX_VOTES_PER_ELEMENT} votes.`,
+          'info'
+        );
+        return false;
+      }
       // Viewers never mutate locally: the server owns the count and its
       // authoritative broadcast brings the dot up for everyone, sender
       // included. An optimistic dot would linger after a rejection (the
