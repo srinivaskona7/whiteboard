@@ -35,6 +35,26 @@ export function stripSceneTeacherNotes(scene) {
   return clone;
 }
 
+// While a secret vote session is live the server is the ONLY holder of the
+// counts. Every scene handed to a client — REST join, WS welcome, scene
+// broadcasts — must drop el.votes, or "hidden until reveal" leaks to anyone
+// watching their own WS frames. (Strip happens for the teacher too: their
+// local counts are stale during the session; the reveal is authoritative.)
+export function stripSceneVoteCounts(scene) {
+  if (!scene || typeof scene !== 'object') return scene;
+  const clone = structuredClone(scene);
+  if (Array.isArray(clone.pages)) {
+    for (const p of clone.pages) {
+      if (Array.isArray(p.elements)) {
+        for (const el of p.elements) {
+          if (el && typeof el === 'object') delete el.votes;
+        }
+      }
+    }
+  }
+  return clone;
+}
+
 export class CollabStore {
   constructor(storagePath = null) {
     this.storagePath = storagePath;
@@ -196,6 +216,7 @@ export class CollabStore {
         active: false,
         updatedAt: now,
       },
+      spotlightState: null,
     };
     this.rooms.set(roomId, room);
     this._saveToDisk();
@@ -222,6 +243,25 @@ export class CollabStore {
     return 'viewer'; // Room ID alone NEVER grants editing rights
   }
 
+  // The reveal payload: every element that collected votes this session, with
+  // its page, so clients can rebuild the counts the server held back.
+  _collectVoteCounts(room) {
+    const counts = [];
+    for (const p of room.scene?.pages || []) {
+      for (const el of p.elements || []) {
+        if (el && Number(el.votes) > 0) counts.push({ pageId: p.id, elementId: el.id, votes: el.votes });
+      }
+    }
+    return counts;
+  }
+
+  // A teacher scene sync during a secret session would clobber the server's
+  // authoritative tally with the teacher's stale local counts — snapshot and
+  // re-apply them after the merge.
+  _voteCountsProtected(room) {
+    return Boolean(room.voteSession?.active && room.voteSession?.secret);
+  }
+
   getRoomPublicState(roomId, token = '', roleHint = '') {
     const room = this.rooms.get(roomId);
     if (!room) return { status: 404, error: 'Classroom room not found.' };
@@ -233,7 +273,7 @@ export class CollabStore {
       return { status: 410, error: 'Classroom room has expired.' };
     }
     const role = this.resolveRole(room, token, roleHint);
-    const safeScene = role === 'teacher' ? room.scene : stripSceneTeacherNotes(room.scene);
+    const safeScene = sceneForRole(this, room, role);
     return {
       status: 200,
       data: {
@@ -248,6 +288,7 @@ export class CollabStore {
         teacherViewport: room.teacherViewport,
         timerState: room.timerState || null,
         voteSession: room.voteSession || null,
+        spotlightState: room.spotlightState || null,
         ...(role === 'teacher'
           ? {
               editorToken: room.editorToken,
@@ -376,7 +417,10 @@ export class CollabStore {
           type: 'vote:cast',
           pageId: page.id,
           elementId: target.id,
-          votes,
+          // While the session is secret the count travels as null — the room
+          // keeps the authoritative tally, and nothing but the reveal exposes
+          // it. Counts must never leak on the wire (devtools/WS frames).
+          votes: room.voteSession.secret ? null : votes,
           senderClientId: op.clientId,
         },
       };
@@ -408,12 +452,23 @@ export class CollabStore {
     }
 
     if (op.type === 'vote:session') {
-      room.voteSession = { active: Boolean(op.active), updatedAt: Date.now() };
+      // Strict true: Boolean('yes') is true, and a garbage string must never
+      // flip a classroom into hidden-votes mode.
+      const prev = room.voteSession || { active: false, secret: false };
+      room.voteSession = { active: Boolean(op.active), secret: op.secret === true, updatedAt: Date.now() };
+      // Closing the session (or turning secret off) is the reveal: the
+      // server's authoritative tally finally travels, so clients rebuild
+      // their counts. Everything the clients had until now was null.
+      const counts =
+        !room.voteSession.active || (!room.voteSession.secret && prev.secret)
+          ? this._collectVoteCounts(room)
+          : null;
       return {
         ok: true,
         broadcast: {
           type: 'vote:session',
           session: room.voteSession,
+          counts,
           senderClientId: op.clientId,
         },
       };
@@ -505,6 +560,18 @@ export class CollabStore {
       };
     }
 
+    if (op.type === 'spotlight:sync') {
+      room.spotlightState = this._sanitizeSpotlightState(op.spotlight);
+      return {
+        ok: true,
+        broadcast: {
+          type: 'spotlight:synced',
+          spotlight: room.spotlightState,
+          senderClientId: op.clientId,
+        },
+      };
+    }
+
     if (op.type === 'teacher:camera' && role === 'teacher') {
       room.teacherViewport = {
         pageId: op.pageId || room.scene.activePageId,
@@ -525,7 +592,50 @@ export class CollabStore {
     return { ok: false, code: 400, error: 'Unsupported operation.' };
   }
 
+  // The spotlight mirrors the teacher's lens to viewers. Every field is
+  // coerced/clamped here — the client re-derives nothing, so a hostile or
+  // buggy op must never push NaN geometry or absurd radii at every viewer.
+  _sanitizeSpotlightState(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    const num = (v, d, min, max) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
+    };
+    const finitePoint = (p) => {
+      if (!p || typeof p !== 'object') return null;
+      const x = Number(p.x);
+      const y = Number(p.y);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    };
+    const pinWorld = finitePoint(sp.pinWorld);
+    return {
+      active: Boolean(sp.active),
+      x: num(sp.x, 0, -1e6, 1e6),
+      y: num(sp.y, 0, -1e6, 1e6),
+      radius: num(sp.radius, 180, 20, 2000),
+      magnifier: Boolean(sp.magnifier),
+      magnifierScale: num(sp.magnifierScale, 2, 1, 4),
+      dimOpacity: num(sp.dimOpacity, 0.72, 0, 0.95),
+      dimBackground: sp.dimBackground !== false,
+      pinned: Boolean(sp.pinned),
+      pinWorld,
+      pinElementId: typeof sp.pinElementId === 'string' ? sp.pinElementId.slice(0, 64) : null,
+      updatedAt: Date.now(),
+    };
+  }
+
   _mergeSceneIntoRoom(room, incomingScene, incomingDeletedIds = []) {
+    // Secret voting: the room scene holds the only live tally. A teacher sync
+    // carries stale (pre-session) counts — snapshot before, restore after.
+    const protectVotes = this._voteCountsProtected(room);
+    const voteSnapshot = new Map();
+    if (protectVotes) {
+      for (const p of room.scene.pages) {
+        for (const el of p.elements || []) {
+          if (Number.isFinite(el.votes)) voteSnapshot.set(el.id, el.votes);
+        }
+      }
+    }
     const delSet = new Set([...(room.deletedIds || []), ...incomingDeletedIds]);
     room.deletedIds = Array.from(delSet);
     room.scene.title = incomingScene.title || room.scene.title;
@@ -572,6 +682,14 @@ export class CollabStore {
       }
     }
     room.scene.pages = mergedPages;
+    if (protectVotes) {
+      for (const p of room.scene.pages) {
+        for (const el of p.elements || []) {
+          if (voteSnapshot.has(el.id)) el.votes = voteSnapshot.get(el.id);
+          else delete el.votes;
+        }
+      }
+    }
   }
 }
 
@@ -770,6 +888,14 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// The scene a client should receive for their role: teacher notes for
+// teachers only, live vote counts only outside a secret session.
+function sceneForRole(store, room, role) {
+  let scene = role === 'teacher' ? room.scene : stripSceneTeacherNotes(room.scene);
+  if (store._voteCountsProtected(room)) scene = stripSceneVoteCounts(scene);
+  return scene;
+}
+
 export function attachCollabRoutes(httpServer, store = new CollabStore()) {
   const broadcastToRoom = (roomId, msgObj, excludeSocket = null) => {
     for (const [sock, meta] of store.clients.entries()) {
@@ -785,6 +911,23 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
                 elements: msgObj.elements.map((el) => {
                   const copy = { ...el };
                   delete copy.teacherNotes;
+                  return copy;
+                }),
+              };
+            }
+          }
+          // Secret voting: no client — the teacher included — may receive live
+          // counts; the room scene in the store is the only tally until reveal.
+          const room = store.rooms.get(roomId);
+          if (room && store._voteCountsProtected(room)) {
+            if ((msgObj.type === 'scene:synced' || msgObj.type === 'room:welcome') && payload.scene) {
+              payload = { ...payload, scene: stripSceneVoteCounts(payload.scene) };
+            } else if (msgObj.type === 'elements:upserted' && Array.isArray(payload.elements)) {
+              payload = {
+                ...payload,
+                elements: payload.elements.map((el) => {
+                  const copy = { ...el };
+                  delete copy.votes;
                   return copy;
                 }),
               };
@@ -1002,11 +1145,12 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           role,
           clientId,
           sessionId: sessionMeta.sessionId,
-          scene: role === 'teacher' ? room.scene : stripSceneTeacherNotes(room.scene),
+          scene: sceneForRole(store, room, role),
           deletedIds: room.deletedIds || [],
           teacherViewport: room.teacherViewport,
           timerState: room.timerState || null,
           voteSession: room.voteSession || null,
+          spotlightState: room.spotlightState || null,
         })
       );
       broadcastPresence(roomId);

@@ -7,6 +7,7 @@ import {
   clearVotes,
   totalVotes,
   tally,
+  areVoteCountsHidden,
 } from '../scene/voting.js';
 import { createScene, createElement, cloneElement } from '../scene/model.js';
 import { serializeScene, parseSceneJson } from '../scene/storage.js';
@@ -155,6 +156,63 @@ describe('Dot voting collab ops', () => {
     const denied = store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', elementId: el.id });
     assert.equal(denied.ok, false);
     assert.equal(denied.code, 403);
+  });
+
+  test('a secret session hides counts on the wire, the room keeps the tally', () => {
+    const { store, roomId, el } = setupRoom();
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+
+    // The cast broadcast carries null, not the count.
+    const cast = store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', elementId: el.id });
+    assert.equal(cast.ok, true);
+    assert.equal(cast.broadcast.votes, null, 'the wire never carries the live count');
+
+    // ...but the server's own scene still tallies for the reveal.
+    const room = store.rooms.get(roomId);
+    const target = room.scene.pages[0].elements.find((e) => e.id === el.id);
+    assert.equal(target.votes, 1, 'the room scene is the only tally');
+
+    // Every client-facing scene is stripped: REST join for any role.
+    for (const [label, token] of [['teacher', room.teacherToken], ['viewer', '']]) {
+      const pub = store.getRoomPublicState(roomId, token);
+      const seenEl = pub.data.scene.pages[0].elements.find((e) => e.id === el.id);
+      assert.equal(seenEl.votes, undefined, `${label} join payload must not carry counts`);
+    }
+
+    // A teacher scene sync mid-secret cannot clobber the tally with stale
+    // local counts.
+    const teacherScene = structuredClone(store.rooms.get(roomId).scene);
+    const teacherEl = teacherScene.pages[0].elements.find((e) => e.id === el.id);
+    teacherEl.votes = 0;
+    teacherEl.updatedAt = Date.now();
+    store.applyRoomOperation(roomId, 'teacher', { type: 'scene:sync', scene: teacherScene });
+    const afterMerge = store.rooms.get(roomId).scene.pages[0].elements.find((e) => e.id === el.id);
+    assert.equal(afterMerge.votes, 1, 'merge protection restores the secret tally');
+  });
+
+  test('closing or revealing the session broadcasts the tallied counts', () => {
+    const { store, roomId, el } = setupRoom();
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', elementId: el.id });
+    store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', elementId: el.id });
+
+    // Reveal without closing (setSecret(false) parity).
+    const revealed = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true });
+    assert.equal(revealed.broadcast.counts.length, 1);
+    assert.equal(revealed.broadcast.counts[0].votes, 2);
+    assert.equal(revealed.broadcast.counts[0].elementId, el.id);
+
+    // Closing also reveals (a fresh secret session accumulates from there).
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', elementId: el.id });
+    const closed = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: false });
+    assert.equal(closed.broadcast.session.active, false);
+    assert.equal(closed.broadcast.counts.length, 1);
+    assert.equal(closed.broadcast.counts[0].votes, 3, 'the tally spans sessions until cleared');
+
+    // Opening a session never carries counts.
+    const reopened = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    assert.equal(reopened.broadcast.counts, null);
   });
 });
 
@@ -336,5 +394,141 @@ describe('Vote casting paths', () => {
     assert.equal(casts.length, 0, 'the cast channel is for viewers only');
     assert.equal(calls.commits, 1, 'the vote went through commitChange');
     assert.ok(app.history.canUndo(page), 'the vote is a history step');
+  });
+});
+
+describe('Secret (hidden-until-reveal) voting', () => {
+  const secretApp = (scene, page, { viewer = false } = {}) => {
+    const history = new HistoryManager();
+    history.initPage(page);
+    const sessions = [];
+    const calls = { toasts: [] };
+    const app = {
+      scene,
+      getPage: () => page,
+      history,
+      commitChange() {
+        history.record(page);
+      },
+      scheduleAutosave() {},
+      requestRender() {},
+      updateUI() {},
+      collab: {
+        canEditBoard: () => !viewer,
+        broadcastVoteCast() {},
+        broadcastVoteSession: (active, secret) => sessions.push([active, secret]),
+        broadcastSceneChange() {},
+      },
+      dialogs: {
+        showToast(msg) {
+          calls.toasts.push(msg);
+        },
+      },
+    };
+    return { app, sessions, calls };
+  };
+
+  test('the teacher hides counts mid-session and reveals without closing', () => {
+    const { scene, page } = sceneWithSticky();
+    const { app, sessions } = secretApp(scene, page);
+    const voting = initVotingUI(app);
+    voting.start();
+    assert.equal(voting.areCountsHidden(), false);
+
+    voting.setSecret(true);
+    assert.equal(voting.isSecret(), true);
+    assert.equal(voting.areCountsHidden(), true, 'counts must be hidden while secret');
+    assert.deepEqual(sessions.at(-1), [true, true], 'the secret flag rides the session broadcast');
+    assert.equal(areVoteCountsHidden(), true, 'the renderer flag is set');
+
+    voting.setSecret(false);
+    assert.equal(voting.areCountsHidden(), false, 'reveal shows the counts again');
+    assert.deepEqual(sessions.at(-1), [true, false]);
+    assert.equal(voting.isActive(), true, 'reveal does not close the session');
+  });
+
+  test('closing the session always reveals — results are announced, counts reappear', () => {
+    const { scene, page } = sceneWithSticky();
+    const el = page.elements[0];
+    castVote(el);
+    const { app, sessions, calls } = secretApp(scene, page);
+    const voting = initVotingUI(app);
+    voting.start();
+    voting.setSecret(true);
+
+    voting.stop();
+    assert.equal(voting.areCountsHidden(), false, 'stop is the reveal');
+    assert.equal(voting.isSecret(), false);
+    assert.deepEqual(sessions.at(-1), [false, false], 'the closed session clears the secret flag');
+    assert.ok(calls.toasts.some((m) => m.includes('Voting results')), `results must be announced: ${JSON.stringify(calls.toasts)}`);
+  });
+
+  test('a viewer receives the secret flag and cannot change it', () => {
+    const { scene, page } = sceneWithSticky();
+    const { app, sessions } = secretApp(scene, page, { viewer: true });
+    const voting = initVotingUI(app);
+
+    voting.applyRemoteSession({ active: true, secret: true });
+    assert.equal(voting.isActive(), true);
+    assert.equal(voting.areCountsHidden(), true, 'a viewer hides the counts too');
+
+    voting.setSecret(false);
+    assert.equal(voting.areCountsHidden(), true, 'students cannot reveal the votes');
+    assert.equal(sessions.length, 0, 'a rejected toggle must not broadcast');
+
+    // The teacher's reveal arrives for everyone.
+    voting.applyRemoteSession({ active: true, secret: false });
+    assert.equal(voting.areCountsHidden(), false);
+
+    // And a fresh non-secret session starts revealed.
+    voting.applyRemoteSession({ active: false });
+    voting.applyRemoteSession({ active: true });
+    assert.equal(voting.areCountsHidden(), false);
+  });
+
+  test('a hidden cast (votes null) applies nothing; the reveal rebuilds counts', () => {
+    const { scene, page } = sceneWithSticky();
+    const { app } = secretApp(scene, page, { viewer: true });
+    const voting = initVotingUI(app);
+    const el = page.elements[0];
+
+    voting.applyRemoteSession({ active: true, secret: true });
+    // Server-authoritative but hidden: null must not zero or bump anything.
+    el.votes = 0;
+    voting.applyRemoteVote(page.id, el.id, null);
+    assert.equal(el.votes, 0, 'a null count leaves the local tally untouched');
+
+    // The reveal payload is the first time counts reach the client.
+    voting.applyRemoteSession({ active: true, secret: false, counts: [{ pageId: page.id, elementId: el.id, votes: 4 }] });
+    assert.equal(el.votes, 4, 'reveal counts rebuild the local scene');
+    assert.equal(voting.areCountsHidden(), false);
+
+    // Garbage counts never poison the scene.
+    voting.applyRemoteSession({ active: true, secret: true });
+    voting.applyRemoteSession({ active: false, counts: [{ pageId: page.id, elementId: el.id, votes: 'x' }] });
+    assert.equal(el.votes, 0, 'a non-numeric reveal count falls back to 0');
+  });
+
+  test('setSecret outside an active session is a no-op', () => {
+    const { scene, page } = sceneWithSticky();
+    const { app, sessions } = secretApp(scene, page);
+    const voting = initVotingUI(app);
+    voting.setSecret(true);
+    assert.equal(voting.isSecret(), false);
+    assert.equal(sessions.length, 0);
+  });
+
+  test('the server carries the secret flag in the room-wide vote:session broadcast', () => {
+    const store = new CollabStore(null);
+    const { scene } = sceneWithSticky();
+    const { roomId } = store.createRoom(scene);
+    const opened = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    assert.equal(opened.ok, true);
+    assert.equal(opened.broadcast.session.secret, true, 'the broadcast must carry the secret flag');
+    assert.equal(opened.broadcast.session.active, true);
+
+    // Garbage secret values normalize to false, never to hidden-by-default.
+    const garbage = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: 'yes' });
+    assert.equal(garbage.broadcast.session.secret, false);
   });
 });

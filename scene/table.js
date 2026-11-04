@@ -183,6 +183,63 @@ export function setCellColor(el, r, c, color) {
   return true;
 }
 
+// --- Rubber-band cell ranges (Excel-like multi-cell selection) ---
+// A range is the inclusive rectangle {r0, c0, r1, c1}, always normalized so
+// r0 <= r1 and c0 <= c1. Ranges target the selection the user dragged, not a
+// scope button: when a range exists, alignment and fill apply to it.
+
+export function normalizeCellRange(r0, c0, r1, c1) {
+  return {
+    r0: Math.min(r0, r1),
+    c0: Math.min(c0, c1),
+    r1: Math.max(r0, r1),
+    c1: Math.max(c0, c1),
+  };
+}
+
+// Clamps a range to the table's real grid so a drag that left the bounds
+// still produces a valid selection, never an out-of-grid write. Read-only:
+// display paths call this on every render, so it must not normalize the
+// element the way the setters do.
+export function clampCellRange(el, range) {
+  if (!el || el.type !== 'table' || !range) return null;
+  const rows = Math.max(1, el.rows || 1);
+  const cols = Math.max(1, el.cols || 1);
+  const r0 = Math.max(0, Math.min(range.r0, rows - 1));
+  const r1 = Math.max(0, Math.min(range.r1, rows - 1));
+  const c0 = Math.max(0, Math.min(range.c0, cols - 1));
+  const c1 = Math.max(0, Math.min(range.c1, cols - 1));
+  return normalizeCellRange(r0, c0, r1, c1);
+}
+
+export function cellRangeArea(range) {
+  if (!range) return 0;
+  return (range.r1 - range.r0 + 1) * (range.c1 - range.c0 + 1);
+}
+
+export function setCellRangeAlignment(el, range, align) {
+  if (!el || el.type !== 'table' || !CELL_ALIGNS.includes(align)) return false;
+  const r = clampCellRange(el, range);
+  if (!r) return false;
+  const grid = styleGridForWrite(el, 'cellAligns');
+  for (let row = r.r0; row <= r.r1; row++) {
+    for (let col = r.c0; col <= r.c1; col++) grid[row][col] = align;
+  }
+  return true;
+}
+
+export function setCellRangeColor(el, range, color) {
+  if (!el || el.type !== 'table') return false;
+  const r = clampCellRange(el, range);
+  if (!r) return false;
+  const grid = styleGridForWrite(el, 'cellColors');
+  for (let row = r.r0; row <= r.r1; row++) {
+    for (let col = r.c0; col <= r.c1; col++) grid[row][col] = color || '';
+  }
+  return true;
+}
+
+
 export function setRowColor(el, r, color) {
   if (!el || el.type !== 'table') return false;
   const { rows, cols } = ensureCellGrid(el);

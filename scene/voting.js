@@ -5,6 +5,17 @@
 
 export const MAX_VOTES_PER_ELEMENT = 3;
 
+// Hidden-until-reveal (FigJam-style vote secrecy): while a SECRET voting
+// session is running, nobody — teacher included — sees live counts; the
+// reveal (or closing the session) shows them. The renderer reads this flag
+// synchronously; ui/voting.js owns it and keeps it in step with the
+// room-wide vote:session broadcast.
+export const voteVisibility = { countsHidden: false };
+
+export function areVoteCountsHidden() {
+  return voteVisibility.countsHidden === true;
+}
+
 // Add one vote to an element, capped per element. Returns the new count,
 // which stays unchanged when the cap was already reached.
 export function castVote(el, { perElementCap = MAX_VOTES_PER_ELEMENT } = {}) {

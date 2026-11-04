@@ -77,6 +77,7 @@ import { initCommandPalette } from './ui/palette.js';
 import { initAnimationUI } from './ui/animation.js';
 import { initNotebookView } from './ui/notebook.js';
 import { initContextMenu, buildContextItems } from './ui/context-menu.js';
+import { buildWorkflow } from './scene/workflow-builder.js';
 import { initCursorChatUI } from './ui/cursor-chat.js';
 import { initDialogs } from './ui/dialogs.js';
 import { ClassroomTool, initClassroomUI, parseClassroomHash } from './ui/classroom.js';
@@ -118,6 +119,7 @@ export class WhiteboardApp {
     this.placementPreview = null;
     this.smartGuides = [];
     this.marqueeBox = null;
+    this.tableSelection = null; // Excel-like cell range: {elId, r0, c0, r1, c1}
     this.cropState = null;
     this.activeSubInteraction = null;
     this.spacePressed = false;
@@ -162,7 +164,12 @@ export class WhiteboardApp {
       magnifierScale: 2,
       dimOpacity: 0.72,
       dimBackground: true,
+      // True while the lens mirrors a teacher over collab: a viewer's own
+      // pointer must never move it or be swallowed by its mode guards.
+      remote: false,
     };
+    this._spotlightSyncAt = 0; // last collab spotlight mirror (throttled)
+    this._spotlightTrailingTimer = null; // guaranteed trailing mirror
     this.presentState = { active: false, slideIndex: 0, revealStep: 0 };
     this.viewMode = 'diagram'; // 'diagram' | 'notebook' — a projection over the same document
     this._lastFatalErrorTime = 0;
@@ -750,6 +757,7 @@ export class WhiteboardApp {
       anchoredReactions,
       smartGuides: this.smartGuides,
       marqueeBox: this.marqueeBox,
+      tableSelection: this.tableSelection,
       laserTrail: activeTrail,
       studentPointers: this.studentPointers,
       classroomPointers: this.studentPointers,
@@ -1539,6 +1547,46 @@ export class WhiteboardApp {
     return this.applyTemplate(tplId);
   }
 
+  // Insert one step-by-step workflow (Linux, Git, Ansible, Networking) as native, editable
+  // elements. The data file is loaded on demand so it never weighs on first paint.
+  async insertWorkflow(workflowId, { present = false, at = null } = {}) {
+    if (!this.collab.canEditBoard()) return;
+    let data;
+    try {
+      data = await import('./templates/workflows-data.js');
+    } catch (err) {
+      this.dialogs.showToast('Could not load workflows. Check your connection and try again.');
+      return;
+    }
+    const topic = data.WORKFLOW_TOPICS.find((t) => t.workflows.some((w) => w.id === workflowId));
+    const wf = topic?.workflows.find((w) => w.id === workflowId);
+    if (!wf) {
+      this.dialogs.showToast(`Unknown workflow "${workflowId}".`);
+      return;
+    }
+    const page = this.getPage();
+    const center = at || this.getUsableViewportCenter();
+    const origin = page.elements.some((e) => e && !e.hidden)
+      ? computeNonOverlappingOrigin(page, center)
+      : { x: 0, y: 0 };
+    const built = buildWorkflow(wf, topic, origin);
+    const check = validateElementsBatch(built.elements);
+    if (!check.valid) {
+      this.dialogs.showToast(`Workflow rejected: ${check.reason}`);
+      return;
+    }
+    saveRecoverySnapshot(this.scene, `Before Workflow: ${wf.title}`);
+    page.elements.push(...built.elements);
+    updateConnectorBindings(page);
+    this.selectedIds = new Set([built.frame.id]);
+    this.commitChange();
+    this._fitElementsBounds([built.frame]);
+    this.updateUI();
+    this.requestRender();
+    this.dialogs.showToast(`Inserted "${wf.title}" (${wf.steps.length} steps). Press F6 to present it step by step.`);
+    if (present) this.presentUI.enter();
+  }
+
   insertMathOverlay(kind = 'ruler') {
     if (!this.collab.canEditBoard()) return;
     const page = this.getPage();
@@ -1838,10 +1886,12 @@ export class WhiteboardApp {
       // freeze the lens away from the cursor on the next activation.
       if (!this.spotlight.active) this.clearSpotlightPin();
       this.spotlight.active = true;
+      this.spotlight.remote = false; // local control resumes on any local entry
       this.spotlight.magnifier = Boolean(magnifier);
     }
     this.toolbarUI.update();
     this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
   }
 
   turnSpotlightOff() {
@@ -1850,6 +1900,7 @@ export class WhiteboardApp {
     this.presentUI?.renderBar?.();
     this.updateUI();
     this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
   }
 
   // Pinned spotlights live in WORLD coordinates (pinWorld / pinElementId) and
@@ -1875,8 +1926,10 @@ export class WhiteboardApp {
     this.spotlight.y = world.y * cam.zoom + cam.y;
     this.spotlight.pinned = true;
     this.spotlight.active = true;
+    this.spotlight.remote = false;
     this.toolbarUI.update();
     this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
   }
 
   // Point the spotlight at an element: the lens re-fits to the element's
@@ -1888,8 +1941,10 @@ export class WhiteboardApp {
     this.spotlight.pinElementId = el.id;
     this.spotlight.pinned = true;
     this.spotlight.active = true;
+    this.spotlight.remote = false;
     this.toolbarUI.update();
     this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
   }
 
   // Preset sizes are plain circles: they replace any element fit so the
@@ -1913,11 +1968,86 @@ export class WhiteboardApp {
     this.spotlight.fitBase = null;
     this.toolbarUI.update();
     this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
   }
 
   // Resume the cursor follow after a pinned "point" placement.
   unpinnedSpotlightFollow() {
     this.clearSpotlightPin();
+    this.requestRender();
+    this.broadcastSpotlight({ throttle: false });
+  }
+
+  // --- Collab: mirror the teacher's spotlight to viewers ---
+  // Follow-cursor mode sends screen x/y (the lens sits wherever the teacher
+  // points); pins travel as world coords (pinWorld) or an element id
+  // (pinElementId) so each viewer re-projects through their own camera.
+  _snapshotSpotlight() {
+    const s = this.spotlight;
+    return {
+      active: s.active,
+      x: s.x,
+      y: s.y,
+      radius: s.radius,
+      magnifier: s.magnifier,
+      magnifierScale: s.magnifierScale,
+      dimOpacity: s.dimOpacity,
+      dimBackground: s.dimBackground,
+      pinned: s.pinned,
+      pinWorld: s.pinWorld ? { x: s.pinWorld.x, y: s.pinWorld.y } : null,
+      pinElementId: s.pinElementId || null,
+    };
+  }
+
+  broadcastSpotlight({ throttle = true } = {}) {
+    const collab = this.collab;
+    if (!collab?.broadcastSpotlight) return;
+    // Only teachers/editors can edit the board, and only they mirror a lens.
+    if (!collab.canEditBoard()) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (throttle && now - this._spotlightSyncAt < 120) {
+      // Leading-edge throttle with a guaranteed trailing send: the event
+      // carrying the teacher's final resting position usually lands inside
+      // the window — without the resend, every viewer's lens would freeze
+      // up to 120 ms of travel short of where the teacher actually stopped.
+      if (!this._spotlightTrailingTimer) {
+        this._spotlightTrailingTimer = setTimeout(() => {
+          this._spotlightTrailingTimer = null;
+          this.broadcastSpotlight({ throttle: false });
+        }, 120);
+      }
+      return;
+    }
+    this._spotlightSyncAt = now;
+    collab.broadcastSpotlight(this._snapshotSpotlight());
+  }
+
+  // Viewer side: adopt the teacher's sanitized spotlight state. The element
+  // fit fields are cleared because the renderer re-fits an element pin from
+  // the element's current bounds on every render.
+  applyRemoteSpotlight(remote) {
+    if (!remote) {
+      this.spotlight.active = false;
+      this.spotlight.remote = false;
+      this.requestRender();
+      return;
+    }
+    const s = this.spotlight;
+    s.active = Boolean(remote.active);
+    s.remote = true; // the local pointer must never fight the teacher's lens
+    s.x = Number(remote.x) || 0;
+    s.y = Number(remote.y) || 0;
+    s.radius = Number(remote.radius) || 180;
+    s.magnifier = Boolean(remote.magnifier);
+    s.magnifierScale = Number(remote.magnifierScale) || 2;
+    s.dimOpacity = Number.isFinite(Number(remote.dimOpacity)) ? Number(remote.dimOpacity) : 0.72;
+    s.dimBackground = remote.dimBackground !== false;
+    s.pinned = Boolean(remote.pinned);
+    s.pinWorld = remote.pinWorld ? { x: Number(remote.pinWorld.x) || 0, y: Number(remote.pinWorld.y) || 0 } : null;
+    s.pinElementId = remote.pinElementId || null;
+    s.fitRx = null;
+    s.fitRy = null;
+    s.fitBase = null;
     this.requestRender();
   }
 
@@ -2343,8 +2473,9 @@ export class WhiteboardApp {
   _onPointerDown(ev) {
     const rect = this.canvas.getBoundingClientRect();
     // A pinned (right-click pointed) spotlight keeps its position instead of
-    // following the cursor.
-    if (!(this.spotlight.active && this.spotlight.pinned)) {
+    // following the cursor — and a remote (mirrored) lens is never moved by
+    // the local pointer at all.
+    if (!this.spotlight.remote && !(this.spotlight.active && this.spotlight.pinned)) {
       this.spotlight.x = ev.clientX - rect.left;
       this.spotlight.y = ev.clientY - rect.top;
     }
@@ -2372,8 +2503,10 @@ export class WhiteboardApp {
       return;
     }
 
-    // Prevent Spotlight from accidentally drawing, selecting, or dragging objects
-    if (this.spotlight.active) {
+    // Prevent Spotlight from accidentally drawing, selecting, or dragging objects.
+    // Only the local lens is a mode: a viewer mirroring the teacher's remote
+    // spotlight must keep voting, pointing, and panning normally.
+    if (this.spotlight.active && !this.spotlight.remote) {
       this.requestRender();
       return;
     }
@@ -2393,11 +2526,13 @@ export class WhiteboardApp {
 
   _onPointerMove(ev) {
     const rect = this.canvas.getBoundingClientRect();
-    if (!(this.spotlight.active && this.spotlight.pinned)) {
+    // Remote lens: untouched by the local cursor (see _onPointerDown).
+    if (!this.spotlight.remote && !(this.spotlight.active && this.spotlight.pinned)) {
       this.spotlight.x = ev.clientX - rect.left;
       this.spotlight.y = ev.clientY - rect.top;
     }
-    if (this.spotlight.active) {
+    if (this.spotlight.active && !this.spotlight.remote) {
+      this.broadcastSpotlight(); // throttled — fires ~8×/s, not per move
       this.requestRender();
       return;
     }
@@ -2599,13 +2734,23 @@ export class WhiteboardApp {
         this.requestRender();
         return;
       }
+      if (this.selectTool.isActive()) {
+        // An in-flight gesture (move, resize, marquee, cell-range drag) is
+        // cancelled first — Esc must never clear the range while leaving a
+        // half-finished move to commit on pointerup.
+        this.selectTool.cancel();
+        return;
+      }
+      if (this.tableSelection) {
+        // Esc drops the Excel-like cell range first — the table stays selected.
+        this.tableSelection = null;
+        this.updateUI();
+        this.requestRender();
+        return;
+      }
       if (this.activeSubInteraction || this.connectorTool.activeConnector) {
         this.activeSubInteraction = null;
         this.connectorTool.cancel();
-        return;
-      }
-      if (this.selectTool.isActive()) {
-        this.selectTool.cancel();
         return;
       }
       if (escAction === 'spotlight-off') {

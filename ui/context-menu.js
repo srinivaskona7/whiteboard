@@ -2,6 +2,7 @@
 // Presentation only: every action delegates to an existing app command, and text
 // fields keep their native menus because the canvas handler is the only one bound.
 import { escapeXml } from '../render/svg-export.js';
+import { WORKFLOW_INDEX } from '../templates/workflows-index.js';
 
 const ARROW_HEAD_CHOICES = [
   ['none', 'No arrowhead'],
@@ -506,6 +507,16 @@ export function buildContextItems(app, hit, world) {
         { label: 'Code block (J)', action: () => app.setTool('code') },
         { label: 'Frame / slide (F2)', action: () => app.setTool('frame') },
       ],
+    },
+    {
+      label: 'Insert workflow here',
+      disabled: !canEdit,
+      children: WORKFLOW_INDEX.topics.map((t) => ({
+        label: `${t.name} (${t.count})`,
+        children: WORKFLOW_INDEX.workflows
+          .filter((w) => w.topic === t.id)
+          .map((w) => ({ label: w.title, action: () => app.insertWorkflow(w.id, { at: world }) })),
+      })),
     },
     {
       label: 'Drawing preset',

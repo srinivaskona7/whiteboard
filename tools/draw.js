@@ -167,6 +167,21 @@ export class DrawTool {
     if (!this.activeElement) return;
 
     if (tool === 'pen' || tool === 'highlighter') {
+      // Shift-straighten (MS-Whiteboard-style ink-to-line): holding Shift
+      // collapses the stroke to a two-point line from the press point to the
+      // cursor; releasing Shift resumes freehand from the line's end.
+      if (ev?.shiftKey && this.activeElement.points.length > 0) {
+        this.activeElement.points[1] = { x: world.x, y: world.y };
+        if (this.activeElement.points.length > 2) {
+          this.activeElement.points.length = 2;
+        }
+        // Keep the smoothing anchor at the line end so releasing Shift
+        // resumes freehand from here, not from the pre-Shift position.
+        this.lastFiltered = { x: world.x, y: world.y };
+        syncFreehandBounds(this.activeElement);
+        this.app.requestRender();
+        return;
+      }
       const mode = this.activeElement.smoothing || 'adaptive';
       const isPenInput = ev?.pointerType === 'pen';
       const addSample = (raw, pressure) => {

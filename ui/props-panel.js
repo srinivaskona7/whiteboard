@@ -25,6 +25,10 @@ import {
   setTableAlignment,
   setCellColor,
   setRowColor,
+  clampCellRange,
+  cellRangeArea,
+  setCellRangeAlignment,
+  setCellRangeColor,
 } from '../scene/table.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
 import {
@@ -655,7 +659,14 @@ export function initPropsPanel(app) {
       // anchor that cell/row/column styling applies around.
       const activeCell =
         app.lastTableCell && app.lastTableCell.elId === tbl.id ? app.lastTableCell : null;
-      const scope = activeCell ? tableStyleScope : 'table';
+      // Excel-like cell RANGE: when one is live on this table, alignment and
+      // fill target it directly — the range is the user's explicit selection
+      // and beats the scope buttons.
+      const cellRange =
+        app.tableSelection && app.tableSelection.elId === tbl.id && app.selectedIds.has(tbl.id)
+          ? clampCellRange(tbl, app.tableSelection)
+          : null;
+      const scope = cellRange ? 'range' : activeCell ? tableStyleScope : 'table';
       sections.push(`
         <div class="wb-prop-section">
           <div class="wb-prop-title">Table (${tbl.rows} × ${tbl.cols})</div>
@@ -666,10 +677,15 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" id="btn-table-del-col">− Col</button>
           </div>
           <div class="wb-prop-subtitle">
-            Cell Styling${activeCell ? ` · active cell ${activeCell.row + 1},${activeCell.col + 1}` : ' · whole table'}
+            ${cellRange
+              ? `Cell range selected · rows ${cellRange.r0 + 1}–${cellRange.r1 + 1} × cols ${cellRange.c0 + 1}–${cellRange.c1 + 1} (${cellRangeArea(cellRange)} cells)`
+              : `Cell Styling${activeCell ? ` · active cell ${activeCell.row + 1},${activeCell.col + 1}` : ' · whole table'}`}
           </div>
           <div class="wb-btn-group">
-            <button type="button" class="wb-btn wb-sm" id="btn-table-select-all" title="Target the whole table: alignment and colour then apply to every cell">▣ Select all cells</button>
+            ${cellRange
+              ? `<button type="button" class="wb-btn wb-sm wb-primary" id="btn-table-clear-range" title="Drop the cell range (the table stays selected) — Esc also works">✕ Clear range</button>`
+              : `<button type="button" class="wb-btn wb-sm" id="btn-table-select-all" title="Target the whole table: alignment and colour then apply to every cell">▣ Select all cells</button>`
+            }
           </div>
           <div class="wb-btn-group" role="group" aria-label="Style Target">
             ${[
@@ -680,7 +696,10 @@ export function initPropsPanel(app) {
             ]
               .map(
                 ([id, label]) =>
-                  `<button type="button" class="wb-btn wb-sm ${scope === id ? 'active' : ''}" data-table-scope="${id}" ${id === 'cell' && !activeCell ? 'disabled' : ''}>${label}</button>`
+                  // While a cell range is live, alignment/fill target the
+                  // range unconditionally — the scope buttons would be dead
+                  // controls, so they render disabled until the range drops.
+                  `<button type="button" class="wb-btn wb-sm ${scope === id ? 'active' : ''}" data-table-scope="${id}" ${(id === 'cell' && !activeCell) || cellRange ? 'disabled' : ''} title="${cellRange ? 'Clear the cell range to switch the style target' : ''}">${label}</button>`
               )
               .join('')}
           </div>
@@ -1466,6 +1485,16 @@ export function initPropsPanel(app) {
       const activeCell = () =>
         app.lastTableCell && app.lastTableCell.elId === tbl.id ? app.lastTableCell : null;
       const styleScope = () => (activeCell() ? tableStyleScope : 'table');
+      const liveRange = () =>
+        app.tableSelection && app.tableSelection.elId === tbl.id && app.selectedIds.has(tbl.id)
+          ? clampCellRange(tbl, app.tableSelection)
+          : null;
+      container.querySelector('#btn-table-clear-range')?.addEventListener('click', () => {
+        app.tableSelection = null;
+        app.updateUI();
+        app.requestRender();
+        render();
+      });
       container.querySelectorAll('[data-table-scope]').forEach((b) =>
         b.addEventListener('click', () => {
           tableStyleScope = b.dataset.tableScope;
@@ -1476,6 +1505,7 @@ export function initPropsPanel(app) {
         // Selection is element-level in this app, so "select all cells" means:
         // own the table selection and drop the per-cell style target.
         app.lastTableCell = null;
+        app.tableSelection = null; // and any live cell range
         tableStyleScope = 'table';
         app.selectedIds = new Set([tbl.id]);
         app.dialogs?.showToast?.('Whole table targeted — alignment and colour now apply to every cell.', 'info');
@@ -1487,12 +1517,17 @@ export function initPropsPanel(app) {
         b.addEventListener('click', () => {
           if (tbl.locked) return lockedToast();
           const align = b.dataset.tableAlign;
-          const cell = activeCell();
-          const scope = styleScope();
-          if (!cell || scope === 'table') setTableAlignment(tbl, align);
-          else if (scope === 'row') setRowAlignment(tbl, cell.row, align);
-          else if (scope === 'col') setColAlignment(tbl, cell.col, align);
-          else setCellAlignment(tbl, cell.row, cell.col, align);
+          const range = liveRange();
+          if (range) {
+            setCellRangeAlignment(tbl, range, align);
+          } else {
+            const cell = activeCell();
+            const scope = styleScope();
+            if (!cell || scope === 'table') setTableAlignment(tbl, align);
+            else if (scope === 'row') setRowAlignment(tbl, cell.row, align);
+            else if (scope === 'col') setColAlignment(tbl, cell.col, align);
+            else setCellAlignment(tbl, cell.row, cell.col, align);
+          }
           applyTable();
           render();
         })
@@ -1501,20 +1536,25 @@ export function initPropsPanel(app) {
         b.addEventListener('click', () => {
           if (tbl.locked) return lockedToast();
           const color = b.dataset.tableColor === 'transparent' ? '' : b.dataset.tableColor;
-          const cell = activeCell();
-          const scope = styleScope();
-          if (!cell || scope === 'table') {
-            tbl.fill = color || 'transparent';
-            // Whole-table fill replaces the per-cell overrides, exactly like
-            // whole-table alignment clears them — leaving cellColors behind
-            // made the new fill look like it didn't apply.
-            tbl.cellColors = null;
-          } else if (scope === 'row') {
-            setRowColor(tbl, cell.row, color);
-          } else if (scope === 'col') {
-            for (let r = 0; r < (tbl.rows || 1); r++) setCellColor(tbl, r, cell.col, color);
+          const range = liveRange();
+          if (range) {
+            setCellRangeColor(tbl, range, color);
           } else {
-            setCellColor(tbl, cell.row, cell.col, color);
+            const cell = activeCell();
+            const scope = styleScope();
+            if (!cell || scope === 'table') {
+              tbl.fill = color || 'transparent';
+              // Whole-table fill replaces the per-cell overrides, exactly like
+              // whole-table alignment clears them — leaving cellColors behind
+              // made the new fill look like it didn't apply.
+              tbl.cellColors = null;
+            } else if (scope === 'row') {
+              setRowColor(tbl, cell.row, color);
+            } else if (scope === 'col') {
+              for (let r = 0; r < (tbl.rows || 1); r++) setCellColor(tbl, r, cell.col, color);
+            } else {
+              setCellColor(tbl, cell.row, cell.col, color);
+            }
           }
           applyTable();
           render();

@@ -588,3 +588,115 @@ Evidence: `scripts/gen-icon-pack-icons.js`, `stencils/icon-pack-icons.js` (gener
 `tests/icon-pack.test.js` (11; suite 377). Browser-verified: tab + group pills, search,
 placement, canvas raster (EC2 gradient sampled on the live canvas), SVG export at
 geometry, reload self-heal; `vite build` splits the chunk.
+
+## 30. Five-feature batch: spotlight broadcast, shift-straighten, cell ranges, secret voting, granular icon size (2026-11-04)
+
+Five highest-value features from the ranked adopt-list (§25) and the documented gaps,
+implemented with no new dependencies (suite 410/410):
+
+1. **Spotlight broadcast** (closes §27's "local-only" limit). The teacher's spotlight now
+   mirrors to every viewer over collab: a `spotlight:sync` op (teacher/editor only, 403
+   otherwise) stores a fully sanitized `spotlightState` in the room — every field
+   clamped/coerced server-side (radius 20–2000, magnifierScale 1–4, dimOpacity 0–0.95,
+   non-finite pin points dropped to null, non-string element ids dropped). Late joiners
+   receive the live state in the join payload. Follow-cursor mode travels as screen x/y;
+   pins travel as world coords or an element id, so each viewer re-projects through their
+   own camera; element fits re-derive per render on the viewer. Echoes are ignored, and
+   teachers/editors never adopt a remote lens (viewer/questioner only). Discrete actions
+   (toggle, size, off, pin) force-send past the 120 ms throttle; the throttle applies only
+   to the cursor-follow pointer stream and the radius/dim slider *drags*, whose final
+   value is force-sent on release (`change`), so a viewer never keeps a stale lens —
+   and `turnSpotlightOff` always reaches viewers so a lens can never be stuck on. The banner exit button now routes through `turnSpotlightOff`
+   (it previously set raw `active = false`, which would have left viewers dimmed).
+   Evidence: `server/collab-server.js` (`_sanitizeSpotlightState`), `scene/collab-client.js`
+   (`broadcastSpotlight`, `spotlight:synced` handler, join/welcome application),
+   `main.js` (`_snapshotSpotlight`, `broadcastSpotlight`, `applyRemoteSpotlight`),
+   `ui/toolbar.js` (sliders/exit broadcast), `tests/spotlight-collab.test.js` (8).
+2. **Shift-straighten freehand** (MS-Whiteboard-style ink-to-line; §25's skip was the
+   *shape recognizer*, this is the plain line form). Holding Shift during a pen/highlighter
+   stroke collapses it to a two-point line from the press point to the cursor; further
+   Shift moves rewrite the endpoint; releasing Shift resumes freehand from the line's end
+   (the smoothing anchor is moved to the line end so the resume does not lag behind).
+   Bounds re-sync per move; pointer-up runs the normal simplification pass.
+   Evidence: `tools/draw.js`, `tests/shift-straighten.test.js` (3).
+3. **Rubber-band multi-cell table selection** (closes §28's single-cell limit).
+   Ctrl/Cmd+drag over a table draws an Excel-style blue range (fill + corner accents in
+   the select overlay); dragging past the edge pins at the boundary cell (cursor clamped
+   to the element box before the rotation-aware cell hit-test). Reverse drags normalize.
+   The inspector switches to range scope: a "Cell range selected · rows R–R × cols C–C
+   (N cells)" chip, alignment and fill dispatch to every cell in the range (clamped
+   server-free helpers; the clamp path never creates style grids on display), and Select-
+   all becomes "Clear range". Esc drops the range first (the table stays selected);
+   pressing another element or empty space drops it too.
+   Evidence: `scene/table.js` (`normalizeCellRange`, `clampCellRange`, `cellRangeArea`,
+   `setCellRangeAlignment`, `setCellRangeColor`), `tools/select.js`, `render/canvas.js`,
+   `ui/props-panel.js`, `tests/table-range.test.js` (9).
+4. **Secret (hidden-until-reveal) dot voting** (FigJam research pick). While a vote
+   session is live, the teacher can toggle 🙈 Secret; vote counts hide everywhere — the
+   mode banner reads "Dot voting open · votes hidden until reveal" and the canvas badges
+   are gated. Stop or Reveal broadcasts the cleared state; the `secret` flag is strict-
+   validated server-side (`op.secret === true` — Boolean('yes') is true and must never
+   flip a classroom into hidden-votes mode). Viewers cannot toggle it (canControl-gated).
+   Evidence: `scene/voting.js` (`voteVisibility`), `ui/voting.js` (`setSecret`),
+   `scene/collab-client.js`, `server/collab-server.js`, `ui/toolbar.js`,
+   `render/canvas.js`, `tests/voting.test.js` (22 total).
+5. **Granular icon-size slider** (research #13). The three-preset library icon stepper is
+   replaced by a 28–96px slider (step 4) with a live px label; grid columns adapt
+   (4 ≤36px, 3 ≤60px, 2 above), and focus stepping follows the column count. Legacy
+   preset strings migrate on load (`compact`→38, `comfortable`→48, `large`→64) and
+   persist as pixels through unrelated saves. Out-of-range values clamp; garbage falls
+   back to 48. Evidence: `ui/library-panel.js` (`normalizeIconSize`, `iconSizeLayout`),
+   `scene/storage.js` (`normalizeLibraryIconSize`), `tests/icon-size.test.js` (6),
+   `tests/tool-lock.test.js` (migration coverage).
+
+Browser-verified 2026-11-04: spotlight spy (on→220→off all delivered, remote pin renders
+dimmed), shift stroke collapsed to 2 points with padded bounds, Ctrl+drag range 0,0→2,2
+with live chip + overlay pixels + 9-cell fill + Esc, secret banner + reveal, slider
+64px label + persistence. `vite build` green.
+
+### 30a. Review hardenings (2026-11-04, post five-lens review)
+
+The five-lens adversarial review round landed after §30 was written; every confirmed
+defect is fixed and test-locked (suite 413/413):
+
+- **Secret voting is now secret on the wire, not just in the renderer.** The server is
+  the only tally during a secret session: `vote:cast` broadcasts travel with
+  `votes: null` (the voter gets a private "counted" ack), every client-facing scene
+  (REST join, WS welcome, `scene:synced`, `elements:upserted`) strips `el.votes`, and
+  a teacher scene sync mid-session cannot clobber the tally (`_mergeSceneIntoRoom`
+  snapshots and restores). Closing the session or pressing Reveal attaches the
+  authoritative `counts` to the `vote:session` broadcast; clients rebuild from it.
+  Server: `_collectVoteCounts`, `_voteCountsProtected`, `stripSceneVoteCounts`,
+  `sceneForRole` in server/collab-server.js. Client: `applyRemoteVote` skips null,
+  `applyRemoteSession` applies `counts` (ui/voting.js, scene/collab-client.js).
+  Locked by tests/voting.test.js (25 tests).
+- **A mirrored spotlight no longer hijacks viewer input.** `spotlight.remote` marks a
+  lens as teacher-mirrored: the viewer's pointer never moves it, and the local
+  "spotlight is a mode" guards in `_onPointerDown`/`_onPointerMove` are skipped for
+  remote lenses — a viewer keeps voting, pointing, and panning while the teacher's
+  lens renders (main.js).
+- **Esc cancels an in-flight gesture before dropping a cell range** — previously a
+  mid-drag Esc cleared the range and let the half-finished move commit.
+- **A linked table keeps Ctrl/Cmd+click = open link**; Shift+Ctrl forces the cell
+  range on such a table (tools/select.js, test-locked).
+- **The cell-range overlay follows table rotation** (same center-rotate frame as
+  `drawSingleElement`).
+- **Radius/dim slider drags force-send their final value on release** (`change`),
+  so the 120 ms throttle can never leave a viewer with a stale lens size.
+- **The follow-cursor lens always delivers its resting position.** The 120 ms
+  pointer-stream throttle gained a guaranteed trailing send (pending snapshot +
+  one 120 ms timer), so the event carrying the teacher's final stop point — which
+  almost always lands inside the window — is no longer dropped (previously every
+  viewer's lens froze up to ~120 ms of travel short of the stop).
+- **The icon-size slider is draggable.** Its `input` path no longer rebuilds the
+  panel (innerHTML replacement destroyed the range input mid-drag, dead-ending a
+  drag after one step); only the tab grid re-renders live, and the full panel
+  re-render waits for `change`.
+- **The viewer vote-cap warning is suppressed during a secret session** (announcing
+  "already has the maximum" leaks count information; the server still caps silently).
+- **Banner radius/dim sliders are draggable** (calibration round): their `input`
+  handlers live-patch the value label in place instead of rebuilding the banner —
+  the pre-existing rebuild killed the drag after one event and the detached slider
+  never received the `change` that force-sends the final value.
+- **Style-Target scope buttons disable while a cell range is live** — they were
+  dead controls (the range wins unconditionally); a tooltip explains how to re-enable.

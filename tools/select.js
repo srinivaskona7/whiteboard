@@ -25,6 +25,7 @@ import {
   hitTestScene,
   hitTestFrameCollapseButton,
   hitTestHyperlinkBadge,
+  getTableCellAtPoint,
 } from '../scene/hit.js';
 import {
   findHoverPort,
@@ -205,6 +206,40 @@ export class SelectTool {
     // 3. Hit test scene elements
     const hit = hitTestScene(page, world.x, world.y, { includeLocked: false });
 
+    // 3a. Excel-like cell rubber band: Ctrl/Cmd+drag inside a table selects a
+    // cell RANGE instead of moving the table. Modifiers only — a plain drag
+    // must keep moving the table, and Alt is already duplicate-drag. A table
+    // carrying a hyperlink keeps Ctrl/Cmd+click = open-link; Shift+Ctrl
+    // forces the range there instead.
+    if (
+      hit &&
+      hit.type === 'table' &&
+      (ev.ctrlKey || ev.metaKey) &&
+      !(hit.link && !ev.shiftKey)
+    ) {
+      this.app.selectedIds = new Set([hit.id]);
+      this.app.lastTableCell = null; // the range replaces the single-cell anchor
+      const cell = getTableCellAtPoint(hit, world.x, world.y);
+      this.app.tableSelection = {
+        elId: hit.id,
+        r0: cell?.row ?? 0,
+        c0: cell?.col ?? 0,
+        r1: cell?.row ?? 0,
+        c1: cell?.col ?? 0,
+      };
+      this.mode = 'table-cells';
+      this.startWorld = { ...world };
+      this.app.updateUI();
+      this.app.requestRender();
+      return;
+    }
+
+    // Any other press drops a stale cell range (its table may still be selected
+    // through the table's own selection path below).
+    if (this.app.tableSelection && hit?.id !== this.app.tableSelection.elId) {
+      this.app.tableSelection = null;
+    }
+
     if (hit) {
       // Frame collapse button check
       if (hit.type === 'frame' && hitTestFrameCollapseButton(hit, world.x, world.y)) {
@@ -281,6 +316,7 @@ export class SelectTool {
     if (!ev.shiftKey) {
       this.app.selectedIds.clear();
     }
+    this.app.tableSelection = null; // empty space drops the cell range too
     this.startWorld = { ...world };
     this.lastWorld = { ...world };
     if (this.app.activeTool === 'lasso' || (ev.altKey && ev.shiftKey)) {
@@ -468,6 +504,31 @@ export class SelectTool {
       }
       updateConnectorBindings(page, [conn.id]);
       this.didMutate = true;
+      this.app.requestRender();
+      return;
+    }
+
+    if (this.mode === 'table-cells') {
+      // Extend the rubber band to the cell under the cursor. The cursor is
+      // clamped to the element box, so a drag past the edge pins the range
+      // at the boundary cell — the renderer clamps the final value too.
+      const el = page.elements.find((e) => e.id === this.app.tableSelection?.elId);
+      if (el) {
+        // Clamp the cursor to the element box first, so a drag that jumps
+        // straight out of the table still pins at the boundary cell instead
+        // of freezing at wherever the pointer last was inside it.
+        const b = getElementBounds(el);
+        const cell = getTableCellAtPoint(
+          el,
+          Math.min(Math.max(world.x, b.x + 1), b.x + b.w - 1),
+          Math.min(Math.max(world.y, b.y + 1), b.y + b.h - 1),
+        );
+        const sel = this.app.tableSelection;
+        if (cell) {
+          sel.r1 = cell.row;
+          sel.c1 = cell.col;
+        }
+      }
       this.app.requestRender();
       return;
     }

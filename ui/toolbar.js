@@ -845,13 +845,15 @@ export function initToolbar(app) {
     }
 
     if (app.votingUI?.isActive?.()) {
-      const dots = totalVotes(app.getPage().elements);
+      const hidden = app.votingUI.areCountsHidden?.();
+      const dots = hidden ? null : totalVotes(app.getPage().elements);
       pills.push(`
         <div class="wb-floating-mode-pill">
-          <span>🔵 Dot voting open · ${dots} vote${dots === 1 ? '' : 's'} · click items to vote</span>
+          <span>${hidden ? '🙈 Dot voting open · votes hidden until reveal' : `🔵 Dot voting open · ${dots} vote${dots === 1 ? '' : 's'} · click items to vote`}</span>
           ${
             app.votingUI.canControl()
-              ? `<button type="button" class="wb-btn wb-sm wb-primary" id="btn-stop-vote" title="Close voting and show the top-3 results">Stop & Results</button>
+              ? `<button type="button" class="wb-btn wb-sm ${hidden ? 'wb-primary' : ''}" id="btn-secret-vote" title="${hidden ? 'Show live vote counts to everyone' : 'Hide vote counts until you reveal them'}">${hidden ? '👁 Reveal' : '🙈 Secret'}</button>
+                 <button type="button" class="wb-btn wb-sm wb-primary" id="btn-stop-vote" title="Close voting and show the top-3 results">Stop & Results</button>
                  <button type="button" class="wb-btn wb-sm wb-danger" id="btn-reset-votes" title="Clear every vote on this page">Reset</button>`
               : ''
           }
@@ -912,22 +914,40 @@ export function initToolbar(app) {
     });
     modeBanner.querySelector('#spot-radius-slider')?.addEventListener('input', (e) => {
       app.spotlight.radius = Number(e.target.value);
-      renderModeBanner();
+      // Live-patch the label only — renderModeBanner() rebuilds the banner
+      // innerHTML and would destroy this slider mid-drag after one event
+      // (the same defect class fixed in the library panel).
+      const label = e.target.closest('label')?.querySelector('span');
+      if (label) label.textContent = `Radius ${Math.round(app.spotlight.radius)}px`;
       app.requestRender();
+      // Throttled during the drag; `change` below force-sends the final value
+      // so the throttle can never leave a viewer with a stale radius.
+      app.broadcastSpotlight();
+    });
+    modeBanner.querySelector('#spot-radius-slider')?.addEventListener('change', () => {
+      app.broadcastSpotlight({ throttle: false });
     });
     modeBanner.querySelector('#spot-dim-slider')?.addEventListener('input', (e) => {
       app.spotlight.dimOpacity = Number(e.target.value) / 100;
-      renderModeBanner();
+      const label = e.target.closest('label')?.querySelector('span');
+      if (label) label.textContent = `Dim ${Math.round(app.spotlight.dimOpacity * 100)}%`;
       app.requestRender();
+      app.broadcastSpotlight();
+    });
+    modeBanner.querySelector('#spot-dim-slider')?.addEventListener('change', () => {
+      app.broadcastSpotlight({ throttle: false });
     });
     modeBanner.querySelector('#btn-exit-spotlight')?.addEventListener('click', () => {
-      app.spotlight.active = false;
-      app.updateUI();
-      app.requestRender();
+      // turnSpotlightOff (not a raw active=false) so the off state also
+      // reaches every viewer still mirroring the lens.
+      app.turnSpotlightOff();
     });
     modeBanner.querySelector('#btn-exit-laser')?.addEventListener('click', () => app.setTool('select'));
     modeBanner.querySelector('#btn-exit-annotation')?.addEventListener('click', () => app.toggleAnnotationMode());
     modeBanner.querySelector('#btn-stop-vote')?.addEventListener('click', () => app.votingUI.stop());
+    modeBanner.querySelector('#btn-secret-vote')?.addEventListener('click', () =>
+      app.votingUI.setSecret(!app.votingUI.areCountsHidden?.())
+    );
     modeBanner.querySelector('#btn-reset-votes')?.addEventListener('click', () => app.votingUI.reset());
     modeBanner.querySelector('#btn-exit-focus')?.addEventListener('click', () => app.toggleFocusMode());
     modeBanner.querySelector('#btn-focus-prev-page')?.addEventListener('click', () => {

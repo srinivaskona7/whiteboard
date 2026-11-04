@@ -9,6 +9,7 @@ import {
   drawMathTool,
   drawTableElement,
   drawCodeElement,
+  tableGeometry,
 } from './shapes.js';
 import {
   getElementBounds,
@@ -18,6 +19,8 @@ import {
   getConnectionPorts,
 } from '../scene/geometry.js';
 import { getElementHandles, getMultiSelectionHandles } from '../scene/hit.js';
+import { areVoteCountsHidden } from '../scene/voting.js';
+import { clampCellRange } from '../scene/table.js';
 import { QUICK_ADD_DIRECTIONS, dotAnchor, isQuickAddable } from '../scene/quick-add.js';
 import { markerPoint } from '../scene/animation.js';
 import {
@@ -185,6 +188,7 @@ export class CanvasRenderer {
       hoveredElement = null,
       hoveredPort = null,
       marqueeBox = null,
+      tableSelection = null,
       smartGuides = [],
       laserTrail = [],
       spotlight = null,
@@ -501,6 +505,56 @@ export class CanvasRenderer {
       }
     }
 
+    // Excel-like cell range: translucent highlight over the selected cells of
+    // a still-selected table (a dropped/deleted selection draws nothing).
+    if (tableSelection && page && selectedIds.has(tableSelection.elId)) {
+      try {
+        const el = page.elements.find((e) => e.id === tableSelection.elId);
+        const range = el ? clampCellRange(el, tableSelection) : null;
+        if (el && range) {
+          const geo = tableGeometry(el);
+          const x = geo.xs[range.c0];
+          const y = geo.ys[range.r0];
+          const w = geo.xs[range.c1 + 1] - geo.xs[range.c0];
+          const h = geo.ys[range.r1 + 1] - geo.ys[range.r0];
+          ctx.save();
+          // The table body rotates around its center (see drawSingleElement);
+          // the range overlay must live in the same frame or it floats off a
+          // rotated table.
+          if (el.rotation) {
+            const cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+            ctx.translate(cx, cy);
+            ctx.rotate(el.rotation);
+            ctx.translate(-cx, -cy);
+          }
+          ctx.fillStyle = 'rgba(37, 99, 235, 0.14)';
+          ctx.strokeStyle = theme.selectionStroke;
+          ctx.lineWidth = 1.4 / cam.zoom;
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
+          // Corner accents like Excel's range corners.
+          ctx.strokeStyle = '#2563eb';
+          ctx.lineWidth = 2 / cam.zoom;
+          const s = 6 / cam.zoom;
+          for (const [cx, cy, dx, dy] of [
+            [x, y, 1, 1],
+            [x + w, y, -1, 1],
+            [x, y + h, 1, -1],
+            [x + w, y + h, -1, -1],
+          ]) {
+            ctx.beginPath();
+            ctx.moveTo(cx + dx * s, cy);
+            ctx.lineTo(cx, cy);
+            ctx.lineTo(cx, cy + dy * s);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      } catch (err) {
+        this._reportRenderError('tableSelection', err);
+      }
+    }
+
     if (Array.isArray(appState.lassoPoints) && appState.lassoPoints.length >= 2) {
       try {
         ctx.save();
@@ -798,7 +852,7 @@ export class CanvasRenderer {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(`S${el.revealStep}`, b.minX + 15, b.minY + 13); ctx.restore();
     }
-    if (el.votes > 0) {
+    if (el.votes > 0 && !areVoteCountsHidden()) {
       ctx.save(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(b.maxX, b.minY, 11, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

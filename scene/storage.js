@@ -201,6 +201,17 @@ export const WORKSPACE_PRESETS = {
   },
 };
 
+// Library icon size lives as a px number (28–96). Older saves store the
+// 3-level stepper strings — map them onto their closest pixel size.
+const LEGACY_LIBRARY_ICON_SIZE = { compact: 38, comfortable: 48, large: 64 };
+export function normalizeLibraryIconSize(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.min(96, Math.max(28, Math.round(v)));
+  }
+  if (typeof v === 'string' && LEGACY_LIBRARY_ICON_SIZE[v]) return LEGACY_LIBRARY_ICON_SIZE[v];
+  return 48;
+}
+
 export function loadWorkspacePrefs(storage = globalThis.localStorage) {
   const defaults = {
     preset: 'diagram',
@@ -215,7 +226,7 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
     inspectorOpen: true,
     pinnedToolsVersion: PINNED_TOOLS_VERSION,
     pinnedToolsStamp: PINNED_TOOLS_STAMP,
-    libraryIconSize: 'comfortable',
+    libraryIconSize: 48, // px, 28–96 (granular slider); legacy strings migrate in loadWorkspacePrefs
     toolLockEnabled: false,
   };
   if (!storage) return defaults;
@@ -275,8 +286,7 @@ export function loadWorkspacePrefs(storage = globalThis.localStorage) {
       // Tool lock only accepts a real stored true; a garbage string like
       // 'yes' must not read as on.
       toolLockEnabled: parsed.toolLockEnabled === true,
-      libraryIconSize:
-        parsed.libraryIconSize === 'large' ? 'large' : parsed.libraryIconSize === 'compact' ? 'compact' : 'comfortable',
+      libraryIconSize: normalizeLibraryIconSize(parsed.libraryIconSize),
       pinnedToolsVersion: PINNED_TOOLS_VERSION,
       pinnedToolsStamp: PINNED_TOOLS_STAMP,
     };

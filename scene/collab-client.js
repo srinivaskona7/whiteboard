@@ -391,6 +391,10 @@ export class CollabClient {
     if (data.voteSession) {
       this.app.votingUI?.applyRemoteSession?.(data.voteSession);
     }
+    // A viewer joining mid-session inherits the teacher's live spotlight.
+    if (data.spotlightState && (this.role === 'viewer' || this.role === 'questioner')) {
+      this.app.applyRemoteSpotlight?.(data.spotlightState);
+    }
 
     // Keep URL clean so secret tokens are not left exposed in the address bar
     if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -555,6 +559,9 @@ export class CollabClient {
       if (msg.voteSession) {
         this.app.votingUI?.applyRemoteSession?.(msg.voteSession);
       }
+      if (msg.spotlightState && (this.role === 'viewer' || this.role === 'questioner')) {
+        this.app.applyRemoteSpotlight?.(msg.spotlightState);
+      }
       this._updateLiveStatusText();
       this.app.updateUI?.();
       this.app.classroomUI?.update();
@@ -681,9 +688,26 @@ export class CollabClient {
       return;
     }
 
+    if (msg.type === 'spotlight:synced') {
+      // Sender already has its own lens; teachers/editors keep local control
+      // of theirs. Only viewers/questioners adopt the teacher's spotlight.
+      if (msg.senderClientId && msg.senderClientId === this.clientId) return;
+      if (this.canEditBoard()) return;
+      this.app.applyRemoteSpotlight?.(msg.spotlight);
+      return;
+    }
+
     if (msg.type === 'vote:cast') {
       // No sender-echo filter: a viewer's own dot is applied from this
       // authoritative count too, because the viewer never mutates locally.
+      // A null count (secret session) applies nothing; the voter still gets
+      // an ack so a hidden vote does not feel like a swallowed click.
+      if (msg.votes === null || msg.votes === undefined) {
+        if (msg.senderClientId === this.clientId) {
+          this.app.dialogs?.showToast('🗳 Vote counted — hidden until reveal.', 'info');
+        }
+        return;
+      }
       this.app.votingUI?.applyRemoteVote?.(msg.pageId, msg.elementId, msg.votes);
       return;
     }
@@ -921,10 +945,19 @@ export class CollabClient {
     });
   }
 
-  broadcastVoteSession(active) {
+  broadcastVoteSession(active, secret = false) {
     if (this.status !== 'live' || !this.roomId) return;
     if (this.role !== 'teacher' && this.role !== 'editor') return;
-    this._sendWsOrRest({ type: 'vote:session', active: Boolean(active) });
+    this._sendWsOrRest({ type: 'vote:session', active: Boolean(active), secret: Boolean(secret) });
+  }
+
+  // Teacher/editor only: mirror the local spotlight lens to the room. The
+  // server sanitizes every field before re-broadcast, so the snapshot is
+  // sent as-is.
+  broadcastSpotlight(spotlight) {
+    if (this.status !== 'live' || !this.roomId) return;
+    if (this.role !== 'teacher' && this.role !== 'editor') return;
+    this._sendWsOrRest({ type: 'spotlight:sync', spotlight: spotlight || null });
   }
 
   // Viewer dots ride on their own channel: broadcastSceneChange is blocked for

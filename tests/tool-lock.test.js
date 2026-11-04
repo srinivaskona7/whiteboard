@@ -55,11 +55,12 @@ describe('Tool lock pref', () => {
     const prefs = loadWorkspacePrefs(storage);
     assert.equal(prefs.toolLockEnabled, true);
     assert.equal(prefs.preset, 'teach');
-    assert.equal(prefs.libraryIconSize, 'large');
+    assert.equal(prefs.libraryIconSize, 64, 'legacy preset name migrates to pixels');
     // Saving an unrelated pref must not drop the lock.
     assert.ok(saveWorkspacePrefs({ inspectorOpen: false }, storage));
     const reloaded = loadWorkspacePrefs(storage);
     assert.equal(reloaded.toolLockEnabled, true, 'lock lost to an unrelated save');
+    assert.equal(reloaded.libraryIconSize, 64, 'migrated value survives a save');
     assert.equal(reloaded.inspectorOpen, false);
   });
 });

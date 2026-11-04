@@ -13,6 +13,8 @@ import {
 } from '../stencils/index.js';
 import { LUCIDE_STENCILS } from '../stencils/lucide-icons.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
+import { WORKFLOW_INDEX } from '../templates/workflows-index.js';
+import { renderWorkflowsTab } from './workflows-tab.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
 import { saveWorkspacePreferences } from '../scene/storage.js';
@@ -20,14 +22,35 @@ import { saveWorkspacePreferences } from '../scene/storage.js';
 export const FAVORITE_STENCILS_KEY = 'studioboard_fav_stencils_v1';
 export const RECENT_STENCILS_KEY = 'studioboard_recent_stencils_v1';
 
-// Icon preview sizes per level: svg size, hit-box size, grid class and the
-// arrow-key focus step, which must match the grid column count.
-const ICON_SIZE_LEVELS = ['compact', 'comfortable', 'large'];
-const ICON_SIZE_PRESETS = {
-  compact: { label: 'Compact', iconW: 38, iconH: 34, box: 32, gridClass: 'wb-grid-compact', focusStep: 4 },
-  comfortable: { label: 'Comfortable', iconW: 48, iconH: 44, box: 40, gridClass: '', focusStep: 3 },
-  large: { label: 'Large', iconW: 64, iconH: 58, box: 56, gridClass: 'wb-grid-large', focusStep: 2 },
-};
+// Granular icon preview size (px). The old 3-level stepper values migrate to
+// their closest pixel size. Grid columns and the arrow-key focus step are
+// derived from the size and must stay equal (the step follows the columns).
+const ICON_SIZE_MIN = 28;
+const ICON_SIZE_MAX = 96;
+const LEGACY_ICON_SIZE = { compact: 38, comfortable: 48, large: 64 };
+
+export function normalizeIconSize(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.min(ICON_SIZE_MAX, Math.max(ICON_SIZE_MIN, Math.round(v)));
+  }
+  if (typeof v === 'string' && LEGACY_ICON_SIZE[v]) return LEGACY_ICON_SIZE[v];
+  return LEGACY_ICON_SIZE.comfortable;
+}
+
+export function iconSizeLayout(px) {
+  const size = normalizeIconSize(px);
+  const cols = size <= 36 ? 4 : size <= 60 ? 3 : 2;
+  return {
+    size,
+    label: `${size}px`,
+    iconW: size,
+    iconH: size,
+    cols,
+    gridClass: cols === 4 ? 'wb-grid-compact' : cols === 2 ? 'wb-grid-large' : '',
+    focusStep: cols,
+    densityClass: size >= 62 ? 'large' : size >= 40 ? 'comfortable' : 'compact',
+  };
+}
 
 function loadJsonList(key, fallback = []) {
   try {
@@ -51,7 +74,7 @@ export function initLibraryPanel(app) {
   const panel = document.getElementById('wb-library-panel');
   if (!panel) return { update() {}, recordRecent() {} };
 
-  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'iconpack' | 'packs' | 'user' | 'templates'
+  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'iconpack' | 'packs' | 'user' | 'workflows' | 'templates'
   let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
   let lucideActiveCategory = 'all'; // 'all' | 'icons/<sub>'
   let lucideSearchQuery = '';
@@ -62,9 +85,7 @@ export function initLibraryPanel(app) {
   let packSearchQuery = '';
   let packVisibleLimit = 64;
   let searchQuery = '';
-  let iconSize = ICON_SIZE_LEVELS.includes(app.workspacePrefs?.libraryIconSize)
-    ? app.workspacePrefs.libraryIconSize
-    : 'comfortable'; // 'compact' | 'comfortable' | 'large'
+  let iconSize = normalizeIconSize(app.workspacePrefs?.libraryIconSize); // px, 28–96
   let multiSelectMode = false;
   let previewLayoutMode = 'flow'; // 'grid' | 'row' | 'column' | 'flow'
   let visibleLimit = 64;
@@ -106,24 +127,28 @@ export function initLibraryPanel(app) {
     }
   }
 
-  function stepIconSize(direction) {
-    const idx = ICON_SIZE_LEVELS.indexOf(iconSize);
-    const next = ICON_SIZE_LEVELS[Math.max(0, Math.min(ICON_SIZE_LEVELS.length - 1, idx + direction))];
+  function setIconSize(px, { rerender = true } = {}) {
+    const next = normalizeIconSize(px);
     if (next === iconSize) return;
     iconSize = next;
     app.workspacePrefs = { ...app.workspacePrefs, libraryIconSize: next };
     saveWorkspacePreferences(app.workspacePrefs);
-    render();
+    // During a slider drag the panel must NOT be rebuilt: replacing the
+    // header HTML destroys the range input that owns the drag after a
+    // single input event. Live-patch only the tab grid instead.
+    if (rerender) render();
+    else renderTabContent();
   }
 
   function render() {
-    const size = ICON_SIZE_PRESETS[iconSize];
+    const layout = iconSizeLayout(iconSize);
     panel.innerHTML = `
       <div class="wb-panel-header">
         <strong>DevOps & Cloud Library (${ALL_STENCILS.length})</strong>
-        <div style="display:flex;gap:4px;align-items:center;">
-          <button type="button" class="wb-btn wb-sm" id="btn-lib-size-down" title="Icon size: ${size.label} (smaller)" ${iconSize === 'compact' ? 'disabled' : ''}>−</button>
-          <button type="button" class="wb-btn wb-sm" id="btn-lib-size-up" title="Icon size: ${size.label} (larger)" ${iconSize === 'large' ? 'disabled' : ''}>+</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label for="lib-size-slider" style="font-size:10px;color:var(--text-muted,#64748b);" title="Icon preview size (28–96 px, persisted)">Size</label>
+          <input type="range" id="lib-size-slider" min="${ICON_SIZE_MIN}" max="${ICON_SIZE_MAX}" step="4" value="${iconSize}" aria-label="Icon size" style="width:80px;" />
+          <span id="lib-size-value" style="font-size:10px;color:var(--text-muted,#64748b);width:26px;">${iconSize}px</span>
           <button type="button" class="wb-icon-btn" id="btn-close-library" aria-label="Close Library">✕</button>
         </div>
       </div>
@@ -133,6 +158,7 @@ export function initLibraryPanel(app) {
         <button type="button" role="tab" class="wb-tab ${activeTab === 'iconpack' ? 'active' : ''}" data-tab="iconpack">DevOps Pack (2015)</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'packs' ? 'active' : ''}" data-tab="packs">Diagram Packs</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'user' ? 'active' : ''}" data-tab="user">My Library (${app.userLibrary.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'workflows' ? 'active' : ''}" data-tab="workflows">Workflows (${WORKFLOW_INDEX.workflows.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'templates' ? 'active' : ''}" data-tab="templates">Templates</button>
       </div>
       <div class="wb-panel-body" id="wb-library-content"></div>
@@ -144,8 +170,12 @@ export function initLibraryPanel(app) {
       app.toolbarUI?.update();
     });
 
-    panel.querySelector('#btn-lib-size-down')?.addEventListener('click', () => stepIconSize(-1));
-    panel.querySelector('#btn-lib-size-up')?.addEventListener('click', () => stepIconSize(1));
+    panel.querySelector('#lib-size-slider')?.addEventListener('input', (e) => {
+      const px = Number(e.target.value);
+      document.querySelector('#lib-size-value').textContent = `${px}px`;
+      // rerender:false — a full render() here destroys the slider mid-drag.
+      setIconSize(px, { rerender: false });
+    });
 
     panel.querySelectorAll('[data-tab]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -155,11 +185,20 @@ export function initLibraryPanel(app) {
     });
 
     const content = panel.querySelector('#wb-library-content');
+    renderTabContent();
+  }
+
+  // Rebuilds only the tab grid. Used live during the size slider drag —
+  // the header (and its slider element) stay untouched.
+  function renderTabContent() {
+    const content = panel.querySelector('#wb-library-content');
+    if (!content) return;
     if (activeTab === 'stencils') renderStencilsTab(content);
     else if (activeTab === 'lucide') renderLucideIconsTab(content);
     else if (activeTab === 'iconpack') renderIconPackTab(content);
     else if (activeTab === 'packs') renderDiagramPacksTab(content);
     else if (activeTab === 'user') renderUserLibraryTab(content);
+    else if (activeTab === 'workflows') renderWorkflowsTab(content, app);
     else renderTemplatesTab(content);
   }
 
@@ -188,7 +227,7 @@ export function initLibraryPanel(app) {
         </div>
         <div id="wb-lib-multiselect-bar" class="wb-lib-multiselect-bar ${multiSelectMode || selectedStencils.size > 0 ? '' : 'wb-hidden'}"></div>
       </div>
-      <div id="wb-lib-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Architecture Icons"></div>
+      <div id="wb-lib-results" class="wb-lib-results wb-density-${iconSizeLayout(iconSize).densityClass}" role="listbox" aria-label="Architecture Icons"></div>
     `;
 
     const searchInput = content.querySelector('#lib-search');
@@ -258,10 +297,11 @@ export function initLibraryPanel(app) {
       const isSelected = selectedStencils.has(s.id);
       const provenance = getIconProvenance(s);
       const isFav = favorites.has(s.id);
-      const iconW = ICON_SIZE_PRESETS[iconSize].iconW;
-      const iconH = ICON_SIZE_PRESETS[iconSize].iconH;
-      const boxW = ICON_SIZE_PRESETS[iconSize].box;
-      const boxH = ICON_SIZE_PRESETS[iconSize].box;
+      const layout = iconSizeLayout(iconSize);
+      const iconW = layout.size;
+      const iconH = layout.size;
+      const boxW = layout.size - 8;
+      const boxH = layout.size - 8;
       return `
         <div class="wb-stencil-item ${isSelected ? 'selected' : ''}" role="option" tabindex="0" aria-selected="${isSelected}" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) · ${escapeXml(provenance.provider)} ${escapeXml(provenance.version)} · ${escapeXml(provenance.license || 'project license')}${provenance.attribution ? ` · ${escapeXml(provenance.attribution)}` : ''}, reviewed ${escapeXml(provenance.reviewedAt || 'not recorded')} — Click to place, drag onto canvas">
           <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
@@ -313,7 +353,7 @@ export function initLibraryPanel(app) {
               <span>${escapeXml(grp.category)}</span>
               <span class="wb-lib-category-count">${grp.items.length}</span>
             </div>
-            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
+            <div class="wb-stencil-grid ${iconSizeLayout(iconSize).gridClass}">
               ${slice.map(renderCardHtml).join('')}
             </div>
           </div>
@@ -390,11 +430,11 @@ export function initLibraryPanel(app) {
             cards[idx - 1].focus();
           } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx + step]) cards[idx + step].focus();
           } else if (ev.key === 'ArrowUp') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx - step]) cards[idx - step].focus();
           }
         });
@@ -461,7 +501,7 @@ export function initLibraryPanel(app) {
             .join('')}
         </div>
       </div>
-      <div id="lucide-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Lucide Icons"></div>
+      <div id="lucide-results" class="wb-lib-results wb-density-${iconSizeLayout(iconSize).densityClass}" role="listbox" aria-label="Lucide Icons"></div>
     `;
 
     const searchInput = content.querySelector('#lucide-search');
@@ -469,7 +509,7 @@ export function initLibraryPanel(app) {
 
     const renderCardHtml = (s) => {
       const isFav = favorites.has(s.id);
-      const size = ICON_SIZE_PRESETS[iconSize];
+      const size = iconSizeLayout(iconSize);
       return `
         <div class="wb-stencil-item" role="option" tabindex="0" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) · Lucide v1.68.0 · ISC License — Click to place, drag onto canvas">
           <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
@@ -515,7 +555,7 @@ export function initLibraryPanel(app) {
               <span>${escapeXml(subLabel(cat))}</span>
               <span class="wb-lib-category-count">${items.length}</span>
             </div>
-            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
+            <div class="wb-stencil-grid ${iconSizeLayout(iconSize).gridClass}">
               ${slice.map(renderCardHtml).join('')}
             </div>
           </div>
@@ -570,11 +610,11 @@ export function initLibraryPanel(app) {
             cards[idx - 1].focus();
           } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx + step]) cards[idx + step].focus();
           } else if (ev.key === 'ArrowUp') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx - step]) cards[idx - step].focus();
           }
         });
@@ -640,12 +680,12 @@ export function initLibraryPanel(app) {
             .join('')}
         </div>
       </div>
-      <div id="pack-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Icon Pack"></div>
+      <div id="pack-results" class="wb-lib-results wb-density-${iconSizeLayout(iconSize).densityClass}" role="listbox" aria-label="Icon Pack"></div>
     `;
 
     const searchInput = content.querySelector('#pack-search');
     const resultsBox = content.querySelector('#pack-results');
-    const size = ICON_SIZE_PRESETS[iconSize];
+    const size = iconSizeLayout(iconSize);
 
     const renderCardHtml = (s) => {
       const isFav = favorites.has(s.id);
@@ -696,7 +736,7 @@ export function initLibraryPanel(app) {
               <span>${escapeXml(groupLabel(slug))}</span>
               <span class="wb-lib-category-count">${items.length}</span>
             </div>
-            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
+            <div class="wb-stencil-grid ${iconSizeLayout(iconSize).gridClass}">
               ${slice.map(renderCardHtml).join('')}
             </div>
           </div>
@@ -751,11 +791,11 @@ export function initLibraryPanel(app) {
             cards[idx - 1].focus();
           } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx + step]) cards[idx + step].focus();
           } else if (ev.key === 'ArrowUp') {
             ev.preventDefault();
-            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            const step = iconSizeLayout(iconSize).focusStep;
             if (cards[idx - step]) cards[idx - step].focus();
           }
         });
