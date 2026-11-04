@@ -81,6 +81,15 @@ export function initVotingUI(app) {
   // One dot on one element, entered from the canvas pointerdown route.
   function castVoteOn(el) {
     if (!active || !el) return false;
+    if (app.collab ? !app.collab.canEditBoard() : false) {
+      // Viewers never mutate locally: the server owns the count and its
+      // authoritative broadcast brings the dot up for everyone, sender
+      // included. An optimistic dot would linger after a rejection (the
+      // teacher can close the session mid-flight) with nothing to roll it
+      // back until the next full sync.
+      app.collab?.broadcastVoteCast?.(app.getPage().id, el.id, el.votes || 0);
+      return true;
+    }
     const before = el.votes || 0;
     const votes = castVote(el);
     if (votes === before) {
@@ -90,13 +99,8 @@ export function initVotingUI(app) {
       );
       return false;
     }
-    if (app.collab ? app.collab.canEditBoard() : true) {
-      // Board owners commit through the shared element pipeline: history, autosave, collab.
-      app.commitChange();
-    } else {
-      // Viewers cannot scene-sync; their dot travels on its own channel instead.
-      app.collab?.broadcastVoteCast?.(app.getPage().id, el.id, el.votes);
-    }
+    // Board owners commit through the shared element pipeline: history, autosave, collab.
+    app.commitChange();
     app.requestRender();
     return true;
   }

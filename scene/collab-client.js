@@ -669,7 +669,8 @@ export class CollabClient {
     }
 
     if (msg.type === 'vote:cast') {
-      if (msg.senderClientId === this.clientId) return;
+      // No sender-echo filter: a viewer's own dot is applied from this
+      // authoritative count too, because the viewer never mutates locally.
       this.app.votingUI?.applyRemoteVote?.(msg.pageId, msg.elementId, msg.votes);
       return;
     }

@@ -539,11 +539,11 @@ describe('Extended pattern catalog', () => {
       'gcp-gke': 0.0389,
       'aws-three-tier': 0.0378,
       'aws-serverless': 0.0378,
-      // Both pre-existing patterns already exceed the 5% target at their
-      // current coordinates. They are locked here at the measured value so
-      // a layout change is caught instead of silently drifting further.
-      'azure-multiregion': 0.0559,
-      'devops-platform': 0.0559,
+      // azure-multiregion and devops-platform were relaid out on 2026-11-04
+      // (three compact rows instead of a sprawl to y=470): they measured
+      // 0.0559 before and 0.0481 after, bringing every pattern under target.
+      'azure-multiregion': 0.0481,
+      'devops-platform': 0.0481,
       'aws-microservices': 0.0413,
       'azure-event-driven': 0.0413,
       'gcp-ml-pipeline': 0.0413,
@@ -555,9 +555,9 @@ describe('Extended pattern catalog', () => {
       const { nodes } = p.generate(defaultValues(p));
       const ratio = areaRatio(nodes, 3200, 2400);
       assert.equal(ratio, expected[p.id], `${p.id} layout area drifted`);
-      if (NEW_PATTERN_IDS.includes(p.id)) {
-        assert.ok(ratio < 0.05, `${p.id} exceeds the 5% canvas-area target`);
-      }
+      // Every pattern, old and new, must stay inside the 5 % target now that
+      // the two historical violations have been relaid out.
+      assert.ok(ratio < 0.05, `${p.id} exceeds the 5% canvas-area target`);
     }
   });
 

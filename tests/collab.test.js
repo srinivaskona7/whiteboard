@@ -810,6 +810,80 @@ describe('6. Workspace Presets, Rounded-Elbow Connectors, Labels, Container Brea
     }
   });
 
+  test('a viewer receives its own vote:cast echo — the server owns the count', async () => {
+    // Viewers never mutate locally (no optimistic dot), so the caster's own
+    // screen only updates from the server's authoritative broadcast. If the
+    // WS route excludes the sender's socket, the student clicks and nothing
+    // happens on their own board until an unrelated full sync.
+    const srv = createStandaloneCollabServer({ port: 0 });
+    const port = await srv.start();
+    if (!port) return; // Skip only if OS sandbox blocks loopback listen
+
+    try {
+      const scene = createScene('light');
+      const sticky = createElement('sticky', { x: 120, y: 120, w: 200, h: 120, text: 'Best idea' });
+      scene.pages[0].elements.push(sticky);
+
+      const createRes = await fetch(`http://127.0.0.1:${port}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Vote echo room', scene }),
+      });
+      const room = await createRes.json();
+
+      const connectClient = (queryObj) => {
+        const qs = new URLSearchParams(queryObj).toString();
+        return connectNodeWsClient(`ws://127.0.0.1:${port}/ws?${qs}`);
+      };
+      const teacher = await connectClient({
+        roomId: room.roomId,
+        token: room.teacherToken,
+        clientId: 'cli_teacher',
+        name: 'Prof. Lin',
+        color: '#2563eb',
+      });
+      await teacher.waitFor((m) => m.type === 'room:welcome');
+      const student = await connectClient({
+        roomId: room.roomId,
+        role: 'questioner',
+        clientId: 'cli_student',
+        name: 'Alex',
+        color: '#059669',
+      });
+      await student.waitFor((m) => m.type === 'room:welcome');
+
+      teacher.ws.send(JSON.stringify({ type: 'vote:session', active: true }));
+      const sessionOpen = await student.waitFor((m) => m.type === 'vote:session' && m.session.active === true);
+      assert.ok(sessionOpen, 'the student sees the session open');
+
+      student.ws.send(
+        JSON.stringify({ type: 'vote:cast', pageId: scene.pages[0].id, elementId: sticky.id, votes: 999 })
+      );
+
+      // The caster must hear its own authoritative count back — the payload's
+      // 999 is ignored and the server's recomputed count is what lands.
+      const ownEcho = await student.waitFor(
+        (m) => m.type === 'vote:cast' && m.elementId === sticky.id && m.votes === 1
+      );
+      assert.equal(ownEcho.senderClientId, 'cli_student');
+      const teacherEcho = await teacher.waitFor(
+        (m) => m.type === 'vote:cast' && m.elementId === sticky.id && m.votes === 1
+      );
+      assert.ok(teacherEcho);
+
+      // A second cast on the same element still reaches both.
+      student.ws.send(
+        JSON.stringify({ type: 'vote:cast', pageId: scene.pages[0].id, elementId: sticky.id })
+      );
+      await teacher.waitFor((m) => m.type === 'vote:cast' && m.elementId === sticky.id && m.votes === 2);
+
+      teacher.ws.close();
+      student.ws.close();
+    } finally {
+      await srv.stop();
+    }
+  });
+
   test('renders recognizable non-zero SVG artwork onto Canvas for EC2, S3, RDS, and Route 53 stencils and guards idle SelectTool pointerup', () => {
     const drawnOps = [];
     const mockCtx = {

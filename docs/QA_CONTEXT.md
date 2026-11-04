@@ -262,10 +262,11 @@ Honest gaps: the three research agents returned after the implementation, so the
 
 Catalog is 150 templates (48 in this round's review scope). Dot voting is the first Miro-style
 activity (timer already existed); frames/retro boards beyond stickies are not designed yet.
-5 % canvas-area target is now measured: `scene/layout-metrics.js` locks every pattern's ratio in
-`tests/config.test.js` — all six new patterns sit under 0.05; the pre-existing
-`azure-multiregion` and `devops-platform` are locked at their measured 0.0559 pending a relayout.
-Lessons were played end to end for the AWS three-tier template
-and for a synthetic four-node chain, not for every template.
+5 % canvas-area target is met for all 14 patterns: `scene/layout-metrics.js` locks each ratio
+in `tests/config.test.js`; the historical `azure-multiregion`/`devops-platform` violations
+(0.0559) were relaid out to 0.0481 on 2026-11-04. The stencil registry is deduped (269 unique
+ids) and `tests/registry-integrity.test.js` locks uniqueness, alias targets, and that every
+lesson-pack stencil resolves to real art. Lessons were played end to end for the AWS
+three-tier template and for a synthetic four-node chain, not for every template.
 
 

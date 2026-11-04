@@ -256,3 +256,67 @@ describe('Remote votes are board state', () => {
     );
   });
 });
+
+describe('Vote casting paths', () => {
+  const votingApp = (scene, page, { viewer }) => {
+    const history = new HistoryManager();
+    history.initPage(page);
+    const casts = [];
+    const calls = { commits: 0, toasts: [] };
+    const app = {
+      scene,
+      getPage: () => page,
+      history,
+      commitChange() {
+        calls.commits++;
+        history.record(page);
+      },
+      scheduleAutosave() {},
+      requestRender() {},
+      updateUI() {},
+      collab: {
+        canEditBoard: () => !viewer,
+        broadcastVoteCast: (p, e, v) => casts.push([p, e, v]),
+        broadcastVoteSession() {},
+        broadcastSceneChange() {},
+      },
+      dialogs: {
+        showToast(msg) {
+          calls.toasts.push(msg);
+        },
+      },
+    };
+    return { app, history, casts, calls };
+  };
+
+  test('a viewer never mutates locally — the authoritative broadcast applies the dot', () => {
+    const { scene, page, el } = sceneWithSticky();
+    const { app, casts } = votingApp(scene, page, { viewer: true });
+    const voting = initVotingUI(app);
+    // A student never starts the session; the teacher's toggle activates it.
+    voting.applyRemoteSession({ active: true });
+
+    const ok = voting.castVoteOn(el);
+    assert.equal(ok, true);
+    assert.equal(casts.length, 1, 'the dot was sent to the server channel');
+    assert.equal(el.votes, undefined, 'no optimistic local mutation to roll back');
+
+    // The server's authoritative count arrives for everyone, sender included.
+    voting.applyRemoteVote(page.id, el.id, 1);
+    assert.equal(page.elements.find((e) => e.id === el.id).votes, 1);
+  });
+
+  test('a board owner commits locally and never uses the cast channel', () => {
+    const { scene, page, el } = sceneWithSticky();
+    const { app, casts, calls } = votingApp(scene, page, { viewer: false });
+    const voting = initVotingUI(app);
+    voting.start();
+
+    const ok = voting.castVoteOn(el);
+    assert.equal(ok, true);
+    assert.equal(el.votes, 1, 'the owner applies the dot immediately');
+    assert.equal(casts.length, 0, 'the cast channel is for viewers only');
+    assert.equal(calls.commits, 1, 'the vote went through commitChange');
+    assert.ok(app.history.canUndo(page), 'the vote is a history step');
+  });
+});

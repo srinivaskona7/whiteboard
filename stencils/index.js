@@ -20,7 +20,7 @@ export const SEARCH_ALIASES = {
   aks: ['az-aks'],
   gke: ['gcp-gke'],
   eks: ['aws-eks'],
-  s3: ['aws-s3', 'cloud-bucket', 'db-minio'],
+  s3: ['aws-s3', 'cloud-bucket', 'stg-minio'],
   rds: ['aws-rds', 'cloud-db'],
   vpc: ['bnd-aws-vpc', 'aws-vpc', 'gcp-vpc', 'bnd-gcp-vpc'],
   vnet: ['bnd-azure-vnet', 'az-vnet'],
@@ -29,15 +29,15 @@ export const SEARCH_ALIASES = {
   nlb: ['aws-alb', 'net-lb'],
   sg: ['sec-sg', 'bnd-sec-zone'],
   waf: ['sec-waf', 'az-appgw'],
-  pvc: ['k8s-pvc', 'k8s-vol'],
-  pv: ['k8s-pvc', 'k8s-vol'],
+  pvc: ['k8s-pvc'],
+  pv: ['k8s-pvc'],
   dns: ['net-dns', 'aws-route53', 'concept-dns'],
   r53: ['aws-route53'],
   iam: ['aws-iam', 'gcp-iam', 'az-entra'],
   k8s: ['bnd-k8s-cluster', 'k8s-cluster', 'k8s-pod', 'k8s-deploy', 'k8s-svc'],
   pod: ['k8s-pod'],
   svc: ['k8s-svc'],
-  ing: ['k8s-ingress', 'net-ingress'],
+  ing: ['k8s-ingress'],
   cm: ['k8s-cm'],
   sts: ['k8s-sts'],
   ds: ['k8s-ds'],
@@ -46,17 +46,31 @@ export const SEARCH_ALIASES = {
   az: ['bnd-aws-az'],
   tf: ['iac-terraform'],
   tofu: ['iac-opentofu'],
-  gha: ['cicd-gha'],
-  ci: ['cicd-gha', 'cicd-gitlabci', 'cicd-jenkins'],
+  gha: ['cicd-gh-actions'],
+  ci: ['cicd-gh-actions', 'cicd-gitlab-ci', 'cicd-jenkins'],
   cd: ['cicd-argocd', 'cicd-flux', 'cicd-tekton'],
   otel: ['obs-otel'],
   pg: ['db-postgres'],
   pgsql: ['db-postgres'],
-  mq: ['db-rabbitmq', 'db-kafka', 'aws-sqs'],
-  tls: ['concept-tls', 'sec-tls', 'sec-certmgr'],
+  mq: ['msg-rabbitmq', 'msg-kafka', 'msg-nats', 'aws-sqs'],
+  tls: ['concept-tls'],
 };
 
-export const ALL_STENCILS = [
+// Same id can be declared by two packs (the DevOps-infra k8s/net set predates
+// the dedicated Kubernetes and Network packs, and both draw `k8s-pod`/`net-lb`).
+// First declaration wins — the earliest pack in the list order is the richer
+// one — so the palette, search and getStencilById all expose one stencil per
+// id instead of a duplicate card and a lookup that disagrees with the list.
+const dedupeById = (stencils) => {
+  const seen = new Set();
+  return stencils.filter((s) => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+};
+
+export const ALL_STENCILS = dedupeById([
   ...ARCHITECTURE_BOUNDARY_STENCILS,
   ...DEVOPS_CLOUD_STENCILS,
   ...DEVOPS_INFRA_STENCILS,
@@ -70,7 +84,7 @@ export const ALL_STENCILS = [
   ...CLOUD_STENCILS,
   ...KUBERNETES_STENCILS,
   ...NETWORK_STENCILS,
-];
+]);
 
 const STENCIL_MAP = new Map(ALL_STENCILS.map((s) => [s.id, s]));
 

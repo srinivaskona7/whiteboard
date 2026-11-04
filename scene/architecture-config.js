@@ -199,6 +199,12 @@ function azureAks(values) {
     nodes.push(node('cache', 700, 130, 'flow-database', `${prefix}-cache`));
     edges.push(edge('api', 'cache', 'cache hit'));
   }
+  // The identity slot sits under the ingress, clear of the monitor at the far
+  // right: an earlier draft stacked both at (900, 330) and they overlapped.
+  if (values.identity) {
+    nodes.push(node('identity', 260, 330, 'az-entra', `${prefix}-identity`));
+    edges.push(edge('api', 'identity', 'managed identity'));
+  }
   if (values.queue) {
     nodes.push(node('queue', 480, 500, 'az-servicebus', `${prefix}-queue`));
     edges.push(edge('worker', 'queue', 'publish'));
@@ -382,9 +388,9 @@ function azureMultiRegion(values) {
     edge('entry', 'app', 'origin group'),
     edge('app', 'data', dataPathLabel(values)),
   ];
-  nodes.push(node('standby', 450, 330, 'az-vm', `${prefix}-app-standby`));
-  nodes.push(node('standby-data', 660, 330, 'az-sql', `${prefix}-sql-secondary`));
-  nodes.push(node('health', 870, 330, 'az-monitor', `${prefix}-health`));
+  nodes.push(node('standby', 450, 270, 'az-vm', `${prefix}-app-standby`));
+  nodes.push(node('standby-data', 660, 270, 'az-sql', `${prefix}-sql-secondary`));
+  nodes.push(node('health', 870, 270, 'az-monitor', `${prefix}-health`));
   edges.push(edge('entry', 'standby', 'failover origin', 'bottom', 'top'));
   edges.push(edge('data', 'standby-data', 'geo-replica'));
   edges.push(edge('health', 'entry', 'probe', 'top', 'bottom'));
@@ -393,7 +399,9 @@ function azureMultiRegion(values) {
     edges.push(edge('app', 'identity', 'managed identity'));
   }
   if (values.observability) {
-    nodes.push(node('monitor', 660, 470, 'az-monitor', `${prefix}-monitor`));
+    // Compact three-row layout: the diagram used to sprawl to a fourth row at
+    // y=470, which pushed its area past the 5 % canvas-area target.
+    nodes.push(node('monitor', 660, 410, 'az-monitor', `${prefix}-monitor`));
     edges.push(edge('app', 'monitor', 'traces'));
   }
   return { nodes, edges };
@@ -428,7 +436,7 @@ function devopsPlatform(values) {
     node('scan', 450, 130, 'sec-trivy', `${prefix}-scan`),
     node('registry', 660, 130, 'cicd-artifact', `${prefix}-registry`),
     node('gitops', 870, 130, 'cicd-argocd', `${prefix}-gitops`),
-    node('app', 870, 330, 'k8s-cluster', `${prefix}-cluster`),
+    node('app', 870, 270, 'k8s-cluster', `${prefix}-cluster`),
   ];
   const edges = [
     edge('source', 'build', 'push'),
@@ -438,14 +446,16 @@ function devopsPlatform(values) {
     edge('gitops', 'app', `sync · ${values.releaseStrategy}`),
   ];
   if (values.identity) {
-    nodes.push(node('identity', 660, 330, 'sec-vault', `${prefix}-secrets`));
+    nodes.push(node('identity', 660, 270, 'sec-vault', `${prefix}-secrets`));
     edges.push(edge('app', 'identity', 'secret ref', 'bottom', 'top'));
   }
-  nodes.push(node('policy', 450, 330, 'sec-opa', `${prefix}-policy`));
+  nodes.push(node('policy', 450, 270, 'sec-opa', `${prefix}-policy`));
   edges.push(edge('scan', 'policy', 'policy check', 'bottom', 'top'));
   edges.push(edge('policy', 'gitops', 'admission', 'right', 'bottom'));
   if (values.observability) {
-    nodes.push(node('monitor', 660, 470, 'obs-prometheus', `${prefix}-metrics`));
+    // Compact three-row layout: the diagram used to sprawl to a fourth row at
+    // y=470, which pushed its area past the 5 % canvas-area target.
+    nodes.push(node('monitor', 660, 410, 'obs-prometheus', `${prefix}-metrics`));
     edges.push(edge('app', 'monitor', 'scrape'));
   }
   return { nodes, edges };

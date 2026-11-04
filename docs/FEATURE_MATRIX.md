@@ -329,7 +329,10 @@ Vertex AI), the closest existing provider stencil carries the correct service la
 Known limits: the 70 new architecture templates are unit-tested at the pack level but not yet
 applied and inspected in the browser; search totals beyond the palette window were not re-verified
 at 150. Services without a stencil use the closest existing stencil with a correct label
-(recorded per pack in the pack test files).
+(recorded per pack in the pack test files). The registry is deduped to 269 unique ids and
+`tests/registry-integrity.test.js` locks uniqueness, alias targets and lesson-pack resolution;
+all 14 patterns now measure under the 5 % target (the two historical 0.0559 violations were
+relaid out to 0.0481 on 2026-11-04).
 
 ## 21. Dot voting (2026-11-04)
 

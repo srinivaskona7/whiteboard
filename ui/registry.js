@@ -262,10 +262,13 @@ Encrypted App Data`, fill: '#f3e8ff', revealStep: 4 },
       'pack-docker-lifecycle',
       'Docker Image & Container Lifecycle',
       [
-        { key: 'df', type: 'stencil', stencilId: 'cnt-dockerfile', x: 80, y: 150, w: 130, h: 104, text: '1. Dockerfile', revealStep: 1 },
-        { key: 'img', type: 'stencil', stencilId: 'cnt-docker', x: 280, y: 150, w: 130, h: 104, text: '2. OCI Image Layers', revealStep: 2 },
-        { key: 'reg', type: 'stencil', stencilId: 'cnt-registry', x: 480, y: 150, w: 130, h: 104, text: '3. Container Registry', revealStep: 3 },
-        { key: 'rt', type: 'stencil', stencilId: 'cnt-containerd', x: 680, y: 150, w: 130, h: 104, text: '4. containerd Runtime', revealStep: 4 },
+        // These ids once pointed at stencils that were never registered, so the
+        // cards silently rendered the fallback stencil (ALL_STENCILS[0]). The
+        // registry's own equivalents carry the right art for each step.
+        { key: 'df', type: 'stencil', stencilId: 'docker-image', x: 80, y: 150, w: 130, h: 104, text: '1. Dockerfile', revealStep: 1 },
+        { key: 'img', type: 'stencil', stencilId: 'docker-container', x: 280, y: 150, w: 130, h: 104, text: '2. OCI Image Layers', revealStep: 2 },
+        { key: 'reg', type: 'stencil', stencilId: 'docker-registry', x: 480, y: 150, w: 130, h: 104, text: '3. Container Registry', revealStep: 3 },
+        { key: 'rt', type: 'stencil', stencilId: 'docker-containerd', x: 680, y: 150, w: 130, h: 104, text: '4. containerd Runtime', revealStep: 4 },
       ],
       [
         ['df', 'img', 'docker build'],
@@ -292,9 +295,9 @@ Encrypted App Data`, fill: '#f3e8ff', revealStep: 4 },
       'pack-cicd-gitops',
       'CI/CD & GitOps Delivery Pipeline',
       [
-        { key: 'git', type: 'stencil', stencilId: 'cicd-git', x: 70, y: 150, w: 130, h: 104, text: '1. Git Commit', revealStep: 1 },
-        { key: 'gha', type: 'stencil', stencilId: 'cicd-gha', x: 260, y: 150, w: 130, h: 104, text: '2. GitHub Actions CI', revealStep: 2 },
-        { key: 'reg', type: 'stencil', stencilId: 'cnt-registry', x: 450, y: 150, w: 130, h: 104, text: '3. OCI Registry', revealStep: 3 },
+        { key: 'git', type: 'stencil', stencilId: 'git-repo', x: 70, y: 150, w: 130, h: 104, text: '1. Git Commit', revealStep: 1 },
+        { key: 'gha', type: 'stencil', stencilId: 'cicd-gh-actions', x: 260, y: 150, w: 130, h: 104, text: '2. GitHub Actions CI', revealStep: 2 },
+        { key: 'reg', type: 'stencil', stencilId: 'docker-registry', x: 450, y: 150, w: 130, h: 104, text: '3. OCI Registry', revealStep: 3 },
         { key: 'argo', type: 'stencil', stencilId: 'cicd-argocd', x: 640, y: 150, w: 130, h: 104, text: '4. Argo CD Sync', revealStep: 4 },
       ],
       [

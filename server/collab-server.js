@@ -1035,7 +1035,11 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
                     })
                   );
                 } else if (outcome.broadcast) {
-                  broadcastToRoom(roomId, outcome.broadcast, socket);
+                  // vote:cast is server-authoritative: the caster never
+                  // mutates locally, so the sender must receive its own
+                  // authoritative count back. Every other op already lives
+                  // on the sender's board, which is why they exclude it.
+                  broadcastToRoom(roomId, outcome.broadcast, msg.type === 'vote:cast' ? null : socket);
                 }
               }
             } catch {
