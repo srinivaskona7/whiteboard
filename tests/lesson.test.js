@@ -2,7 +2,7 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeDiagram, buildLessonSteps, buildLessonTrack } from '../scene/lesson.js';
-import { sampleTrack, normalizeSteps, validateTrack } from '../scene/animation.js';
+import { sampleTrack, normalizeSteps, validateTrack, stepStartMs, createTrack } from '../scene/animation.js';
 import { createScene, createElement } from '../scene/model.js';
 import { bindConnectorEndpoint } from '../scene/bindings.js';
 
@@ -130,14 +130,23 @@ describe('Diagram lessons', () => {
 
   test('a sampled pulse keeps a static highlight as well as motion', () => {
     const { page, nodes } = chain();
-    const track = buildLessonTrack(page, { includeFailure: false });
-    const total = track.steps.reduce((sum, s) => sum + s.duration + s.delay, 0);
-    const state = sampleTrack(track, total, { page });
-    assert.ok(state.finished);
-    assert.ok(state.pulses.length >= 0);
-    // The failure beat's pulse step is the only place a highlight is added late;
-    // with failure disabled nothing should be left highlighted by a pulse.
-    assert.equal(state.pulses.length, 0);
+    // Isolate the pulse step. Sampling a lesson track would pass even if the
+    // pulse branch stopped highlighting, because the preceding `failure` step
+    // has already marked the same node — the test would be vacuous.
+    const track = createTrack({
+      id: 'pulse-only',
+      steps: normalizeSteps([{ id: 'p', action: 'pulse', targetId: nodes[0].id, duration: 1000 }]),
+    });
+    const start = stepStartMs(track, 0);
+    const state = sampleTrack(track, start + 500, { page });
+    assert.equal(state.pulses.length, 1, 'no pulse drawn mid-step');
+    assert.equal(state.pulses[0].targetId, nodes[0].id);
+    assert.ok(state.highlighted.has(nodes[0].id), 'pulse left no static highlight');
+    assert.equal(state.effects.get(nodes[0].id), 'pulse');
+
+    const reduced = sampleTrack(track, start + 500, { page, reducedMotion: true });
+    assert.ok(reduced.highlighted.has(nodes[0].id), 'reduced motion lost the highlight');
+    assert.equal(reduced.pulses[0].progress, 1, 'reduced motion should jump to the end state');
   });
 
   test('an empty page produces no track', () => {
@@ -146,7 +155,8 @@ describe('Diagram lessons', () => {
     assert.equal(buildLessonSteps(scene.pages[0]).length, 0);
   });
 
-  test('a cycle still produces a walk instead of stalling', () => {    const { page, nodes, arrows } = chain(['A', 'B', 'C']);
+  test('a cycle still produces a walk instead of stalling', () => {
+    const { page, nodes, arrows } = chain(['A', 'B', 'C']);
     const back = createElement('arrow', { routing: 'orthogonal' });
     bindConnectorEndpoint(back, 'start', nodes[2], 'right');
     bindConnectorEndpoint(back, 'end', nodes[0], 'left');
@@ -155,6 +165,26 @@ describe('Diagram lessons', () => {
     assert.equal(analysis.entryId, nodes[0].id);
     assert.equal(analysis.order.length, nodes.length);
     assert.equal(arrows.length, 2);
+  });
+
+  test('rollout targets a deployment, never network furniture', () => {
+    // "Shared services VPC" matches /service/ but rolling out a VPC is nonsense.
+    const { page } = chain(['Client', 'Shared services VPC', 'Application']);
+    const rollout = buildLessonSteps(page, { includeRollout: true });
+    const targets = new Set(rollout.filter((s) => s.action === 'rollout').map((s) => s.targetId));
+    const application = page.elements.find((e) => e.text === 'Application');
+    const vpc = page.elements.find((e) => e.text === 'Shared services VPC');
+    assert.deepEqual([...targets], [application.id]);
+    assert.ok(!targets.has(vpc.id), 'the VPC was chosen as the rollout target');
+  });
+
+  test('rollout still works for a Lambda-only chain', () => {
+    // Lambda was missing from the matching regex, so four AWS templates had no
+    // canary beat at all.
+    const { page } = chain(['Upload bucket', 'Order Lambda']);
+    const rollout = buildLessonSteps(page, { includeRollout: true });
+    const lambda = page.elements.find((e) => e.text === 'Order Lambda');
+    assert.ok(rollout.some((s) => s.action === 'rollout' && s.targetId === lambda.id));
   });
 
   // The 2026-11-03 animation research puts a hop at 400-600 ms with a

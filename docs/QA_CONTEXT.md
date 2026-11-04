@@ -231,13 +231,13 @@ Modified: `stencils/devops-cloud.js` (35 icons), `scene/architecture-config.js` 
 | New icons render | Every added stencil draws real art | 35 ids laid out and screenshotted: unique glyphs, correct AWS/Azure/GCP badges, `missing: []` |
 | AWS templates | Native, editable, provider-correct | 10 registered, 6–14 AWS stencils each, arrows bound, `templateId` on every element |
 | Config patterns | Each applies cleanly with known stencils | 8 patterns total; new four apply to ≥4 tracked nodes; AWS defaults use AWS regions |
-| Lesson from diagram | Steps follow the connectors | AWS three-tier: 16 steps, actions `reveal, request, failure, retry, pulse, rollout`, rollout 10/50/100 |
+| Lesson from diagram | Steps follow the connectors | AWS three-tier: 19 steps with rollout, actions `reveal, request, failure, retry, pulse, rollout`, rollout 10/50/100. Hub-spoke has none — it has no deployable workload |
 | Entry heuristic | A stray title is not the entry | Unit: a disconnected rect at (0,0) loses to the flow root; order length ≥ 3 |
 | Reduced motion | Static highlight survives | Unit: `pulse` adds to `highlighted` as well as `pulses` |
 | Console | No errors or warnings | none |
 
 Unit proof: the three new configuration tests fail against the previous `architecture-config.js`
-(verified by `git stash` on that file alone). Full suite 165 pass. `vite build` clean.
+(verified by `git stash` on that file alone). Full suite 240 pass. `vite build` clean.
 
 Honest gaps: the three research agents returned after the implementation, so their findings arrived
 **after** the code rather than shaping it. What they confirmed and what they add:
@@ -248,18 +248,24 @@ Honest gaps: the three research agents returned after the implementation, so the
   the rest are the agent's own knowledge. Two teaching insights worth folding into template notes:
   without a DLQ a poison message is retried until it expires and the event is lost; replication
   copies corruption, so backups are still required in a multi-region design.
-- **Icons** — the ranked top-30 list is mostly covered by the 35 added. Still missing: Azure Logic
-  Apps, Azure NAT Gateway, GCP Cloud NAT, AWS/Azure/GCP private connectivity (PrivateLink, Private
-  Link is present as *Private Endpoint*, Private Service Connect), ExpressRoute/Cloud VPN, Cloud
-  Tasks, Cloud Logging, Azure L4 Load Balancer, Application Insights. Naming flags: Azure Cache for
-  Redis is being retired for Azure Managed Redis; Synapse is being superseded by Fabric.
+- **Icons** — the ranked top-30 list is now fully covered: the 11 services it flagged as missing
+  (Logic Apps, Azure NAT, GCP Cloud NAT, PrivateLink, Private Service Connect, ExpressRoute, Cloud
+  VPN, Cloud Tasks, Cloud Logging, Azure L4 Load Balancer, Application Insights) were added after
+  the ranking arrived, plus X-Ray. Registry 283. Naming flags remain: Azure Cache for Redis is being retired for
+  Azure Managed Redis; Synapse is being superseded by Fabric; Google may now call Cloud Functions
+  "Cloud Run functions".
 - **Animation** — the accessibility rules are the actionable part: an on-screen pause/stop (present),
   a static equivalent for every animated state (`pulse` highlight and `rollout` badge both satisfy
-  this), ≤3 flashes/s, and reduced motion cutting pans rather than shortening them. The timing
-  advice (400–600 ms per hop, 300–500 ms pauses) is **below** the current `REVEAL_MS=700` /
-  `MARKER_MS=1200`, so the lesson still runs slower than the research recommends.
+  this), ≤3 flashes/s, and reduced motion cutting pans rather than shortening them. The timing advice
+  (400–600 ms per hop, 300–500 ms pauses) has since been applied: hops are 600 ms with a 400 ms
+  pause and reveals 500 ms, and a unit test fails if a future edit leaves that range.
 
-Catalog is 48 templates, not 80. Miro activities remain absent. 5 % canvas-area target unmeasured.
-Only the AWS three-tier template had its lesson played end to end.
+Catalog is 150 templates (48 in this round's review scope). Dot voting is the first Miro-style
+activity (timer already existed); frames/retro boards beyond stickies are not designed yet.
+5 % canvas-area target is now measured: `scene/layout-metrics.js` locks every pattern's ratio in
+`tests/config.test.js` — all six new patterns sit under 0.05; the pre-existing
+`azure-multiregion` and `devops-platform` are locked at their measured 0.0559 pending a relayout.
+Lessons were played end to end for the AWS three-tier template
+and for a synthetic four-node chain, not for every template.
 
 

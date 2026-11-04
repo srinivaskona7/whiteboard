@@ -387,6 +387,9 @@ export class CollabClient {
     if (data.timerState) {
       this.app.timerUI?.applyRemoteTimerState?.(data.timerState);
     }
+    if (data.voteSession) {
+      this.app.votingUI?.applyRemoteSession?.(data.voteSession);
+    }
 
     // Keep URL clean so secret tokens are not left exposed in the address bar
     if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -548,6 +551,9 @@ export class CollabClient {
       if (msg.timerState) {
         this.app.timerUI?.applyRemoteTimerState?.(msg.timerState);
       }
+      if (msg.voteSession) {
+        this.app.votingUI?.applyRemoteSession?.(msg.voteSession);
+      }
       this._updateLiveStatusText();
       this.app.updateUI?.();
       this.app.classroomUI?.update();
@@ -654,6 +660,17 @@ export class CollabClient {
 
     if (msg.type === 'timer:synced' && msg.timerState) {
       this.app.timerUI?.applyRemoteTimerState?.(msg.timerState);
+      return;
+    }
+
+    if (msg.type === 'vote:session' && msg.session) {
+      this.app.votingUI?.applyRemoteSession?.(msg.session);
+      return;
+    }
+
+    if (msg.type === 'vote:cast') {
+      if (msg.senderClientId === this.clientId) return;
+      this.app.votingUI?.applyRemoteVote?.(msg.pageId, msg.elementId, msg.votes);
       return;
     }
 
@@ -823,6 +840,19 @@ export class CollabClient {
       type: 'timer:sync',
       timerState,
     });
+  }
+
+  broadcastVoteSession(active) {
+    if (this.status !== 'live' || !this.roomId) return;
+    if (this.role !== 'teacher' && this.role !== 'editor') return;
+    this._sendWsOrRest({ type: 'vote:session', active: Boolean(active) });
+  }
+
+  // Viewer dots ride on their own channel: broadcastSceneChange is blocked for
+  // students, but a vote must still reach everyone in the room.
+  broadcastVoteCast(pageId, elementId, votes) {
+    if (this.status !== 'live' || !this.roomId) return;
+    this._sendWsOrRest({ type: 'vote:cast', pageId, elementId, votes });
   }
 
   sendCursorUpdate(worldPt, selectionIds = []) {

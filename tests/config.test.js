@@ -13,6 +13,7 @@ import { getTemplateById } from '../templates/index.js';
 import { serializeScene, parseSceneJson } from '../scene/storage.js';
 import { HistoryManager } from '../scene/history.js';
 import { ALL_STENCILS } from '../stencils/index.js';
+import { boundsOf, areaRatio, overlaps } from '../scene/layout-metrics.js';
 
 const ALL_STENCIL_IDS = new Set(ALL_STENCILS.map((s) => s.id));
 const AWS_REGIONS = ['eu-west-1', 'eu-central-1', 'us-east-1', 'us-west-2'];
@@ -408,5 +409,165 @@ describe('Configuration hardening', () => {
     assert.ok(res.removedIds.includes(cache.id));
     assert.equal(userArrow.startBinding, null);
     assert.ok(page.elements.includes(userArrow));
+  });
+});
+
+describe('Layout metrics', () => {
+  const el = (x, y, w, h) => ({ x, y, w, h });
+
+  test('boundsOf measures the used bounding box, defaulting missing sizes', () => {
+    // el(40, 130) has no size, so it defaults to 164 x 92.
+    assert.deepEqual(
+      boundsOf([el(40, 130), el(300, 200, 50, 40)]),
+      { minX: 40, minY: 130, maxX: 350, maxY: 240, w: 310, h: 110 }
+    );
+    assert.deepEqual(
+      boundsOf([el(40, 130)]),
+      { minX: 40, minY: 130, maxX: 204, maxY: 222, w: 164, h: 92 }
+    );
+    assert.deepEqual(boundsOf([]), { minX: 0, minY: 0, maxX: 0, maxY: 0, w: 0, h: 0 });
+  });
+
+  test('areaRatio is the used share of the canvas, rounded to 4 dp', () => {
+    // 800 x 470 used on a 3200 x 2400 canvas = 376000 / 7680000 = 0.0490.
+    assert.equal(areaRatio([el(100, 200, 800, 470)], 3200, 2400), 0.049);
+    // A single default-sized node: 164 x 92 / 7680000 = 0.0020.
+    assert.equal(areaRatio([el(40, 130)]), 0.002);
+    assert.equal(areaRatio([]), 0);
+  });
+
+  test('overlaps is a strict AABB test: touching boxes do not overlap', () => {
+    assert.equal(overlaps(el(0, 0), el(100, 50)), true);
+    assert.equal(overlaps(el(0, 0), el(164, 0)), false);
+    assert.equal(overlaps(el(0, 0), el(0, 92)), false);
+    assert.equal(overlaps(el(0, 0), el(200, 200)), false);
+    assert.equal(overlaps(null, el(0, 0)), false);
+  });
+});
+
+describe('Extended pattern catalog', () => {
+  const NEW_PATTERN_IDS = [
+    'aws-microservices',
+    'azure-event-driven',
+    'gcp-ml-pipeline',
+    'zero-trust-access',
+    'data-lakehouse',
+    'hybrid-connectivity',
+  ];
+
+  test('all fourteen patterns are registered with unique ids', () => {
+    assert.equal(CONFIG_PATTERNS.length, 14);
+    assert.equal(new Set(CONFIG_PATTERNS.map((p) => p.id)).size, 14);
+    for (const id of NEW_PATTERN_IDS) assert.ok(getConfigPattern(id), `${id} missing`);
+  });
+
+  test('each new pattern generates a connected graph of known stencils', () => {
+    for (const id of NEW_PATTERN_IDS) {
+      const p = getConfigPattern(id);
+      const { nodes, edges } = p.generate(defaultValues(p));
+      assert.ok(nodes.length >= 4, `${id} produced only ${nodes.length} nodes`);
+      assert.ok(edges.length >= 3, `${id} produced only ${edges.length} edges`);
+      const keys = new Set(nodes.map((n) => n.key));
+      assert.equal(keys.size, nodes.length, `${id} has duplicate node keys`);
+      for (const e of edges) {
+        assert.ok(keys.has(e.from), `${id}: edge leaves unknown key ${e.from}`);
+        assert.ok(keys.has(e.to), `${id}: edge enters unknown key ${e.to}`);
+      }
+      for (const n of nodes) {
+        assert.ok(
+          ALL_STENCIL_IDS.has(n.stencilId) || ['cloud-generic', 'cloud-vm'].includes(n.stencilId),
+          `${id} uses unknown stencil ${n.stencilId}`
+        );
+      }
+    }
+  });
+
+  test('each new pattern explains itself with the chosen values and prefix', () => {
+    for (const id of NEW_PATTERN_IDS) {
+      const p = getConfigPattern(id);
+      const values = defaultValues(p);
+      const text = p.explanation(values);
+      assert.ok(text.length > 60, `${id} explanation too thin`);
+      assert.ok(!/undefined|NaN/.test(text), `${id} explanation leaked a missing value: ${text}`);
+      assert.ok(text.includes(values.namePrefix), `${id} explanation omits the prefix`);
+    }
+  });
+
+  test('each new pattern lays its generated nodes out without overlaps', () => {
+    for (const id of NEW_PATTERN_IDS) {
+      const p = getConfigPattern(id);
+      const { nodes } = p.generate(defaultValues(p));
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          assert.equal(
+            overlaps(nodes[i], nodes[j]),
+            false,
+            `${id}: ${nodes[i].key} overlaps ${nodes[j].key}`
+          );
+        }
+      }
+    }
+  });
+
+  test('each new pattern reacts to at least three of its parameters', () => {
+    const cases = [
+      ['aws-microservices', { cache: false, observability: false, identity: false }],
+      ['azure-event-driven', { queue: false, observability: false, identity: false }],
+      ['gcp-ml-pipeline', { identity: false, observability: true, queue: true }],
+      ['zero-trust-access', { strict: false, observability: false, identityModel: 'aws-iam' }],
+      ['data-lakehouse', { zones: 'raw-curated', warehouse: 'gcp-bigquery', governance: false }],
+      ['hybrid-connectivity', { cloud: 'Azure', redundant: true, egress: false }],
+    ];
+    for (const [id, changed] of cases) {
+      const p = getConfigPattern(id);
+      const base = p.generate(defaultValues(p));
+      const values = defaultValues(p);
+      Object.assign(values, changed);
+      const next = p.generate(values);
+      assert.ok(next.nodes.length !== base.nodes.length || next.edges.length !== base.edges.length,
+        `${id} did not react to ${JSON.stringify(changed)}`);
+    }
+  });
+
+  test('generated diagrams stay inside the 5% canvas-area target', () => {
+    // areaRatio of generate(defaultValues).nodes for every registered pattern,
+    // measured on the 3200 x 2400 teaching canvas.
+    const expected = {
+      'azure-three-tier': 0.0464,
+      'azure-aks': 0.0389,
+      'gcp-compute': 0.0464,
+      'gcp-gke': 0.0389,
+      'aws-three-tier': 0.0378,
+      'aws-serverless': 0.0378,
+      // Both pre-existing patterns already exceed the 5% target at their
+      // current coordinates. They are locked here at the measured value so
+      // a layout change is caught instead of silently drifting further.
+      'azure-multiregion': 0.0559,
+      'devops-platform': 0.0559,
+      'aws-microservices': 0.0413,
+      'azure-event-driven': 0.0413,
+      'gcp-ml-pipeline': 0.0413,
+      'zero-trust-access': 0.0486,
+      'data-lakehouse': 0.0329,
+      'hybrid-connectivity': 0.0329,
+    };
+    for (const p of CONFIG_PATTERNS) {
+      const { nodes } = p.generate(defaultValues(p));
+      const ratio = areaRatio(nodes, 3200, 2400);
+      assert.equal(ratio, expected[p.id], `${p.id} layout area drifted`);
+      if (NEW_PATTERN_IDS.includes(p.id)) {
+        assert.ok(ratio < 0.05, `${p.id} exceeds the 5% canvas-area target`);
+      }
+    }
+  });
+
+  test('each new pattern applies cleanly to an empty page', () => {
+    for (const id of NEW_PATTERN_IDS) {
+      const p = getConfigPattern(id);
+      const page = pageWith();
+      const res = applyArchitectureConfig(page, p, defaultValues(p));
+      assert.equal(res.ok, true, `${id}: ${res.errors}`);
+      assert.ok(page.elements.some((e) => e.configPattern === id), `${id} left no owned elements`);
+    }
   });
 });

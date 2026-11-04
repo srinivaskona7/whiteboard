@@ -5,6 +5,7 @@ import { escapeXml } from '../render/svg-export.js';
 import { ARROW_QUICK_PRESETS } from '../scene/arrow-presets.js';
 import { BRUSH_PRESETS, getBrushPreset } from '../scene/brushes.js';
 import { PALETTE_STROKE_COLORS } from '../render/themes.js';
+import { totalVotes } from '../scene/voting.js';
 import { arrowPresetPreview } from './arrow-preview.js';
 
 export const PRIMARY_TOOL_IDS = [
@@ -16,6 +17,7 @@ export const PRIMARY_TOOL_IDS = [
   'arrow',
   'sticky',
   'spotlight',
+  'vote',
   'rect',
   'text',
   'laser',
@@ -84,6 +86,7 @@ export function initToolbar(app) {
             <button type="button" class="wb-menu-item" id="btn-spotlight">${ICONS.spotlight} Spotlight (F7)</button>
             <button type="button" class="wb-menu-item" id="btn-magnifier">${ICONS.spotlight} Magnifier Lens 2x</button>
             <button type="button" class="wb-menu-item" id="btn-annotation-mode">${ICONS.annotation} Live Annotation Mode (F8)</button>
+            <button type="button" class="wb-menu-item" id="btn-dot-vote">${ICONS.vote} Dot Voting (Shift+V)</button>
             <button type="button" class="wb-menu-item" id="btn-timer">${ICONS.timer} Countdown / Stopwatch</button>
             <button type="button" class="wb-menu-item" id="btn-focus-mode">${ICONS.focus} Teaching Focus Mode (F10)</button>
             <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Pinned Tools…</button>
@@ -160,6 +163,7 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-spotlight')?.addEventListener('click', () => app.toggleSpotlight(false));
     topBar.querySelector('#btn-magnifier')?.addEventListener('click', () => app.toggleSpotlight(true));
     topBar.querySelector('#btn-annotation-mode')?.addEventListener('click', () => app.toggleAnnotationMode());
+    topBar.querySelector('#btn-dot-vote')?.addEventListener('click', () => app.votingUI.toggle());
     topBar.querySelector('#btn-focus-mode')?.addEventListener('click', () => app.toggleFocusMode());
     topBar.querySelector('#btn-customize-focus')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
     topBar.querySelector('#btn-palette')?.addEventListener('click', () => app.paletteUI.open());
@@ -453,7 +457,9 @@ export function initToolbar(app) {
         const isAct =
           btn.dataset.tool === 'spotlight'
             ? Boolean(app.spotlight?.active)
-            : btn.dataset.tool === app.activeTool;
+            : btn.dataset.tool === 'vote'
+              ? Boolean(app.votingUI?.isActive?.())
+              : btn.dataset.tool === app.activeTool;
         btn.classList.toggle('active', isAct);
         btn.setAttribute('aria-pressed', String(isAct));
       });
@@ -489,9 +495,14 @@ export function initToolbar(app) {
       <div class="wb-tool-list" role="toolbar" aria-label="Drawing Tools">
         ${visibleTools
           .map((t) => {
-            // Spotlight is a mode: its button reflects the spotlight, not the tool.
+            // Spotlight and dot voting are modes: their buttons reflect the
+            // mode state, not the active placement tool.
             const isActive =
-              t.id === 'spotlight' ? Boolean(app.spotlight?.active) : app.activeTool === t.id;
+              t.id === 'spotlight'
+                ? Boolean(app.spotlight?.active)
+                : t.id === 'vote'
+                  ? Boolean(app.votingUI?.isActive?.())
+                  : app.activeTool === t.id;
             return `
           <button
             type="button"
@@ -833,6 +844,21 @@ export function initToolbar(app) {
       `);
     }
 
+    if (app.votingUI?.isActive?.()) {
+      const dots = totalVotes(app.getPage().elements);
+      pills.push(`
+        <div class="wb-floating-mode-pill">
+          <span>🔵 Dot voting open · ${dots} vote${dots === 1 ? '' : 's'} · click items to vote</span>
+          ${
+            app.votingUI.canControl()
+              ? `<button type="button" class="wb-btn wb-sm wb-primary" id="btn-stop-vote" title="Close voting and show the top-3 results">Stop & Results</button>
+                 <button type="button" class="wb-btn wb-sm wb-danger" id="btn-reset-votes" title="Clear every vote on this page">Reset</button>`
+              : ''
+          }
+        </div>
+      `);
+    }
+
     if (app.focusMode) {
       const pages = app.scene.pages;
       const curIdx = pages.findIndex((p) => p.id === app.scene.activePageId);
@@ -901,6 +927,8 @@ export function initToolbar(app) {
     });
     modeBanner.querySelector('#btn-exit-laser')?.addEventListener('click', () => app.setTool('select'));
     modeBanner.querySelector('#btn-exit-annotation')?.addEventListener('click', () => app.toggleAnnotationMode());
+    modeBanner.querySelector('#btn-stop-vote')?.addEventListener('click', () => app.votingUI.stop());
+    modeBanner.querySelector('#btn-reset-votes')?.addEventListener('click', () => app.votingUI.reset());
     modeBanner.querySelector('#btn-exit-focus')?.addEventListener('click', () => app.toggleFocusMode());
     modeBanner.querySelector('#btn-focus-prev-page')?.addEventListener('click', () => {
       const idx = app.scene.pages.findIndex((p) => p.id === app.scene.activePageId);

@@ -689,6 +689,12 @@ export class CanvasRenderer {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(`S${el.revealStep}`, b.minX + 15, b.minY + 13); ctx.restore();
     }
+    if (el.votes > 0) {
+      ctx.save(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(b.maxX, b.minY, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(el.votes), b.maxX, b.minY + 0.5); ctx.restore();
+    }
   }
 
   drawConnectionPorts(ctx, el, hoveredPort, zoom, theme) {

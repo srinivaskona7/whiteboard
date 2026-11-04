@@ -98,12 +98,13 @@ export const REQUIRED_PINNED_TOOLS = [
   'sticky',
   'spotlight',
   'arrow',
+  'vote',
 ];
 
 // Bumped when REQUIRED_PINNED_TOOLS grows. The stamp is derived from the list
 // itself, so prefs written before the list changed — including blobs that carry
 // a stale version number — are topped up exactly once.
-export const PINNED_TOOLS_VERSION = 2;
+export const PINNED_TOOLS_VERSION = 3;
 export const PINNED_TOOLS_STAMP = REQUIRED_PINNED_TOOLS.join(',');
 
 export const DEFAULT_PRESET_TOOLS = {
@@ -115,6 +116,7 @@ export const DEFAULT_PRESET_TOOLS = {
     'eraser',
     'sticky',
     'spotlight',
+    'vote',
     'arrow',
     'laser',
     'pointer',
@@ -129,6 +131,7 @@ export const DEFAULT_PRESET_TOOLS = {
     'arrow',
     'sticky',
     'spotlight',
+    'vote',
     'rect',
     'rounded-rect',
     'ellipse',
@@ -147,6 +150,7 @@ export const DEFAULT_PRESET_TOOLS = {
     'eraser',
     'sticky',
     'spotlight',
+    'vote',
     'arrow',
     'laser',
     'pointer',

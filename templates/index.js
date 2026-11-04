@@ -4,6 +4,14 @@ import { bindConnectorEndpoint } from '../scene/bindings.js';
 import { buildDevOpsDiagramPacks } from '../ui/registry.js';
 import { AZURE_GCP_TEMPLATES } from './azure-gcp.js';
 import { AWS_TEMPLATES } from './aws.js';
+import { ADVANCED_TEMPLATES } from './advanced.js';
+import { ARCH_AWS_X_TEMPLATES } from './arch-aws-x.js';
+import { ARCH_AZ_X_TEMPLATES } from './arch-az-x.js';
+import { ARCH_GCP_X_TEMPLATES } from './arch-gcp-x.js';
+import { ARCH_HYBRID_TEMPLATES } from './arch-hybrid.js';
+import { ARCH_K8S_TEMPLATES } from './arch-k8s.js';
+import { ARCH_OBS_TEMPLATES } from './arch-obs.js';
+import { ARCH_DATA_TEMPLATES } from './arch-data.js';
 
 const DEVOPS_PACK_TEMPLATES = [
   {
@@ -88,6 +96,14 @@ export const BUILTIN_TEMPLATES = [
   ...DEVOPS_PACK_TEMPLATES,
   ...AWS_TEMPLATES,
   ...AZURE_GCP_TEMPLATES,
+  ...ADVANCED_TEMPLATES,
+  ...ARCH_AWS_X_TEMPLATES,
+  ...ARCH_AZ_X_TEMPLATES,
+  ...ARCH_GCP_X_TEMPLATES,
+  ...ARCH_HYBRID_TEMPLATES,
+  ...ARCH_K8S_TEMPLATES,
+  ...ARCH_OBS_TEMPLATES,
+  ...ARCH_DATA_TEMPLATES,
   {
     id: 'tpl-blank',
     name: 'Blank Canvas',

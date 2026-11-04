@@ -76,6 +76,21 @@ const baseValidate = (values) => {
   return errors;
 };
 
+// Patterns that only need a name (no addressing or replica story) share this.
+const prefixValidate = (values) => {
+  const errors = {};
+  if (!/^[a-z][a-z0-9-]{1,20}$/.test(String(values.namePrefix || ''))) {
+    errors.namePrefix = 'Prefix must start with a letter and contain only lowercase letters, digits and dashes.';
+  }
+  return errors;
+};
+
+// Some stories need a normally-optional tier on the board by default (an
+// event-driven flow without its queue teaches nothing), so flip the default
+// instead of drawing a node the drawer cannot control.
+const withDefault = (params, id, value) =>
+  params.map((p) => (p.id === id ? { ...p, default: value } : p));
+
 const node = (key, x, y, stencilId, text, group = null) => ({ key, x, y, stencilId, text, group });
 const edge = (from, to, label = '', fromPort = 'right', toPort = 'left') => ({ from, to, label, fromPort, toPort });
 const dataPathLabel = (values) => `1433 ${values.connectivity === 'public' ? 'public' : 'private'}`;
@@ -286,7 +301,8 @@ function awsThreeTier(values) {
     edge('client', 'dns', 'resolve'),
     edge('dns', 'entry', 'alias record'),
     edge('entry', 'app', `target group :${values.port}`),
-    edge('app', 'data', dataPathLabel(values)),
+    // Aurora speaks MySQL/PostgreSQL, not SQL Server's 1433.
+    edge('app', 'data', `3306 ${values.connectivity === 'public' ? 'public' : 'private'}`),
   ];
   if (values.identity) {
     nodes.push(node('identity', 660, 330, 'aws-iam', `${prefix}-task-role`));
@@ -435,6 +451,259 @@ function devopsPlatform(values) {
   return { nodes, edges };
 }
 
+function awsMicroservices(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('client', 40, 130, 'cloud-generic', 'Client application'),
+    node('entry', 230, 130, 'aws-apigw', `${prefix}-api`),
+    node('api', 420, 130, 'aws-ecs', `${prefix}-orders (${values.replicas})`),
+    node('payments', 610, 130, 'aws-ecs', `${prefix}-payments`),
+    node('identity', 40, 330, 'aws-iam', `${prefix}-task-role`),
+    node('bus', 230, 330, 'aws-eventbridge', `${prefix}-bus`),
+    node('inventory', 610, 330, 'aws-ecs', `${prefix}-inventory`),
+    node('saga', 40, 470, 'aws-stepfunctions', `${prefix}-saga`),
+    node('data', 230, 470, 'aws-dynamodb', `${prefix}-table`),
+  ];
+  const edges = [
+    edge('client', 'entry', `HTTPS ${values.port}`),
+    edge('entry', 'api', 'route /orders'),
+    edge('api', 'bus', 'OrderPlaced', 'bottom', 'top'),
+    edge('bus', 'payments', 'OrderPaid', 'top', 'bottom'),
+    edge('bus', 'inventory', 'StockReserved'),
+    edge('bus', 'saga', 'saga events', 'left', 'right'),
+    edge('saga', 'data', 'persist state'),
+    edge('api', 'data', values.connectivity === 'public' ? 'public endpoint' : 'private endpoint', 'bottom', 'top'),
+  ];
+  if (values.identity) edges.push(edge('api', 'identity', 'task role', 'bottom', 'top'));
+  if (values.cache) {
+    nodes.push(node('cache', 420, 470, 'aws-elasticache', `${prefix}-cache`));
+    edges.push(edge('api', 'cache', 'read-through', 'bottom', 'top'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 610, 470, 'aws-cloudwatch', `${prefix}-monitor`));
+    edges.push(edge('bus', 'monitor', 'traces & metrics', 'bottom', 'top'));
+  }
+  return { nodes, edges };
+}
+
+function azureEventDriven(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('client', 40, 130, 'cloud-generic', 'Event producer'),
+    node('entry', 230, 130, 'az-eventgrid', `${prefix}-grid`),
+    node('api', 420, 130, 'az-functions', `${prefix}-fn (${values.replicas})`),
+    node('logic', 610, 130, 'az-logicapps', `${prefix}-logic`),
+    node('identity', 40, 330, 'az-entra', `${prefix}-identity`),
+    node('queue', 230, 330, 'az-servicebus', `${prefix}-bus`),
+    node('data', 610, 330, 'az-cosmos', `${prefix}-cosmos`),
+  ];
+  const edges = [
+    edge('client', 'entry', `HTTPS ${values.port}`),
+    edge('entry', 'api', 'subject filter'),
+    edge('logic', 'data', values.connectivity === 'public' ? 'public endpoint' : 'private endpoint', 'bottom', 'top'),
+  ];
+  if (values.queue) {
+    edges.push(edge('api', 'queue', 'enqueue job', 'bottom', 'top'));
+    edges.push(edge('queue', 'logic', 'peek-lock', 'top', 'bottom'));
+  } else {
+    edges.push(edge('entry', 'logic', 'direct route'));
+  }
+  if (values.identity) edges.push(edge('api', 'identity', 'managed identity', 'bottom', 'top'));
+  if (values.cache) {
+    nodes.push(node('cache', 40, 470, 'az-redis', `${prefix}-cache`));
+    edges.push(edge('api', 'cache', 'read-through', 'bottom', 'top'));
+  }
+  if (values.recovery) {
+    nodes.push(node('secondary', 230, 470, 'az-cosmos', `${prefix}-cosmos-dr`));
+    edges.push(edge('data', 'secondary', 'geo-replica', 'bottom', 'top'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 420, 470, 'az-monitor', `${prefix}-monitor`));
+    edges.push(edge('api', 'monitor', 'traces & metrics', 'bottom', 'top'));
+  }
+  return { nodes, edges };
+}
+
+function gcpMlPipeline(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('source', 40, 130, 'cloud-generic', 'Data producers'),
+    node('entry', 230, 130, 'gcp-gcs', `${prefix}-raw`),
+    node('etl', 420, 130, 'gcp-dataflow', `${prefix}-etl`),
+    node('train', 610, 130, 'gcp-dataproc', `${prefix}-train`),
+    node('api', 610, 330, 'gcp-cloudrun', `${prefix}-inference (x${values.replicas})`),
+  ];
+  const edges = [
+    edge('source', 'entry', 'upload'),
+    edge('entry', 'etl', 'batch read'),
+    edge('etl', 'train', 'training set'),
+    edge('train', 'api', 'deploy model', 'bottom', 'top'),
+  ];
+  if (values.identity) {
+    nodes.push(node('identity', 40, 330, 'gcp-iam', `${prefix}-sa`));
+    edges.push(edge('etl', 'identity', 'service account', 'bottom', 'top'));
+  }
+  if (values.queue) {
+    nodes.push(node('queue', 230, 330, 'gcp-pubsub', `${prefix}-topic`));
+    edges.push(edge('entry', 'queue', 'object finalize', 'bottom', 'top'));
+    edges.push(edge('queue', 'etl', 'trigger', 'top', 'bottom'));
+  }
+  if (values.cache) {
+    nodes.push(node('cache', 40, 470, 'gcp-memorystore', `${prefix}-features`));
+    edges.push(edge('api', 'cache', 'feature lookup', 'bottom', 'top'));
+  }
+  if (values.recovery) {
+    nodes.push(node('secondary', 230, 470, 'gcp-gcs', `${prefix}-raw-dr`));
+    edges.push(edge('entry', 'secondary', 'cross-region replica', 'bottom', 'top'));
+  }
+  if (values.observability) {
+    nodes.push(node('monitor', 420, 470, 'gcp-monitoring', `${prefix}-monitoring`));
+    edges.push(edge('api', 'monitor', 'serving metrics', 'bottom', 'top'));
+  }
+  return { nodes, edges };
+}
+
+const ZERO_TRUST_IDP = {
+  'entra-id': 'az-entra',
+  'aws-iam': 'aws-iam',
+  'gcp-iam': 'gcp-iam',
+};
+
+const zeroTrustParams = [
+  select('identityModel', 'Identity provider', ['entra-id', 'aws-iam', 'gcp-iam'], 'entra-id', 'Which provider owns the identity-aware entry.'),
+  bool('strict', 'Explicit deny and micro-segmentation', true, 'Adds the deny-all policy boundary.'),
+  bool('observability', 'Audit every access', true),
+  text('namePrefix', 'Resource name prefix', 'zero-trust'),
+  bool('showExplanation', 'Show teaching explanation on the board', true),
+];
+
+function zeroTrustAccess(values) {
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('user', 40, 130, 'cloud-generic', 'Unmanaged device'),
+    node('idp', 215, 130, ZERO_TRUST_IDP[values.identityModel] || 'az-entra', `${prefix}-idp`),
+    node('waf-aws', 390, 130, 'aws-waf', `${prefix}-waf-aws`),
+    node('pl-aws', 565, 130, 'aws-privatelink', `${prefix}-pl-aws`),
+    node('data', 740, 130, 'cloud-db', `${prefix}-data`),
+    node('waf-azure', 390, 330, 'az-firewall', `${prefix}-fw-azure`),
+    node('pl-azure', 565, 330, 'az-private-endpoint', `${prefix}-pe-azure`),
+    node('workload', 740, 330, 'cloud-vm', `${prefix}-workload`),
+    node('waf-gcp', 390, 470, 'gcp-armor', `${prefix}-armor-gcp`),
+    node('pl-gcp', 565, 470, 'gcp-psc', `${prefix}-psc-gcp`),
+  ];
+  const edges = [
+    edge('user', 'idp', 'sign-in · device posture'),
+    edge('idp', 'waf-aws', 'verified token'),
+    edge('idp', 'waf-azure', 'verified token', 'bottom', 'top'),
+    edge('idp', 'waf-gcp', 'verified token', 'bottom', 'top'),
+    edge('waf-aws', 'pl-aws', 'L7 inspect'),
+    edge('waf-azure', 'pl-azure', 'L7 inspect'),
+    edge('waf-gcp', 'pl-gcp', 'L7 inspect'),
+    edge('pl-aws', 'workload', 'private service', 'bottom', 'top'),
+    edge('pl-azure', 'workload', 'private service'),
+    edge('pl-gcp', 'workload', 'private service'),
+    edge('workload', 'data', 'private data path', 'top', 'bottom'),
+  ];
+  if (values.strict) {
+    nodes.push(node('policy', 40, 330, 'sec-opa', `${prefix}-deny-all`));
+    edges.push(edge('user', 'policy', 'no implicit trust', 'bottom', 'top'));
+    edges.push(edge('policy', 'waf-azure', 'deny by default'));
+  }
+  if (values.observability) {
+    nodes.push(node('audit', 740, 470, 'aws-cloudtrail', `${prefix}-audit`));
+    edges.push(edge('workload', 'audit', 'every access logged', 'bottom', 'top'));
+  }
+  return { nodes, edges };
+}
+
+const lakehouseParams = [
+  select('zones', 'Medallion zones', ['bronze-silver-gold', 'raw-curated'], 'bronze-silver-gold', 'Zone naming changes the teaching labels, not the flow.'),
+  select('warehouse', 'Warehouse engine', ['aws-redshift', 'az-synapse', 'gcp-bigquery'], 'aws-redshift'),
+  bool('governance', 'Catalog and governance tier', true),
+  bool('streaming', 'Streaming ingestion', false),
+  text('namePrefix', 'Resource name prefix', 'lakehouse'),
+  bool('showExplanation', 'Show teaching explanation on the board', true),
+];
+
+function dataLakehouse(values) {
+  const prefix = values.namePrefix;
+  const zoneNames = values.zones === 'raw-curated'
+    ? [['raw', `${prefix}-raw`], ['curated', `${prefix}-curated`]]
+    : [['bronze', `${prefix}-bronze`], ['silver', `${prefix}-silver`], ['gold', `${prefix}-gold`]];
+  const zoneXs = [390, 565, 740];
+  const nodes = [
+    node('source', 40, 130, 'cloud-generic', 'Source systems'),
+    node('ingest', 215, 130, 'flow-process', `${prefix}-ingest`),
+  ];
+  const edges = [edge('source', 'ingest', 'batch load')];
+  zoneNames.forEach(([key, text], i) => {
+    nodes.push(node(key, zoneXs[i], 130, 'flow-data', text));
+  });
+  edges.push(edge('ingest', zoneNames[0][0], 'append raw'));
+  for (let i = 0; i + 1 < zoneNames.length; i += 1) {
+    edges.push(edge(zoneNames[i][0], zoneNames[i + 1][0], i === 0 ? 'clean + conform' : 'business aggregates'));
+  }
+  nodes.push(node('warehouse', 565, 330, values.warehouse, `${prefix}-warehouse`));
+  nodes.push(node('bi', 740, 330, 'cloud-generic', 'BI dashboards'));
+  edges.push(edge(zoneNames[zoneNames.length - 1][0], 'warehouse', 'load modelled', 'bottom', 'top'));
+  edges.push(edge('warehouse', 'bi', 'SQL answers'));
+  if (values.governance) {
+    nodes.push(node('catalog', 390, 330, 'flow-document', `${prefix}-catalog`));
+    edges.push(edge(zoneNames[0][0], 'catalog', 'schema + lineage', 'bottom', 'top'));
+    edges.push(edge('catalog', 'warehouse', 'certified tables'));
+  }
+  if (values.streaming) {
+    nodes.push(node('stream', 215, 330, 'flow-process', `${prefix}-stream`));
+    edges.push(edge('source', 'stream', 'events', 'bottom', 'top'));
+    edges.push(edge('stream', zoneNames[zoneNames.length - 1][0], 'live rows', 'top', 'bottom'));
+  }
+  return { nodes, edges };
+}
+
+const HYBRID_CLOUD_SETS = {
+  AWS: { circuit: 'aws-directconnect', hub: 'aws-tgw', nat: 'aws-nat', link: 'private circuit', attach: 'VPC attachment' },
+  Azure: { circuit: 'az-expressroute', hub: 'az-firewall', nat: 'az-nat', link: 'private circuit', attach: 'VNet peering' },
+  GCP: { circuit: 'gcp-vpn', hub: 'gcp-router', nat: 'gcp-nat', link: 'IPsec tunnel', attach: 'VPC attachment' },
+};
+
+const hybridParams = [
+  select('cloud', 'Cloud provider', ['AWS', 'Azure', 'GCP'], 'AWS', 'Controls which provider stencils are drawn.'),
+  bool('redundant', 'Redundant second circuit', false),
+  bool('egress', 'NAT egress for spokes', true),
+  text('namePrefix', 'Resource name prefix', 'hybrid'),
+  bool('showExplanation', 'Show teaching explanation on the board', true),
+];
+
+function hybridConnectivity(values) {
+  const set = HYBRID_CLOUD_SETS[values.cloud] || HYBRID_CLOUD_SETS.AWS;
+  const prefix = values.namePrefix;
+  const nodes = [
+    node('onprem', 40, 130, 'cloud-vm', 'On-premises DC'),
+    node('circuit', 215, 130, set.circuit, `${prefix}-link`),
+    node('hub', 390, 130, set.hub, `${prefix}-hub`),
+    node('spoke-app', 565, 130, 'flow-process', 'spoke: app'),
+    node('spoke-data', 565, 330, 'flow-process', 'spoke: data'),
+  ];
+  const edges = [
+    edge('onprem', 'circuit', set.link),
+    edge('circuit', 'hub', 'BGP'),
+    edge('hub', 'spoke-app', set.attach),
+    edge('hub', 'spoke-data', set.attach, 'bottom', 'top'),
+  ];
+  if (values.redundant) {
+    nodes.push(node('circuit2', 215, 330, set.circuit, `${prefix}-link-backup`));
+    edges.push(edge('onprem', 'circuit2', 'backup path', 'bottom', 'top'));
+    edges.push(edge('circuit2', 'hub', set.link, 'right', 'bottom'));
+  }
+  if (values.egress) {
+    nodes.push(node('nat', 740, 130, set.nat, `${prefix}-nat`));
+    nodes.push(node('internet', 740, 330, 'cloud-generic', 'Internet'));
+    edges.push(edge('spoke-app', 'nat', 'outbound 0.0.0.0/0'));
+    edges.push(edge('nat', 'internet', 'egress only', 'bottom', 'top'));
+  }
+  return { nodes, edges };
+}
+
 export const CONFIG_PATTERNS = [  {
     id: 'azure-three-tier',
     name: 'Three-tier application',
@@ -523,6 +792,71 @@ export const CONFIG_PATTERNS = [  {
     explanation: (values) =>
       `Every change is built once, scanned, and pushed by digest to the registry. GitOps reconciles that digest into the ${values.releaseStrategy} release, and a policy gate sits between the scan and admission so a critical finding stops before production.`,
   },
+  {
+    id: 'aws-microservices',
+    name: 'ECS microservices (AWS)',
+    provider: 'AWS',
+    params: withDefault(commonParams('AWS'), 'cache', true),
+    generate: awsMicroservices,
+    validate: baseValidate,
+    explanation: (values) =>
+      `API Gateway routes /orders to ${values.replicas} Fargate task(s) for ${values.namePrefix}-orders in ${values.region}; EventBridge carries OrderPlaced to the payments and inventory services so no service calls another directly, Step Functions owns the compensating saga, and DynamoDB sits behind a ${values.connectivity} path.`,
+  },
+  {
+    id: 'azure-event-driven',
+    name: 'Event-driven serverless (Azure)',
+    provider: 'Azure',
+    // No templateId: tpl-az-03-serverless-events draws a different graph
+    // (Blob + Function + dead-letter), and adoption matches by stencilId only,
+    // so a half-adopted page keeps the orphaned template parts beside the new
+    // ones with contradictory arrows. Without a templateId the configuration
+    // stacks a clean copy instead.
+    params: withDefault(commonParams('Azure'), 'queue', true),
+    generate: azureEventDriven,
+    validate: baseValidate,
+    explanation: (values) =>
+      `Event Grid filters each event before it reaches the ${values.namePrefix} function in ${values.region}; the Service Bus queue decouples the Logic App consumer with peek-lock delivery and dead-lettering, and Cosmos DB is written over a ${values.connectivity} path.`,
+  },
+  {
+    id: 'gcp-ml-pipeline',
+    name: 'ML pipeline (GCP)',
+    provider: 'GCP',
+    params: commonParams('GCP'),
+    generate: gcpMlPipeline,
+    validate: baseValidate,
+    explanation: (values) =>
+      `Raw data lands in ${values.namePrefix} Cloud Storage, Dataflow cleans it into a training set for the Dataproc job in ${values.region}, and the served model answers on ${values.replicas} Cloud Run inference instance(s) over private paths inside ${values.cidr}.`,
+  },
+  {
+    id: 'zero-trust-access',
+    name: 'Zero-trust access',
+    provider: 'Cross-cloud',
+    params: zeroTrustParams,
+    generate: zeroTrustAccess,
+    validate: prefixValidate,
+    explanation: (values) =>
+      `Nothing is trusted by default: ${values.identityModel} issues short-lived claims, the WAF and firewall layer (AWS WAF, Azure Firewall, Cloud Armor) inspects them, and PrivateLink, Private Endpoint and PSC keep the path to the ${values.namePrefix} workload private${values.strict ? ' behind an explicit deny-all policy' : ''}.`,
+  },
+  {
+    id: 'data-lakehouse',
+    name: 'Data lakehouse',
+    provider: 'Cross-cloud',
+    params: lakehouseParams,
+    generate: dataLakehouse,
+    validate: prefixValidate,
+    explanation: (values) =>
+      `Landed data is refined through the ${values.zones === 'raw-curated' ? 'raw and curated' : 'bronze, silver and gold'} zones before ${values.warehouse} serves modelled tables to BI, so a bad transform can always be replayed from the ${values.namePrefix} landing zone.`,
+  },
+  {
+    id: 'hybrid-connectivity',
+    name: 'Hybrid connectivity hub',
+    provider: 'Cross-cloud',
+    params: hybridParams,
+    generate: hybridConnectivity,
+    validate: prefixValidate,
+    explanation: (values) =>
+      `The on-premises DC reaches the ${values.namePrefix} hub in ${values.cloud} over a private link; spokes hold no public ingress and all outbound traffic leaves through the NAT gateway${values.redundant ? ' while a second circuit stands by' : ''}.`,
+  },
 ];
 
 export function getConfigPattern(id) {
@@ -608,19 +942,36 @@ export function applyArchitectureConfig(page, pattern, values, options = {}) {
       const templateArrows = page.elements.filter(
         (el) => el.type === 'arrow' && el.templateId === pattern.templateId
       );
-      // Arrows are adopted positionally up to the number the template drew;
-      // any generated edge beyond that becomes a new connector rather than
-      // stealing one from a different part of the diagram.
-      edges.forEach((e, idx) => {
-        const arrow = templateArrows[idx];
-        if (!arrow) return;
+      // Adopt an arrow only when its two endpoints are the nodes we just
+      // adopted for this edge. Matching by position re-aimed unrelated arrows
+      // (the CloudFront arrow became Route 53 -> ALB) and orphaned whole
+      // branches, because a generated graph is not isomorphic to the template.
+      const adoptedByKey = new Map();
+      for (const [key, el] of existingNodes) {
+        if (el.templateId === pattern.templateId) adoptedByKey.set(key, el);
+      }
+      const claimedArrows = new Set();
+      for (const e of edges) {
         const edgeKey = `${e.from}->${e.to}`;
-        if (existingEdges.has(edgeKey)) return;
+        if (existingEdges.has(edgeKey)) continue;
+        const fromEl = adoptedByKey.get(e.from);
+        const toEl = adoptedByKey.get(e.to);
+        if (!fromEl || !toEl) continue;
+        const arrow = templateArrows.find(
+          (el) =>
+            !claimedArrows.has(el) &&
+            el.startBinding?.elementId === fromEl.id &&
+            el.endBinding?.elementId === toEl.id
+        );
+        // No matching arrow: leave the template's connectors untouched. The
+        // edge is created as a new connector by the pass below.
+        if (!arrow) continue;
+        claimedArrows.add(arrow);
         arrow.configPattern = pattern.id;
         arrow.configEdge = edgeKey;
         existingEdges.set(edgeKey, arrow);
         adopted++;
-      });
+      }
     }
 
     const desiredKeys = new Set(nodes.map((n) => n.key));

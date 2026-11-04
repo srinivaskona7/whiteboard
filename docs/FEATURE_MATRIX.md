@@ -272,7 +272,7 @@ without `:has()` it would overlap that panel.
 | A loopback backend is called out | PASS(browser) | Setting `http://127.0.0.1:4179` renders "it works only on this machine…" and suggests the page origin |
 | Same-origin is stored as same-origin | PASS(code) | Connecting with the page's own origin clears the stored base instead of pinning a host |
 
-Known limits: the 80-template catalog, Miro activities and the 5 % canvas-area target are still open and
+Known limits: Miro activities and the 5 % canvas-area target are still open and
 are not addressed here. Remote classroom access was not exercised from a second device.
 
 ## 18. Deep architecture, icon and lesson work (2026-11-03)
@@ -282,7 +282,8 @@ are not addressed here. Remote classroom access was not exercised from a second 
 | AWS reference templates | PASS(unit + browser) | `templates/aws.js`, 10 diagrams (`tpl-aws-01-three-tier-web` … `tpl-aws-10-recovery`), 6–14 native AWS stencils each, frame, teaching notes, `templateId` stamped; catalog 38 → 48 |
 | AWS service icons | PASS(unit + browser) | 19 stencils (API Gateway, Step Functions, EventBridge, Kinesis, Glue, Athena, Redshift, ECR, Secrets Manager, CloudTrail, NAT, Transit Gateway, ElastiCache, OpenSearch, WAF, Direct Connect, Cognito, EFS, CloudFormation) |
 | Azure + GCP additions | PASS(unit + browser) | 16 more (APIM, Front Door, Bastion, Private Endpoint, Event Hubs, Cache, Synapse, Static Web App; Cloud Functions, App Engine, Cloud Armor, API Gateway, Memorystore, Dataproc, Dataplex, Cloud CDN); registry 236 → 271 |
-| Icons render in the palette | PASS(browser) | All 35 new ids laid out and screenshotted: distinct glyph, correct provider badge, no blank or duplicated art |
+| Services the ranked research still found missing | PASS(unit + browser) | 11 more: AWS PrivateLink; Azure Logic Apps, NAT Gateway, L4 Load Balancer, Application Insights, ExpressRoute/VPN Gateway; GCP Cloud NAT, Private Service Connect, Cloud Tasks, Cloud Logging, Cloud VPN. Registry 271 → 282 |
+| Icons render in the palette | PASS(browser) | All 46 new ids laid out and screenshotted: distinct glyph, correct provider badge, no blank or duplicated art |
 | Configurable architectures | PASS(unit + browser) | `aws-three-tier`, `aws-serverless`, `azure-multiregion`, `devops-platform` added to `CONFIG_PATTERNS` (4 → 8); each applies to ≥4 tracked nodes using known stencils |
 | Provider-correct defaults | PASS(unit) | AWS patterns default to an AWS region (`eu-west-1`/`eu-central-1`/`us-east-1`/`us-west-2`); Azure patterns never do |
 | Production guard on delivery pattern | PASS(unit) | `environment: prod` with `replicas < 2` is refused before the page is touched |
@@ -290,10 +291,63 @@ are not addressed here. Remote classroom access was not exercised from a second 
 | Failure / retry / health-check beats | PASS(browser) | Last reachable hop gets `failure` → `retry ×3` → `pulse`; suppressed when the diagram has a single node |
 | Canary rollout beat | PASS(unit + browser) | 10 / 50 / 100 on the deployment-looking node (`cluster|aks|gke|eks|…`); `pulse` and `rollout` added to the allowlist, both require a `targetId` |
 | Reduced motion still teaches | PASS(unit) | `pulse` sets a static highlight as well as the ring, so a reduced-motion playback leaves the node marked |
+| Lesson pacing matches the research | PASS(unit + browser) | Hop 600 ms with a 400 ms pause, reveal 500 ms; a four-node lesson runs 7.7 s. A test fails if a hop leaves the 400–600 ms / 300–500 ms range |
 
-Known limits: the catalog is 48, not 80. Miro activities are still absent. The 5 % canvas-area target
-was not measured. The animated lesson was watched on the AWS three-tier template only; the other 47
-templates were not played end to end.
+Known limits: the catalog reached 80 with the advanced pack and 150 with the architecture
+packs (see §20). Dot-voting (the first Miro activity) is in progress. The 5 % canvas-area
+target is now measured (`scene/layout-metrics.js`, §20). The animated lesson was watched on
+the AWS three-tier template only; the other templates were not played end to end.
+
+## 19. Advanced template pack (2026-11-04)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Advanced pack, 32 new templates | PASS(unit) | `templates/advanced.js` (`ADVANCED_TEMPLATES`, `tpl-adv-` ids), registered in `templates/index.js`; catalog 48 → 80; unit test asserts exactly 80 and 32 unique registered ids |
+| 14 cloud architecture diagrams | PASS(unit) | Zero-trust, ML pipeline, hybrid hub-and-spoke per provider (`provider: AWS/Azure/GCP`) plus 2 Cross-cloud (`tpl-adv-multicloud-ingress`, `tpl-adv-data-lakehouse`); 6–14 native stencils, labelled arrows, lesson frame with ≥ 80-char teacherNotes, `templateId` stamped on every element |
+| Provider purity | PASS(unit) | AWS diagrams use only `aws-*` provider stencils, Azure only `az-*`, GCP only `gcp-*`; Cross-cloud mixes by design; unit test enforces it |
+| 18 classroom / methodology boards | PASS(unit) | Retrospective, planning poker, SWOT, fishbone, user journey, timeline, ER starter, state machine, swimlane flow, story map, Gantt, RACI, affinity map, Eisenhower, SRE golden signals, STRIDE threat model, incident postmortem, quiz — native frames/rects/tables/stickies with `templateId` stamped |
+
+Known limits: the pack is unit-tested and follows the existing pack contracts, but no template
+in the new pack was applied and inspected in the browser yet. Where the stencil registry has no
+icon for a named service (SageMaker, IoT Core, Timestream, QuickSight, Data Factory, IAP,
+Vertex AI), the closest existing provider stencil carries the correct service label.
+
+## 20. 150-template architecture catalog (2026-11-04)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Catalog reaches 150 | PASS(unit) | 7 new packs registered in `templates/index.js`: `arch-aws-x`, `arch-az-x`, `arch-gcp-x`, `arch-hybrid`, `arch-k8s`, `arch-obs`, `arch-data` (10 each, `tpl-awsx-/tpl-azx-/tpl-gcpx-/tpl-hyb-/tpl-k8s-/tpl-obs-/tpl-data-` ids); `tests/catalog.test.js` asserts exactly 150 unique ids, every pack registered, and every template builds |
+| Provider deep-dives | PASS(unit) | AWS: media, payments saga, fraud, batch, VPN, EKS GitOps, IoT, search, backup/DR, fan-out. Azure: media, FHIR, e-commerce, APIM, batch ETL, AVD, Databricks, SIEM, jamstack, hub-spoke. GCP: recommendations, video, gaming, banking, streaming, datalake, hybrid fleet, SCC, serverless, MLOps |
+| Cross-cloud / hybrid | PASS(unit) | Multicloud DR, landing zone, identity federation, cross-cloud data replication, service mesh, multicluster GitOps, edge, network migration, FinOps, zero-trust perimeter |
+| Kubernetes internals | PASS(unit) | Pod lifecycle, control plane (`k8s-apiserver`, `k8s-etcd` stencils), service routing, Istio mesh, operator pattern, HPA, CSI storage, NetworkPolicy, Argo Rollouts, chaos |
+| Observability / SRE | PASS(unit) | OTel pipeline, Prometheus, ELK, distributed tracing, SLO burn, incident command, on-call routing, eBPF, log aggregation, golden signals |
+| Data / AI | PASS(unit) | Lambda vs Kappa, CQRS + event sourcing, CDC, feature store, RAG, model registry, data mesh, streaming lakehouse, vector search, GPU training cluster |
+| Per-pack contracts | PASS(unit) | Each pack has its own test file (count, unique ids, 6–14 stencils, known stencil ids, labelled bound arrows, frame + ≥80-char teacherNotes, `templateId` on every element, provider purity) |
+| 6 more configuration patterns (14 total) | PASS(unit) | `aws-microservices`, `azure-event-driven`, `gcp-ml-pipeline`, `zero-trust-access`, `data-lakehouse`, `hybrid-connectivity` in `scene/architecture-config.js`; tests in `tests/config.test.js` |
+| 5 % canvas-area target measured | PASS(unit) | `scene/layout-metrics.js` (`boundsOf`, `areaRatio`, `overlaps`); `tests/config.test.js` asserts each pattern's generated graph area ratio and node-overlap freedom |
+
+Known limits: the 70 new architecture templates are unit-tested at the pack level but not yet
+applied and inspected in the browser; search totals beyond the palette window were not re-verified
+at 150. Services without a stencil use the closest existing stencil with a correct label
+(recorded per pack in the pack test files).
+
+## 21. Dot voting (2026-11-04)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Teacher-controlled voting session | PASS(unit) | `ui/voting.js` `initVotingUI`; start/stop/reset gated by `canControl()` (viewer/questioner cannot), enforced server-side in `applyRoomOperation` (viewer `vote:session` → 403) |
+| Votes are board state | PASS(unit) | `el.votes` on the element, committed via history/autosave; a voted sticky round-trips `serializeScene`/`parseSceneJson` with the vote intact |
+| Cap and tally | PASS(unit) | `scene/voting.js`: `castVote` caps at `MAX_VOTES_PER_ELEMENT = 3`; `tally` sorted by votes with stable ties |
+| Students can vote | PASS(unit + server unit) | Viewer votes go through a dedicated `vote:cast` op (scene-sync is blocked for viewers); server clamps and rebroadcasts the authoritative count; 3 server-op tests |
+| Vote badge rendering | PASS(unit) | `render/canvas.js` `drawElementBadges`: amber dot + count at the element's top-right inside the camera transform |
+| Toolbar + shortcut wiring | PASS(unit) | `TOOL_REGISTRY` vote entry + dock button + Teaching menu; Shift+V (V is Select); Esc exits; `PINNED_TOOLS_VERSION` → 3 with stamp migration |
+| Session is room state, not scene | PASS(unit) | `vote:session` op like `timer:sync`; a scene-borne flag would race with undo and never reach students |
+| Remote votes enter history and autosave | PASS(unit) | `applyRemoteVote` routes through `commitChange` (active page) or `history.record` + autosave + broadcast (other pages); regression tests lock that a teacher undo reverts a student vote as a visible, redoable step instead of silently erasing it class-wide |
+| Results tally every page | PASS(unit) | `stop()` tallies all pages' elements — a room-wide session must not drop page-2 dots from the announcement |
+
+Known limits: reset has no confirm dialog (`app.dialogs` exposes none) — it is undoable via
+history instead. Not yet browser-verified with a second device; student-vote path verified by
+server-op unit tests only.
 
 
 

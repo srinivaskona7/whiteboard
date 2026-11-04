@@ -239,7 +239,7 @@ export const AWS_TEMPLATES = [
     description: 'SNS fan-out to SQS queues, EventBridge routing and a Step Functions long-running workflow',
     frameTitle: 'Lesson: fan-out, routing and orchestration',
     teaching:
-      'SNS fans one event out to many queues; EventBridge routes by content rule; Step Functions keeps a long, multi-step process visible as a state machine. Choose by shape: one-to-many broadcast, rule-based routing, or a workflow with retries and human approval.',
+      'SNS fans one event out to many queues; EventBridge routes by content rule; Step Functions keeps a long, multi-step process visible as a state machine. Choose by shape: one-to-many broadcast, rule-based routing, or a workflow with retries and human approval. Every queue here needs a dead-letter queue: without one a poison message is retried until its retention expires and the event is silently lost.',
     build() {
       const producer = N('aws-lambda', 40, 130, 'Order service');
       const sns = N('aws-sns', 250, 130, 'SNS topic (orders)');
@@ -318,11 +318,13 @@ export const AWS_TEMPLATES = [
       const alb = N('aws-alb', 40, 130, 'ALB');
       const app = N('aws-ec2', 250, 130, 'Application fleet');
       const cw = N('aws-cloudwatch', 460, 130, 'CloudWatch metrics');
-      const logs = N('obs-loki', 460, 330, 'CloudWatch Logs');
-      const xray = N('obs-jaeger', 670, 130, 'X-Ray traces');
-      const alarm = N('obs-alertmanager', 670, 330, 'Alarm → SNS');
+      // AWS-native art: this lesson is about what an AWS on-call sees, so a
+      // third-party badge (LOKI / GRAFANA) contradicts the label and the notes.
+      const logs = N('aws-cloudwatch', 460, 330, 'CloudWatch Logs');
+      const xray = N('aws-xray', 670, 130, 'X-Ray traces');
+      const alarm = N('aws-sns', 670, 330, 'Alarm → SNS');
       const oncall = N('sec-oidc', 880, 330, 'On-call rotation');
-      const dash = N('obs-grafana', 880, 130, 'Dashboard');
+      const dash = N('aws-cloudwatch', 880, 130, 'CloudWatch dashboard');
       return [
         TITLE(40, 76, 'Metrics, logs, traces and the alarm that wakes someone'),
         alb,
@@ -392,7 +394,7 @@ export const AWS_TEMPLATES = [
     description: 'Route 53 failover, Aurora Global Database and S3 Cross-Region Replication to a standby region',
     frameTitle: 'Lesson: what actually happens in a regional failure',
     teaching:
-      'Recovery is a chain, not a button: DNS must flip, the standby region must already have data, and the compute capacity must exist before the traffic arrives. RTO is how long the chain takes, RPO is how much data the replication lag allows you to lose — state both.',
+      'Recovery is a chain, not a button: DNS must flip, the standby region must already have data, and the compute capacity must exist before the traffic arrives. RTO is how long the chain takes, RPO is how much data the replication lag allows you to lose — state both. Replication is not backup: it faithfully copies a corrupted or deleted row into the replica in seconds, so a separate, restore-tested backup is still required.',
     build() {
       const users = N('cloud-generic', 40, 130, 'Users');
       const r53 = N('aws-route53', 250, 130, 'Route 53 failover');

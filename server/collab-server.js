@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { URL } from 'node:url';
+import { castVote } from '../scene/voting.js';
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -191,6 +192,10 @@ export class CollabStore {
         mode: 'countdown',
         updatedAt: now,
       },
+      voteSession: {
+        active: false,
+        updatedAt: now,
+      },
     };
     this.rooms.set(roomId, room);
     this._saveToDisk();
@@ -242,6 +247,7 @@ export class CollabStore {
         expiresAt: room.expiresAt,
         teacherViewport: room.teacherViewport,
         timerState: room.timerState || null,
+        voteSession: room.voteSession || null,
         ...(role === 'teacher'
           ? {
               editorToken: room.editorToken,
@@ -314,6 +320,29 @@ export class CollabStore {
       return { ok: true, broadcast: { type: 'question:updated', pageId: page.id, question: existing } };
     }
 
+    // Dot voting: any participant may cast a dot while a session the teacher
+    // opened is live, and the dot only ever touches the target's own count.
+    if (op.type === 'vote:cast') {
+      if (!room.voteSession?.active) {
+        return { ok: false, code: 403, error: 'Dot voting is not open.' };
+      }
+      const target = page.elements.find((e) => e.id === op.elementId);
+      if (!target) return { ok: false, code: 404, error: 'Voting target not found.' };
+      const votes = castVote(target);
+      room.updatedAt = Date.now();
+      this._saveToDisk();
+      return {
+        ok: true,
+        broadcast: {
+          type: 'vote:cast',
+          pageId: page.id,
+          elementId: target.id,
+          votes,
+          senderClientId: op.clientId,
+        },
+      };
+    }
+
     if (role !== 'teacher' && role !== 'editor') {
       return {
         ok: false,
@@ -334,6 +363,18 @@ export class CollabStore {
         broadcast: {
           type: 'timer:synced',
           timerState: room.timerState,
+          senderClientId: op.clientId,
+        },
+      };
+    }
+
+    if (op.type === 'vote:session') {
+      room.voteSession = { active: Boolean(op.active), updatedAt: Date.now() };
+      return {
+        ok: true,
+        broadcast: {
+          type: 'vote:session',
+          session: room.voteSession,
           senderClientId: op.clientId,
         },
       };
@@ -926,6 +967,7 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           deletedIds: room.deletedIds || [],
           teacherViewport: room.teacherViewport,
           timerState: room.timerState || null,
+          voteSession: room.voteSession || null,
         })
       );
       broadcastPresence(roomId);

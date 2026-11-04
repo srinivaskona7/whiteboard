@@ -62,11 +62,41 @@ describe('AWS teaching templates', () => {
   });
 });
 
+describe('AWS templates teach AWS', () => {
+  // A lesson titled "AWS observability" must not show a LOKI or GRAFANA badge
+  // next to a node labelled CloudWatch — the artwork contradicts the label.
+  test('no AWS template dresses an AWS service in third-party observability art', () => {
+    for (const tpl of AWS_TEMPLATES) {
+      const thirdParty = tpl.build().filter((el) => el.type === 'stencil' && /^obs-/.test(el.stencilId));
+      assert.deepEqual(thirdParty.map((el) => `${el.stencilId} (${el.text})`), [], `${tpl.id}`);
+    }
+  });
+
+  test('the observability template uses the AWS tracing icon', () => {
+    const built = getTemplateById('tpl-aws-08-observability').build();
+    const xray = built.find((el) => /X-Ray/.test(el.text || ''));
+    assert.ok(xray, 'no X-Ray node');
+    assert.equal(xray.stencilId, 'aws-xray');
+  });
+
+  // The reference-architecture research surfaced two operator-level risks that
+  // the diagrams cannot show. They live in the teaching notes, so this pins
+  // them against a well-meaning trim.
+  test('teaching notes name the dead-letter and replication traps', () => {
+    const notes = (id) =>
+      getTemplateById(id).build().find((e) => e.type === 'frame').teacherNotes;
+    assert.match(notes('tpl-aws-06-messaging'), /dead-letter/i);
+    assert.match(notes('tpl-aws-06-messaging'), /silently lost/i);
+    assert.match(notes('tpl-aws-10-recovery'), /not backup/i);
+  });
+});
+
 describe('Services the reference-architecture ranking found missing', () => {
   // Added after the 2026-11-03 icon research. Without this test a renamed or
   // deleted stencil would leave the ranking silently unsatisfied again.
   const REQUIRED = [
     'aws-privatelink',
+    'aws-xray',
     'az-logicapps',
     'az-nat',
     'az-lb',

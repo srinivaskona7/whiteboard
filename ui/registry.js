@@ -50,6 +50,7 @@ export const ICONS = {
   mermaid: svg('<circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8.7" y1="7.5" x2="12" y2="15"/><line x1="15.3" y1="7.5" x2="12" y2="15"/>'),
   teaching: svg('<path d="M2 3h20v14H2z"/><path d="M8 21h8"/><path d="M12 17v4"/>'),
   spotlight: svg('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
+  vote: svg('<circle cx="5" cy="12" r="2.2" fill="currentColor"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><circle cx="19" cy="12" r="2.2" fill="currentColor"/>'),
   timer: svg('<circle cx="12" cy="13" r="8"/><polyline points="12 9 12 13 14.5 14.5"/><line x1="9" y1="2" x2="15" y2="2"/>'),
   present: svg('<polygon points="5 3 19 12 5 21 5 3"/>'),
   save: svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
@@ -98,8 +99,9 @@ export const TOOL_REGISTRY = [
   { id: 'text', label: 'Text', shortcut: 'T', group: 'dock', icon: ICONS.text },
   { id: 'sticky', label: 'Sticky Note', shortcut: 'N', group: 'dock', icon: ICONS.sticky },
   // Spotlight is a mode, not a drawing tool: clicking it toggles the spotlight
-  // instead of entering a placement tool (see setTool).
+  // instead of entering a placement tool (see setTool). Dot voting likewise.
   { id: 'spotlight', label: 'Spotlight Mode', shortcut: 'F7', group: 'dock', icon: ICONS.spotlight },
+  { id: 'vote', label: 'Dot Voting Mode', shortcut: 'Shift+V', group: 'dock', icon: ICONS.vote },
   { id: 'pointer', label: 'Point at Component (Classroom)', shortcut: 'W', group: 'dock', icon: ICONS.pointer },
   { id: 'question', label: 'Pin Question to Board', shortcut: 'Q', group: 'dock', icon: ICONS.question },
 

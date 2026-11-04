@@ -121,11 +121,18 @@ export function analyzeDiagram(page, options = {}) {
 
 /** The element that best represents a deployment target, for a rollout step. */
 function rolloutTarget(page, analysis) {
+  // Compute/deployment nouns. Lambda and bare "app"/"application" were missing,
+  // which left four of the ten AWS templates with no canary beat at all.
   const wanted =
-    /cluster|aks|gke|eks|auto scaling|scaling group|instance|deployment|app service|container apps|fleet|service|pod/i;
+    /lambda|function|cluster|aks|gke|eks|container apps|app service|application|\bapp\b|auto scaling|scaling group|instance|deployment|fleet|service|pod|task definition/i;
+  // Network and security furniture that also matches the words above
+  // ("services VPC", "service mesh gateway") but is not something you roll out.
+  const rejected =
+    /vpc|subnet|network|firewall|waf|security group|route|gateway|transit|endpoint|zone|bucket|table|queue|topic|bucket|registry/i;
   for (const { nodeId } of analysis.order) {
     const el = analysis.byId.get(nodeId);
-    if (wanted.test(labelOf(el))) return nodeId;
+    const label = labelOf(el);
+    if (wanted.test(label) && !rejected.test(label)) return nodeId;
   }
   return null;
 }

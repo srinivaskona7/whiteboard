@@ -69,6 +69,7 @@ import { initLayersPanel } from './ui/layers.js';
 import { initLibraryPanel } from './ui/library-panel.js';
 import { initPresentUI } from './ui/present.js';
 import { initTimerUI } from './ui/timer.js';
+import { initVotingUI } from './ui/voting.js';
 import { initCommandPalette } from './ui/palette.js';
 import { initAnimationUI } from './ui/animation.js';
 import { initNotebookView } from './ui/notebook.js';
@@ -181,6 +182,7 @@ export class WhiteboardApp {
     this.libraryUI = initLibraryPanel(this);
     this.presentUI = initPresentUI(this);
     this.timerUI = initTimerUI(this);
+    this.votingUI = initVotingUI(this);
     this.notebookView = initNotebookView(this);
     this.paletteUI = initCommandPalette(this);
     this.animationUI = initAnimationUI(this);
@@ -549,6 +551,12 @@ export class WhiteboardApp {
     // leaves the current drawing tool alone.
     if (toolId === 'spotlight') {
       this.toggleSpotlight(false);
+      return;
+    }
+    // Dot voting is a classroom mode too: the button toggles it and leaves the
+    // current drawing tool alone.
+    if (toolId === 'vote') {
+      this.votingUI.toggle();
       return;
     }
     this.cancelActiveInteractions();
@@ -2129,6 +2137,14 @@ export class WhiteboardApp {
       return;
     }
 
+    // Dot voting is a mode: a click casts a vote instead of selecting or drawing.
+    if (this.votingUI?.isActive?.()) {
+      const world = this.screenToWorld(ev.clientX, ev.clientY);
+      const hit = hitTestScene(this.getPage(), world.x, world.y, { includeLocked: true, tolerance: 10 });
+      if (hit) this.votingUI.castVoteOn(hit);
+      return;
+    }
+
     this._canvasPointerActive = true;
     const world = this.screenToWorld(ev.clientX, ev.clientY);
     this._getToolHandler().onPointerDown(world, ev);
@@ -2351,6 +2367,10 @@ export class WhiteboardApp {
         this.toggleAnnotationMode();
         return;
       }
+      if (this.votingUI?.isActive?.()) {
+        this.votingUI.stop();
+        return;
+      }
       if (this.activeTool === 'laser') {
         this.setTool('select');
         return;
@@ -2499,6 +2519,12 @@ export class WhiteboardApp {
     if (!mod && !ev.shiftKey && key === 'i') {
       ev.preventDefault();
       this.openImageFilePicker();
+      return;
+    }
+    // V alone is Select, so dot voting takes the shifted pair.
+    if (!mod && ev.shiftKey && key === 'v') {
+      ev.preventDefault();
+      this.votingUI?.toggle();
       return;
     }
 
