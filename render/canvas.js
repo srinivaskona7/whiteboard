@@ -59,6 +59,58 @@ function wrapChatText(ctx, text, maxWidth) {
   return lines.length ? lines : [''];
 }
 
+// Spotlight geometry, kept pure so tests can verify the rounded cutout math
+// without a canvas. Like the rest of the spotlight state, coordinates are
+// screen-space (canvas CSS pixels); the world→screen conversion happens in
+// the caller via the camera it passes in.
+export const SPOTLIGHT_SIZES = { small: 100, medium: 180, large: 260 };
+
+// Padding (world px) added around element bounds when the spotlight fits an
+// element, so the element plus a breathing margin sits inside the lens.
+export const SPOTLIGHT_FIT_PADDING = 32;
+
+// Returns { cx, cy, rx, ry } for the spotlight ellipse:
+//   targetBounds ({x,y,w,h} world) + camera → fitted ellipse over the element
+//   point ({x,y} screen) → keeps the current shape, centered at the point
+//   neither → keeps the current center and shape
+// A stored element fit (fitRx/fitRy + the radius it was computed at, fitBase)
+// scales with the radius control, so the banner slider keeps working against
+// the fitted ellipse instead of being ignored by it.
+export function spotlightEllipse(spotlight, options = {}) {
+  const { point = null, targetBounds = null, camera = null } = options;
+  const radius = Math.max(20, Number(spotlight?.radius) || 180);
+  const fitRx = Number(spotlight?.fitRx) || 0;
+  const fitRy = Number(spotlight?.fitRy) || 0;
+  const fitBase = Number(spotlight?.fitBase) || 0;
+  const scale = fitRx > 0 && fitBase > 0 ? radius / fitBase : 1;
+  const rx = fitRx > 0 ? fitRx * scale : radius;
+  const ry = fitRy > 0 ? fitRy * scale : rx;
+  if (targetBounds) {
+    const zoom = Math.max(0.05, Number(camera?.zoom) || 1);
+    return {
+      cx: (targetBounds.x + targetBounds.w / 2) * zoom + (camera?.x || 0),
+      cy: (targetBounds.y + targetBounds.h / 2) * zoom + (camera?.y || 0),
+      rx: Math.max(60, (targetBounds.w / 2 + SPOTLIGHT_FIT_PADDING) * zoom),
+      ry: Math.max(60, (targetBounds.h / 2 + SPOTLIGHT_FIT_PADDING) * zoom),
+    };
+  }
+  return {
+    cx: point ? point.x : Number(spotlight?.x) || 0,
+    cy: point ? point.y : Number(spotlight?.y) || 0,
+    rx,
+    ry,
+  };
+}
+
+// Esc precedence for the spotlight surface: an open context menu consumes the
+// keypress (close menu only, never the spotlight on the same press); with no
+// menu open, Esc turns the spotlight off.
+export function spotlightEscapeAction({ menuOpen = false, spotlightActive = false } = {}) {
+  if (menuOpen) return 'close-menu';
+  if (spotlightActive) return 'spotlight-off';
+  return 'none';
+}
+
 export class CanvasRenderer {
   constructor(canvas, minimapCanvas = null) {
     this.canvas = canvas;
@@ -1065,14 +1117,34 @@ export class CanvasRenderer {
 
   drawSpotlightAndMagnifier(ctx, spotlight, page = null, scene = null, theme = null, now = Date.now(), presentState = null) {
     const {
-      x,
-      y,
-      radius = 130,
       magnifier = false,
       magnifierScale = 2,
       dimOpacity = 0.72,
       dimBackground = true,
     } = spotlight;
+    // Pinned spotlights resolve from WORLD coordinates every render: a world
+    // point re-projects through the current camera, and an element pin re-fits
+    // to the element's current bounds. A screen-space pin would drift the
+    // moment the camera pans or zooms (or the element moves).
+    const cam = page?.camera;
+    let resolved = null;
+    if (spotlight.pinned && spotlight.pinElementId && page) {
+      const target = page.elements.find((e) => e.id === spotlight.pinElementId);
+      if (target) {
+        const b = getElementBounds(target);
+        resolved = { targetBounds: b, camera: cam };
+      }
+    } else if (spotlight.pinned && spotlight.pinWorld && cam) {
+      resolved = {
+        point: {
+          x: spotlight.pinWorld.x * cam.zoom + cam.x,
+          y: spotlight.pinWorld.y * cam.zoom + cam.y,
+        },
+      };
+    }
+    const { cx: x, cy: y, rx, ry } = resolved
+      ? spotlightEllipse(spotlight, resolved)
+      : spotlightEllipse(spotlight);
     ctx.save();
     if (magnifier && page && scene && theme) {
       const cam = page.camera;
@@ -1081,10 +1153,10 @@ export class CanvasRenderer {
       const worldY = (y - cam.y) / cam.zoom;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
       ctx.clip();
       ctx.fillStyle = theme.canvasBg;
-      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      ctx.fillRect(x - rx, y - ry, rx * 2, ry * 2);
       ctx.translate(x, y);
       ctx.scale(cam.zoom * lensZoom, cam.zoom * lensZoom);
       ctx.translate(-worldX, -worldY);
@@ -1101,14 +1173,14 @@ export class CanvasRenderer {
       ctx.fillStyle = `rgba(2, 6, 23, ${alpha})`;
       ctx.beginPath();
       ctx.rect(0, 0, this.width, this.height);
-      ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2, true);
       ctx.fill('evenodd');
     }
 
     ctx.strokeStyle = magnifier ? '#38bdf8' : '#facc15';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }

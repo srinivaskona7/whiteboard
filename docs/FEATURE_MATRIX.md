@@ -457,3 +457,94 @@ re-litigate them):
   `reaction:send`) remain unthrottled server-side (parity with the pre-existing
   `reaction:send`); `op.color` is capped at 24 chars. A per-clientId token bucket is the
   recorded follow-up if room abuse becomes real.
+
+## 26. Lucide icons tab (2026-11-04)
+
+A curated **311-icon Lucide set** (ISC license, commercial-safe) as a dedicated
+"Lucide Icons" library tab: education (43), tech-devops (70), office-business (55), arrows
+(30), media (27), people-collaboration (26), nature-weather (27), status-symbols (33).
+Subcategory pills + search (alias-aware, reuses `scoreStencilSearchMatch`) + the shared
+icon-size stepper + favorites/recents + click-to-place and drag-to-canvas, exactly like the
+architecture stencil tab. Icons draw on canvas as true vector stencils (stroke follows the
+current style color; scaling keeps 2-unit stroke weight proportional).
+
+Pipeline: `lucide-static@1.68.0` is a devDependency only — `scripts/gen-lucide-icons.js`
+parses the vendored SVGs and bakes the geometry into the checked-in
+`stencils/lucide-icons.js` (~161 KB), so runtime stays zero-dependency and fresh clones
+build without the package. The generator is idempotent (sha256-stable, test-locked). Icons
+resolve through the normal stencil registry (`lucide-` ids, dedupe-safe, real canvas
+`draw` + `toSvg`), are placed by the standard `placeStencil` path, and carry correct
+provenance (`getIconProvenance` → Lucide / ISC; regression-locked).
+
+Known limits: the build bundle crosses the 500 kB chunk warning (pre-existing catalogs plus
+the baked geometry); one curated name (`address-book`) doesn't exist in the package and was
+skipped with a warning, never invented.
+
+## 27. Spotlight: rounded, right-click controllable (2026-11-04)
+
+The spotlight cutout is now an **ellipse** (180 default radius): pinned to a right-clicked
+point via "Spotlight here", or fitted to a right-clicked element's bounds (+32px padding,
+min radius 60) via "Spotlight → element"; while pinned the lens stays put, and "follow
+cursor" re-enables the old behavior. The right-click menu also offers size presets
+(small 100 / medium 180 / large 260) and "Spotlight off (Esc)". Esc precedence: an open
+context menu consumes Esc first (menu closes only); otherwise Esc exits spotlight. The
+radius slider keeps working during an element fit (the fit scales with it).
+
+Geometry lives in pure exported helpers (`spotlightEllipse`, `spotlightEscapeAction`) in
+`render/canvas.js`, locked by `tests/spotlight.test.js` (10 tests incl. mock-canvas render
+asserts: ellipse calls, no legacy arc).
+
+Known limits: the spotlight remains a **local overlay** — pointing moves it only on the
+operator's own screen (broadcasting would need a new collab op); the toolbar banner shows
+the base radius, not the fitted rx/ry, while an element fit is active.
+
+## 28. Excel-like table editor and numbered step bubbles (2026-11-04)
+
+**Tables** gained a real formatting layer: per-cell / per-row / per-column / whole-table
+alignment (left/center/right) and fill colour via the props panel, with scope buttons
+(Cell/Row/Column/Table) and a Select-all-cells button; insert/delete row/column
+(pre-existing) and TSV paste now inherit the previous row/column's alignment and colour so
+tables stay visually consistent. All ops are pure functions in `scene/table.js`
+(`cellAligns`/`cellColors` grids kept rectangular through every structural change),
+mutations go through `commitChange()` (undoable), and the styles round-trip
+serialize/parse. The renderer paints per-cell fills under the grid rules.
+
+**Numbered step bubbles**: a new Steps stamp kind — a round teal bubble with a bold white
+number that auto-increments 1, 2, 3 … on each placement (unbounded, restart at 1 by
+re-picking the kind or the Restart-at-1 button). The counter rides `badgeValue` so it
+survives storage and exports without a model change.
+
+Known limits: cell selection is element-level — there is no rubber-band multi-cell
+selection or a visible active-cell highlight yet (the styles target the last-edited cell,
+row, or column); SVG export draws a Steps bubble as the generic badge circle with the
+number; steps reset is via the props panel, not the context menu.
+
+Evidence: `scene/table.js`, `ui/props-panel.js`, `tools/stamp.js`, `render/shapes.js`,
+`tests/table.test.js` (12), `tests/step-bubbles.test.js` (8); `render/canvas.js`,
+`ui/context-menu.js`, `main.js`, `tests/spotlight.test.js` (10); `scripts/gen-lucide-icons.js`,
+`stencils/lucide-icons.js`, `ui/library-panel.js`, `tests/lucide-icons.test.js` (9).
+
+### Review round (same day)
+
+Four lenses (correctness, edges, integration, spec) over sections 26–28. Spec: 4/4 items MET.
+Confirmed defects, all fixed and test-locked (suite 366):
+
+- **Lucide SVG export geometry** — `toSvg` skipped the 8px inset the canvas draw uses, so
+  exported icons rendered ~20% larger than the board. The generator template now shares
+  the same pad/scale math, and a `toSvg`-vs-`draw` equivalence test pins it.
+- **Generator safety** — a zero-icon run (missing/renamed `lucide-static`) used to clobber
+  the checked-in `stencils/lucide-icons.js` with an empty module and exit 0. It now
+  refuses to write and exits non-zero; the idempotency test snapshots and restores the
+  file, and a refusal test covers the missing-package case (`LUCIDE_ICONS_DIR`).
+- **SVG export dropped table styles** — `cellColors` fills and `cellAligns` overrides
+  were ignored by the SVG table branch. Both now mirror the canvas renderer exactly
+  (fills under the grid lines, cell > table alignment precedence).
+- **Spotlight pins frozen in screen coords** — pan/zoom (or moving a pinned element)
+  left the lens stale. Pins now live in world space (`pinWorld` / `pinElementId`) and
+  re-project through the camera every render; element pins re-fit to the element's
+  current bounds. Turning the spotlight off/on clears all pin and fit state (a stale
+  element-fit ellipse used to survive re-activation).
+- **Whole-table fill** now clears per-cell colour overrides, matching what whole-table
+  alignment already did (the new fill previously looked like it didn't apply).
+
+Remaining known limits are unchanged from §26–28 above.

@@ -19,6 +19,7 @@ import {
   deleteTableRow,
   deleteTableCol,
 } from '../scene/table.js';
+import { SPOTLIGHT_SIZES } from '../render/canvas.js';
 
 const MENU_WIDTH = 248;
 
@@ -195,6 +196,10 @@ export function initContextMenu(app) {
   document.addEventListener('keydown', (ev) => {
     if (isOpen() && ev.key === 'Escape' && !root.contains(ev.target)) {
       ev.preventDefault();
+      // Menu-first Esc precedence: closing the menu consumes the keypress so
+      // the app-level handler (bound to window) cannot also exit spotlight or
+      // anything else on the same press.
+      ev.stopPropagation();
       close({ restoreFocus: false });
     }
   });
@@ -233,6 +238,51 @@ export function buildContextItems(app, hit, world) {
       return { elementId: el.id, x: (el.x + el.x2) / 2, y: Math.min(el.y, el.y2) - 24 };
     }
     return { elementId: el.id, x: el.x + (el.w || 0) / 2, y: el.y - 24 };
+  };
+
+  // Spotlight control surface on the right-click menu. The spotlight is a
+  // local overlay (never broadcast), so every role gets the same entries and
+  // pointing moves only one's own view.
+  const spotlightItems = (anchorWorld, anchorEl) => {
+    const sp = app.spotlight || {};
+    const active = Boolean(sp.active);
+    return {
+      label: 'Spotlight',
+      children: [
+        {
+          label: active && sp.pinned ? 'Point spotlight here' : 'Spotlight here',
+          action: () => app.pointSpotlightAt(anchorWorld),
+        },
+        ...(anchorEl
+          ? [
+              {
+                label: 'Spotlight → element',
+                action: () => app.pointSpotlightToElement(anchorEl),
+              },
+            ]
+          : []),
+        {
+          label: 'Spotlight: select size',
+          children: Object.entries(SPOTLIGHT_SIZES).map(([name, radius]) => ({
+            label: `${!sp.fitRx && Math.round(sp.radius) === radius ? '✓ ' : ''}${name} (${radius}px)`,
+            action: () => app.setSpotlightSize(radius),
+          })),
+        },
+        {
+          label: 'Spotlight: follow cursor',
+          disabled: !active || !sp.pinned,
+          reason: 'The spotlight already follows the cursor',
+          action: () => app.unpinnedSpotlightFollow(),
+        },
+        {
+          label: 'Spotlight off',
+          shortcut: 'Esc',
+          disabled: !active,
+          reason: 'Spotlight is not on',
+          action: () => app.turnSpotlightOff(),
+        },
+      ],
+    };
   };
 
   const editItem = {
@@ -332,6 +382,7 @@ export function buildContextItems(app, hit, world) {
       },
       { type: 'separator' },
       emoteItems(elementAnchor(hit)),
+      spotlightItems(world, hit),
       { label: 'Duplicate', shortcut: 'Ctrl/⌘D', disabled: !canEdit || locked, action: () => app.duplicateSelection() },
       { label: 'Delete', shortcut: 'Del', disabled: !canEdit || locked, action: () => app.deleteSelection() },
     ];
@@ -378,6 +429,7 @@ export function buildContextItems(app, hit, world) {
       },
       { type: 'separator' },
       emoteItems(elementAnchor(hit)),
+      spotlightItems(world, hit),
       { label: 'Duplicate', disabled: !canEdit || locked, action: () => app.duplicateSelection() },
       { label: 'Delete', disabled: !canEdit || locked, action: () => app.deleteSelection() },
     ];
@@ -427,6 +479,7 @@ export function buildContextItems(app, hit, world) {
       { label: 'Export selection as PNG', action: () => app.exportPngDownload({ selectionOnly: true, selectedIds: app.selectedIds }) },
       { type: 'separator' },
       emoteItems(elementAnchor(hit || selected[0])),
+      spotlightItems(world, hit || selected[0]),
       { type: 'separator' },
       { label: 'Delete', shortcut: 'Del', disabled: !canEdit, action: () => app.deleteSelection() },
     ];
@@ -463,6 +516,7 @@ export function buildContextItems(app, hit, world) {
       children: (app.arrowPresetItems?.() || []).map((it) => ({ ...it })),
     },
     emoteItems({ x: world.x, y: world.y }),
+    spotlightItems(world, null),
     { type: 'separator' },
     {
       label: `${app.scene.settings.snapToGrid ? '✓ ' : ''}Snap to grid`,

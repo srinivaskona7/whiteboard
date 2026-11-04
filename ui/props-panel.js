@@ -12,12 +12,19 @@ import { resetConnectorRoute } from '../scene/routing.js';
 import { ARROW_QUICK_PRESETS, applyArrowQuickPreset } from '../scene/arrow-presets.js';
 import { arrowPresetPreview, arrowPresetMatches } from './arrow-preview.js';
 import {
+  CELL_ALIGNS,
   insertTableRow,
   insertTableCol,
   deleteTableRow,
   deleteTableCol,
   equalizeTableSpans,
   fitTable,
+  setCellAlignment,
+  setRowAlignment,
+  setColAlignment,
+  setTableAlignment,
+  setCellColor,
+  setRowColor,
 } from '../scene/table.js';
 import { updateConnectorBindings } from '../scene/bindings.js';
 import {
@@ -46,6 +53,10 @@ function getSharedProp(elements, getter, fallback) {
 export function initPropsPanel(app) {
   const container = document.getElementById('wb-props-panel');
   if (!container) return { update() {} };
+
+  // Where the table style buttons (alignment / fill colour) apply. 'cell' only
+  // makes sense with a last-edited cell; without one it falls back to 'table'.
+  let tableStyleScope = 'table';
 
   function isStudentRestrictedRole() {
     const role = app.collab?.role;
@@ -557,13 +568,21 @@ export function initPropsPanel(app) {
               ['question', '? Question'],
               ['arrow-up', '↑ Up'],
               ['badge', `#${app.stampTool.badgeValue} Badge`],
+              ['steps', `№ ${app.stampTool.stepValue} Steps`],
             ]
               .map(
                 ([k, label]) =>
-                  `<button type="button" class="wb-btn wb-sm ${sk === k ? 'active' : ''}" data-stamp-kind="${k}">${label}</button>`
+                  `<button type="button" class="wb-btn wb-sm ${sk === k ? 'active' : ''}" data-stamp-kind="${k}" title="${k === 'steps' ? 'Numbered step bubble — re-pick to restart at 1' : k}">${label}</button>`
               )
               .join('')}
           </div>
+          ${
+            sk === 'steps'
+              ? `<div class="wb-btn-group" style="margin-top:6px;">
+                  <button type="button" class="wb-btn wb-sm" id="btn-steps-restart" title="Restart the step numbering at 1">↺ Restart at 1</button>
+                </div>`
+              : ''
+          }
         </div>
       `);
     }
@@ -632,6 +651,11 @@ export function initPropsPanel(app) {
     // Table controls placed at top of Inspector when a table is selected
     if (types.has('table') && selected.length === 1) {
       const tbl = selected[0];
+      // The last cell the inline editor touched is the "active cell": the
+      // anchor that cell/row/column styling applies around.
+      const activeCell =
+        app.lastTableCell && app.lastTableCell.elId === tbl.id ? app.lastTableCell : null;
+      const scope = activeCell ? tableStyleScope : 'table';
       sections.push(`
         <div class="wb-prop-section">
           <div class="wb-prop-title">Table (${tbl.rows} × ${tbl.cols})</div>
@@ -640,6 +664,43 @@ export function initPropsPanel(app) {
             <button type="button" class="wb-btn wb-sm" id="btn-table-del-row">− Row</button>
             <button type="button" class="wb-btn wb-sm" id="btn-table-add-col">+ Col</button>
             <button type="button" class="wb-btn wb-sm" id="btn-table-del-col">− Col</button>
+          </div>
+          <div class="wb-prop-subtitle">
+            Cell Styling${activeCell ? ` · active cell ${activeCell.row + 1},${activeCell.col + 1}` : ' · whole table'}
+          </div>
+          <div class="wb-btn-group">
+            <button type="button" class="wb-btn wb-sm" id="btn-table-select-all" title="Target the whole table: alignment and colour then apply to every cell">▣ Select all cells</button>
+          </div>
+          <div class="wb-btn-group" role="group" aria-label="Style Target">
+            ${[
+              ['cell', 'Cell'],
+              ['row', 'Row'],
+              ['col', 'Column'],
+              ['table', 'Table'],
+            ]
+              .map(
+                ([id, label]) =>
+                  `<button type="button" class="wb-btn wb-sm ${scope === id ? 'active' : ''}" data-table-scope="${id}" ${id === 'cell' && !activeCell ? 'disabled' : ''}>${label}</button>`
+              )
+              .join('')}
+          </div>
+          <label class="wb-prop-row">
+            <span>Alignment</span>
+            <div class="wb-btn-group" role="group" aria-label="Cell Alignment">
+              ${CELL_ALIGNS.map(
+                (al) =>
+                  `<button type="button" class="wb-btn wb-sm" data-table-align="${al}" title="Align ${al}">${al}</button>`
+              ).join('')}
+            </div>
+          </label>
+          <div class="wb-prop-row">
+            <span>Fill colour</span>
+            <div class="wb-color-grid" role="group" aria-label="Cell Fill Colour">
+              ${PALETTE_FILL_COLORS.map(
+                (c) =>
+                  `<button type="button" class="wb-color-swatch ${c === 'transparent' ? 'wb-swatch-clear' : ''}" style="background:${c === 'transparent' ? 'transparent' : c}" data-table-color="${c}" aria-label="Cell fill ${c}"></button>`
+              ).join('')}
+            </div>
           </div>
           <label class="wb-check-row">
             <input type="checkbox" id="prop-table-header" ${tbl.headerRow === false ? '' : 'checked'}/>
@@ -1360,7 +1421,17 @@ export function initPropsPanel(app) {
     container.querySelector('#prop-snap-grid')?.addEventListener('change', (e) => { app.scene.settings.snapToGrid = e.target.checked; app.scheduleAutosave(app.scene); });
     container.querySelector('#prop-snap-obj')?.addEventListener('change', (e) => { app.scene.settings.snapToObjects = e.target.checked; app.scheduleAutosave(app.scene); });
     container.querySelectorAll('[data-math]').forEach((b) => b.addEventListener('click', () => app.insertMathOverlay(b.dataset.math)));
-    container.querySelectorAll('[data-stamp-kind]').forEach((b) => b.addEventListener('click', () => { app.stampTool.stampKind = b.dataset.stampKind; render(); }));
+    container.querySelectorAll('[data-stamp-kind]').forEach((b) =>
+      b.addEventListener('click', () => {
+        // selectKind restarts step numbering at 1 when the steps bubble is picked.
+        app.stampTool.selectKind(b.dataset.stampKind);
+        render();
+      })
+    );
+    container.querySelector('#btn-steps-restart')?.addEventListener('click', () => {
+      app.stampTool.resetSteps();
+      render();
+    });
     container.querySelector('#prop-fading-ink')?.addEventListener('change', (e) => (app.fadingInk = e.target.checked));
     container.querySelector('#prop-magnifier')?.addEventListener('change', (e) => { app.spotlight.magnifier = e.target.checked; app.requestRender(); });
 
@@ -1389,6 +1460,66 @@ export function initPropsPanel(app) {
       container.querySelector('#btn-table-del-row')?.addEventListener('click', () => restructure(() => deleteTableRow(tbl, 1)));
       container.querySelector('#btn-table-add-col')?.addEventListener('click', () => restructure(() => insertTableCol(tbl, 1)));
       container.querySelector('#btn-table-del-col')?.addEventListener('click', () => restructure(() => deleteTableCol(tbl, 1)));
+
+      // Cell / row / column / whole-table styling. Without an active cell every
+      // button degrades to the whole table, matching "select all" semantics.
+      const activeCell = () =>
+        app.lastTableCell && app.lastTableCell.elId === tbl.id ? app.lastTableCell : null;
+      const styleScope = () => (activeCell() ? tableStyleScope : 'table');
+      container.querySelectorAll('[data-table-scope]').forEach((b) =>
+        b.addEventListener('click', () => {
+          tableStyleScope = b.dataset.tableScope;
+          render();
+        })
+      );
+      container.querySelector('#btn-table-select-all')?.addEventListener('click', () => {
+        // Selection is element-level in this app, so "select all cells" means:
+        // own the table selection and drop the per-cell style target.
+        app.lastTableCell = null;
+        tableStyleScope = 'table';
+        app.selectedIds = new Set([tbl.id]);
+        app.dialogs?.showToast?.('Whole table targeted — alignment and colour now apply to every cell.', 'info');
+        app.updateUI();
+        app.requestRender();
+        render();
+      });
+      container.querySelectorAll('[data-table-align]').forEach((b) =>
+        b.addEventListener('click', () => {
+          if (tbl.locked) return lockedToast();
+          const align = b.dataset.tableAlign;
+          const cell = activeCell();
+          const scope = styleScope();
+          if (!cell || scope === 'table') setTableAlignment(tbl, align);
+          else if (scope === 'row') setRowAlignment(tbl, cell.row, align);
+          else if (scope === 'col') setColAlignment(tbl, cell.col, align);
+          else setCellAlignment(tbl, cell.row, cell.col, align);
+          applyTable();
+          render();
+        })
+      );
+      container.querySelectorAll('[data-table-color]').forEach((b) =>
+        b.addEventListener('click', () => {
+          if (tbl.locked) return lockedToast();
+          const color = b.dataset.tableColor === 'transparent' ? '' : b.dataset.tableColor;
+          const cell = activeCell();
+          const scope = styleScope();
+          if (!cell || scope === 'table') {
+            tbl.fill = color || 'transparent';
+            // Whole-table fill replaces the per-cell overrides, exactly like
+            // whole-table alignment clears them — leaving cellColors behind
+            // made the new fill look like it didn't apply.
+            tbl.cellColors = null;
+          } else if (scope === 'row') {
+            setRowColor(tbl, cell.row, color);
+          } else if (scope === 'col') {
+            for (let r = 0; r < (tbl.rows || 1); r++) setCellColor(tbl, r, cell.col, color);
+          } else {
+            setCellColor(tbl, cell.row, cell.col, color);
+          }
+          applyTable();
+          render();
+        })
+      );
       container.querySelector('#prop-table-header')?.addEventListener('change', (e) => {
         if (tbl.locked) return lockedToast();
         tbl.headerRow = e.target.checked;

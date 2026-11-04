@@ -251,6 +251,7 @@ export function drawStamp(ctx, el) {
     question: ['rgba(124, 58, 237, 0.15)', '#7c3aed'],
     'arrow-up': ['rgba(37, 99, 235, 0.15)', '#2563eb'],
     badge: ['#2563eb', '#1d4ed8'],
+    steps: ['#0d9488', '#0f766e'],
   };
   const [fill, stroke] = styles[stampKind] || styles.badge;
   ctx.fillStyle = fill; ctx.strokeStyle = stroke;
@@ -502,6 +503,20 @@ export function drawTableElement(ctx, el, themeName) {
     ctx.fillRect(x, y, w, geo.cellH[0]);
   }
 
+  // Per-cell fills from the Inspector's palette paint under the grid rules so
+  // the lines stay crisp, like the striped shading above.
+  if (Array.isArray(el.cellColors)) {
+    for (let r = 0; r < rows; r++) {
+      const colorRow = Array.isArray(el.cellColors[r]) ? el.cellColors[r] : [];
+      for (let c = 0; c < cols; c++) {
+        const cellColor = colorRow[c];
+        if (!cellColor) continue;
+        ctx.fillStyle = cellColor;
+        ctx.fillRect(xs[c], ys[r], geo.cellW[c], geo.cellH[r]);
+      }
+    }
+  }
+
   ctx.beginPath();
   for (let r = 1; r < rows; r++) {
     ctx.moveTo(x, ys[r]);
@@ -528,6 +543,8 @@ export function drawTableElement(ctx, el, themeName) {
       const cellY = ys[r];
       const cellW = geo.cellW[c];
       const cellH = geo.cellH[r];
+      // A cell-level alignment override beats the table-wide default.
+      const cellAlign = el.cellAligns?.[r]?.[c] || align;
       const innerW = Math.max(8, cellW - padX * 2);
       const lines = wrapCellLines(ctx, val, innerW);
       const maxLines = Math.max(1, Math.floor((cellH - 8) / lineH));
@@ -543,7 +560,7 @@ export function drawTableElement(ctx, el, themeName) {
       ctx.beginPath();
       ctx.rect(cellX + 1, cellY + 1, cellW - 2, cellH - 2);
       ctx.clip();
-      ctx.textAlign = align;
+      ctx.textAlign = cellAlign;
       ctx.textBaseline = 'middle';
       const totalH = visible.length * lineH;
       let startY;
@@ -551,9 +568,9 @@ export function drawTableElement(ctx, el, themeName) {
       else if (valign === 'bottom') startY = cellY + cellH - 6 - totalH + lineH / 2;
       else startY = cellY + cellH / 2 - totalH / 2 + lineH / 2;
       const tx =
-        align === 'left'
+        cellAlign === 'left'
           ? cellX + padX
-          : align === 'right'
+          : cellAlign === 'right'
             ? cellX + cellW - padX
             : cellX + cellW / 2;
       visible.forEach((line, idx) => {

@@ -330,6 +330,19 @@ function elementToSvg(el, page, scene, theme) {
       const headerTint = theme.name === 'dark' ? 'rgba(148,163,184,0.16)' : 'rgba(226,232,240,0.7)';
       inner += `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${geo.cellH[0]}" fill="${headerTint}"/>`;
     }
+    // Per-cell fills paint under the grid rules, exactly like the canvas
+    // renderer (render/shapes.js drawTableElement) — without this the SVG
+    // export silently dropped the Inspector's cell colours.
+    if (Array.isArray(el.cellColors)) {
+      for (let r = 0; r < rows; r++) {
+        const colorRow = Array.isArray(el.cellColors[r]) ? el.cellColors[r] : [];
+        for (let c = 0; c < cols; c++) {
+          const cellColor = colorRow[c];
+          if (!cellColor) continue;
+          inner += `<rect x="${xs[c]}" y="${ys[r]}" width="${geo.cellW[c]}" height="${geo.cellH[r]}" fill="${cellColor}"/>`;
+        }
+      }
+    }
     for (let r = 1; r < rows; r++) {
       inner += `<line x1="${el.x}" y1="${ys[r]}" x2="${el.x + el.w}" y2="${ys[r]}" stroke="${stroke}" stroke-width="${sw}"/>`;
     }
@@ -399,13 +412,16 @@ function elementToSvg(el, page, scene, theme) {
               ? ys[r] + cellH - 6 - totalH + lineH / 2
               : ys[r] + cellH / 2 - totalH / 2 + lineH / 2;
         const align = el.textAlign || 'center';
+        // A cell-level alignment override beats the table-wide default — the
+        // same precedence the canvas renderer applies.
+        const cellAlign = el.cellAligns?.[r]?.[c] || align;
         const tx =
-          align === 'left'
+          cellAlign === 'left'
             ? xs[c] + padX
-            : align === 'right'
+            : cellAlign === 'right'
               ? xs[c] + cellW - padX
               : xs[c] + cellW / 2;
-        const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+        const anchor = cellAlign === 'left' ? 'start' : cellAlign === 'right' ? 'end' : 'middle';
         inner += `<text x="${tx}" y="${startY}" font-family="sans-serif" font-size="${fontSize}" font-weight="${weight}" fill="${textColor}" text-anchor="${anchor}" dominant-baseline="central">`;
         visible.forEach((line, idx) => {
           inner += `<tspan x="${tx}" dy="${idx === 0 ? 0 : lineH}">${escapeXml(line)}</tspan>`;

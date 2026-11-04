@@ -11,6 +11,7 @@ import { NETWORK_STENCILS } from './network.js';
 import { UML_STENCILS } from './uml.js';
 import { ER_STENCILS } from './er.js';
 import { GENERIC_STENCILS } from './generic.js';
+import { LUCIDE_STENCILS } from './lucide-icons.js';
 import { ICON_PACK_SOURCES, getIconProvenance, describeIcon } from './manifest.js';
 
 export { ICON_PACK_SOURCES, getIconProvenance, describeIcon };
@@ -54,6 +55,15 @@ export const SEARCH_ALIASES = {
   pgsql: ['db-postgres'],
   mq: ['msg-rabbitmq', 'msg-kafka', 'msg-nats', 'aws-sqs'],
   tls: ['concept-tls'],
+  // Lucide generic icons (icons/<sub> category) alongside the service packs.
+  db: ['aws-rds', 'cloud-db', 'lucide-database'],
+  git: ['lucide-git-branch', 'lucide-git-commit', 'lucide-git-merge'],
+  wifi: ['lucide-wifi'],
+  terminal: ['lucide-terminal', 'lucide-square-terminal'],
+  lock: ['lucide-lock'],
+  key: ['lucide-key'],
+  check: ['lucide-check'],
+  alert: ['lucide-alert-circle', 'lucide-triangle-alert'],
 };
 
 // Same id can be declared by two packs (the DevOps-infra k8s/net set predates
@@ -84,6 +94,7 @@ export const ALL_STENCILS = dedupeById([
   ...CLOUD_STENCILS,
   ...KUBERNETES_STENCILS,
   ...NETWORK_STENCILS,
+  ...LUCIDE_STENCILS,
 ]);
 
 const STENCIL_MAP = new Map(ALL_STENCILS.map((s) => [s.id, s]));

@@ -4,9 +4,11 @@ import {
   getAllCategories,
   getStencilsByCategory,
   getStencilById,
+  scoreStencilSearchMatch,
   ICON_PACK_SOURCES,
   getIconProvenance,
 } from '../stencils/index.js';
+import { LUCIDE_STENCILS } from '../stencils/lucide-icons.js';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
@@ -46,8 +48,11 @@ export function initLibraryPanel(app) {
   const panel = document.getElementById('wb-library-panel');
   if (!panel) return { update() {}, recordRecent() {} };
 
-  let activeTab = 'stencils'; // 'stencils' | 'packs' | 'user' | 'templates'
+  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'packs' | 'user' | 'templates'
   let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
+  let lucideActiveCategory = 'all'; // 'all' | 'icons/<sub>'
+  let lucideSearchQuery = '';
+  let lucideVisibleLimit = 64;
   let searchQuery = '';
   let iconSize = ICON_SIZE_LEVELS.includes(app.workspacePrefs?.libraryIconSize)
     ? app.workspacePrefs.libraryIconSize
@@ -102,6 +107,7 @@ export function initLibraryPanel(app) {
       </div>
       <div class="wb-tabs" role="tablist">
         <button type="button" role="tab" class="wb-tab ${activeTab === 'stencils' ? 'active' : ''}" data-tab="stencils">Icons (${ALL_STENCILS.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'lucide' ? 'active' : ''}" data-tab="lucide">Lucide Icons (${LUCIDE_STENCILS.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'packs' ? 'active' : ''}" data-tab="packs">Diagram Packs</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'user' ? 'active' : ''}" data-tab="user">My Library (${app.userLibrary.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'templates' ? 'active' : ''}" data-tab="templates">Templates</button>
@@ -127,6 +133,7 @@ export function initLibraryPanel(app) {
 
     const content = panel.querySelector('#wb-library-content');
     if (activeTab === 'stencils') renderStencilsTab(content);
+    else if (activeTab === 'lucide') renderLucideIconsTab(content);
     else if (activeTab === 'packs') renderDiagramPacksTab(content);
     else if (activeTab === 'user') renderUserLibraryTab(content);
     else renderTemplatesTab(content);
@@ -395,6 +402,174 @@ export function initLibraryPanel(app) {
     updateMultiBar();
     updateResults();
     syncPlacementPreview();
+  }
+
+  function renderLucideIconsTab(content) {
+    const subcategories = Array.from(new Set(LUCIDE_STENCILS.map((s) => s.category)));
+    const subLabel = (cat) =>
+      cat
+        .replace('icons/', '')
+        .split('-')
+        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+        .join(' ');
+    const subCount = (cat) => LUCIDE_STENCILS.filter((s) => s.category === cat).length;
+
+    content.innerHTML = `
+      <div class="wb-lib-controls">
+        <div class="wb-lib-search-row">
+          <input type="search" id="lucide-search" class="wb-input" placeholder="Search Lucide icons: git, wifi, camera, lock, arrow..." value="${escapeXml(lucideSearchQuery)}" aria-label="Search Lucide Icons"/>
+        </div>
+        <div class="wb-cat-pills" role="group" aria-label="Lucide Icon Categories">
+          <button type="button" class="wb-cat-pill ${lucideActiveCategory === 'all' ? 'active' : ''}" data-lcat="all">All (${LUCIDE_STENCILS.length})</button>
+          ${subcategories
+            .map(
+              (c) =>
+                `<button type="button" class="wb-cat-pill ${lucideActiveCategory === c ? 'active' : ''}" data-lcat="${escapeXml(c)}">${escapeXml(subLabel(c))} (${subCount(c)})</button>`
+            )
+            .join('')}
+        </div>
+      </div>
+      <div id="lucide-results" class="wb-lib-results wb-density-${iconSize}" role="listbox" aria-label="Lucide Icons"></div>
+    `;
+
+    const searchInput = content.querySelector('#lucide-search');
+    const resultsBox = content.querySelector('#lucide-results');
+
+    const renderCardHtml = (s) => {
+      const isFav = favorites.has(s.id);
+      const size = ICON_SIZE_PRESETS[iconSize];
+      return `
+        <div class="wb-stencil-item" role="option" tabindex="0" draggable="true" data-stencil="${escapeXml(s.id)}" title="${escapeXml(s.name)} (${escapeXml(s.category)}) · Lucide v1.68.0 · ISC License — Click to place, drag onto canvas">
+          <button type="button" class="wb-fav-star ${isFav ? 'active' : ''}" data-fav-stencil="${escapeXml(s.id)}" aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}" title="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '★' : '☆'}</button>
+          <svg width="${size.iconW}" height="${size.iconH}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g color="#1e293b">${s.svgInner}</g></svg>
+          <span>${escapeXml(s.name)}</span>
+        </div>
+      `;
+    };
+
+    const updateResults = () => {
+      const tokens = lucideSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const inCategory = LUCIDE_STENCILS.filter(
+        (s) => lucideActiveCategory === 'all' || s.category === lucideActiveCategory
+      );
+      const matched = inCategory
+        .map((s) => ({ s, score: scoreStencilSearchMatch(s, tokens) }))
+        .filter((m) => m.score > 0);
+      if (tokens.length > 0) matched.sort((a, b) => b.score - a.score);
+
+      const groups = new Map();
+      for (const { s } of matched) {
+        if (!groups.has(s.category)) groups.set(s.category, []);
+        groups.get(s.category).push(s);
+      }
+
+      if (groups.size === 0) {
+        resultsBox.innerHTML = `<p class="wb-muted">No matching Lucide icons for "${escapeXml(lucideSearchQuery || subLabel(lucideActiveCategory))}".</p>`;
+        return;
+      }
+
+      const totalCount = matched.length;
+      const isWindowed = lucideActiveCategory === 'all' && tokens.length === 0 && totalCount > lucideVisibleLimit;
+      const htmlParts = [];
+      let renderedCount = 0;
+      for (const [cat, items] of groups) {
+        const remaining = isWindowed ? Math.max(0, lucideVisibleLimit - renderedCount) : items.length;
+        if (remaining <= 0) break;
+        const slice = items.slice(0, remaining);
+        renderedCount += slice.length;
+        htmlParts.push(`
+          <div class="wb-lib-category-section">
+            <div class="wb-lib-category-header">
+              <span>${escapeXml(subLabel(cat))}</span>
+              <span class="wb-lib-category-count">${items.length}</span>
+            </div>
+            <div class="wb-stencil-grid ${ICON_SIZE_PRESETS[iconSize].gridClass}">
+              ${slice.map(renderCardHtml).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (isWindowed && renderedCount < totalCount) {
+        htmlParts.push(`
+          <button type="button" class="wb-btn wb-sm" id="lucide-load-more" style="width:100%;margin-top:8px;">
+            Show All ${totalCount} Icons (${totalCount - renderedCount} more)
+          </button>
+        `);
+      }
+
+      htmlParts.push(`
+        <div class="wb-muted" style="font-size:10px;margin-top:10px;padding-top:6px;border-top:1px solid var(--border-subtle);">
+          <strong>Lucide Icons:</strong> lucide-static v1.68.0 · ISC License · geometry baked in at build time (zero runtime dependencies)
+        </div>
+      `);
+
+      resultsBox.innerHTML = htmlParts.join('');
+
+      resultsBox.querySelector('#lucide-load-more')?.addEventListener('click', () => {
+        lucideVisibleLimit = 999;
+        updateResults();
+      });
+
+      resultsBox.querySelectorAll('[data-fav-stencil]').forEach((starBtn) => {
+        starBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          toggleFavorite(starBtn.dataset.favStencil);
+          updateResults();
+        });
+      });
+
+      const cards = Array.from(resultsBox.querySelectorAll('[data-stencil]'));
+      cards.forEach((item, idx) => {
+        item.addEventListener('click', () => {
+          recordRecent(item.dataset.stencil);
+          app.placeStencil(item.dataset.stencil);
+        });
+        item.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            recordRecent(item.dataset.stencil);
+            app.placeStencil(item.dataset.stencil);
+          } else if (ev.key === 'ArrowRight' && cards[idx + 1]) {
+            ev.preventDefault();
+            cards[idx + 1].focus();
+          } else if (ev.key === 'ArrowLeft' && cards[idx - 1]) {
+            ev.preventDefault();
+            cards[idx - 1].focus();
+          } else if (ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            if (cards[idx + step]) cards[idx + step].focus();
+          } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            const step = ICON_SIZE_PRESETS[iconSize].focusStep;
+            if (cards[idx - step]) cards[idx - step].focus();
+          }
+        });
+        item.addEventListener('dragstart', (ev) => {
+          recordRecent(item.dataset.stencil);
+          ev.dataTransfer?.setData('text/plain', `stencil:${item.dataset.stencil}`);
+        });
+      });
+    };
+
+    searchInput?.addEventListener('input', (e) => {
+      lucideSearchQuery = e.target.value;
+      lucideVisibleLimit = 64;
+      updateResults();
+    });
+
+    content.querySelectorAll('[data-lcat]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        lucideActiveCategory = pill.dataset.lcat;
+        content.querySelectorAll('[data-lcat]').forEach((p) =>
+          p.classList.toggle('active', p.dataset.lcat === lucideActiveCategory)
+        );
+        updateResults();
+      });
+    });
+
+    updateResults();
   }
 
   function renderDiagramPacksTab(content) {

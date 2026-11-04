@@ -15,6 +15,7 @@ import {
 } from './scene/model.js';
 import {
   getSelectionBounds,
+  getElementBounds,
   alignElements,
   distributeElements,
   matchElementSize,
@@ -51,7 +52,7 @@ import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/la
 import { buildQuickAdd } from './scene/quick-add.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
-import { CanvasRenderer } from './render/canvas.js';
+import { CanvasRenderer, spotlightEscapeAction } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
 import { getStencilById } from './stencils/index.js';
 import { BUILTIN_TEMPLATES } from './templates/index.js';
@@ -148,7 +149,15 @@ export class WhiteboardApp {
       active: false,
       x: 500,
       y: 340,
-      radius: 130,
+      radius: 180,
+      // An element fit stores its own rx/ry (plus the radius it was computed
+      // at) so wide elements get a wide ellipse instead of a cropped circle.
+      fitRx: null,
+      fitRy: null,
+      fitBase: null,
+      // A pointed spotlight stops following the cursor until the next
+      // "follow cursor" choice or a mode toggle.
+      pinned: false,
       magnifier: false,
       magnifierScale: 2,
       dimOpacity: 0.72,
@@ -1800,12 +1809,93 @@ export class WhiteboardApp {
 
   toggleSpotlight(magnifier = false) {
     if (this.spotlight.active && this.spotlight.magnifier === Boolean(magnifier)) {
-      this.spotlight.active = false;
+      this.turnSpotlightOff();
     } else {
+      // Activating from off always starts clean: a stale pin or element fit
+      // left by a raw `active = false` (e.g. the banner exit button) must not
+      // freeze the lens away from the cursor on the next activation.
+      if (!this.spotlight.active) this.clearSpotlightPin();
       this.spotlight.active = true;
       this.spotlight.magnifier = Boolean(magnifier);
     }
     this.toolbarUI.update();
+    this.requestRender();
+  }
+
+  turnSpotlightOff() {
+    this.spotlight.active = false;
+    this.clearSpotlightPin();
+    this.presentUI?.renderBar?.();
+    this.updateUI();
+    this.requestRender();
+  }
+
+  // Pinned spotlights live in WORLD coordinates (pinWorld / pinElementId) and
+  // are re-projected to screen every render — a pin baked in screen coords
+  // would drift as soon as the camera pans or zooms. Plain circle pins keep
+  // the element fit fields clear so the size presets stay exact.
+  clearSpotlightPin() {
+    this.spotlight.pinned = false;
+    this.spotlight.pinWorld = null;
+    this.spotlight.pinElementId = null;
+    this.spotlight.fitRx = null;
+    this.spotlight.fitRy = null;
+    this.spotlight.fitBase = null;
+  }
+
+  // Point the spotlight at a right-clicked world point. Pinned so it stays
+  // there instead of resuming the cursor follow on the next pointer move.
+  pointSpotlightAt(world) {
+    const cam = this.getCamera();
+    this.clearSpotlightPin();
+    this.spotlight.pinWorld = { x: world.x, y: world.y };
+    this.spotlight.x = world.x * cam.zoom + cam.x;
+    this.spotlight.y = world.y * cam.zoom + cam.y;
+    this.spotlight.pinned = true;
+    this.spotlight.active = true;
+    this.toolbarUI.update();
+    this.requestRender();
+  }
+
+  // Point the spotlight at an element: the lens re-fits to the element's
+  // CURRENT bounds on every render, so moving or resizing the element keeps
+  // it inside the spotlight.
+  pointSpotlightToElement(el) {
+    if (!el) return;
+    this.clearSpotlightPin();
+    this.spotlight.pinElementId = el.id;
+    this.spotlight.pinned = true;
+    this.spotlight.active = true;
+    this.toolbarUI.update();
+    this.requestRender();
+  }
+
+  // Preset sizes are plain circles: they replace any element fit so the
+  // chosen radius is exactly what renders.
+  setSpotlightSize(radius) {
+    this.spotlight.radius = Math.max(20, Number(radius) || 180);
+    // While an element pin is active the lens re-fits from the element's
+    // bounds every render, so a preset radius would silently do nothing —
+    // and the menu still shows a ✓ for it. Convert the pin to a plain
+    // circle at the element's current center so the preset takes effect.
+    if (this.spotlight.pinned && this.spotlight.pinElementId) {
+      const el = this.getPage()?.elements.find((e) => e.id === this.spotlight.pinElementId);
+      if (el) {
+        const b = getElementBounds(el);
+        this.spotlight.pinWorld = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      }
+      this.spotlight.pinElementId = null;
+    }
+    this.spotlight.fitRx = null;
+    this.spotlight.fitRy = null;
+    this.spotlight.fitBase = null;
+    this.toolbarUI.update();
+    this.requestRender();
+  }
+
+  // Resume the cursor follow after a pinned "point" placement.
+  unpinnedSpotlightFollow() {
+    this.clearSpotlightPin();
     this.requestRender();
   }
 
@@ -2230,8 +2320,12 @@ export class WhiteboardApp {
 
   _onPointerDown(ev) {
     const rect = this.canvas.getBoundingClientRect();
-    this.spotlight.x = ev.clientX - rect.left;
-    this.spotlight.y = ev.clientY - rect.top;
+    // A pinned (right-click pointed) spotlight keeps its position instead of
+    // following the cursor.
+    if (!(this.spotlight.active && this.spotlight.pinned)) {
+      this.spotlight.x = ev.clientX - rect.left;
+      this.spotlight.y = ev.clientY - rect.top;
+    }
     // The cursor chat input opens at the last canvas pointer position.
     this._lastCanvasPointer = { x: ev.clientX, y: ev.clientY };
 
@@ -2277,8 +2371,10 @@ export class WhiteboardApp {
 
   _onPointerMove(ev) {
     const rect = this.canvas.getBoundingClientRect();
-    this.spotlight.x = ev.clientX - rect.left;
-    this.spotlight.y = ev.clientY - rect.top;
+    if (!(this.spotlight.active && this.spotlight.pinned)) {
+      this.spotlight.x = ev.clientX - rect.left;
+      this.spotlight.y = ev.clientY - rect.top;
+    }
     if (this.spotlight.active) {
       this.requestRender();
       return;
@@ -2446,12 +2542,23 @@ export class WhiteboardApp {
     }
 
     // Explicit Escape hierarchy:
+    // 0. An open context menu consumes Esc (close menu only)
     // 1. Dismiss active dialog/palette first
     // 2. Otherwise cancel current interaction or preview
     // 3. Otherwise exit active teaching mode (Spotlight, Presentation, Annotation, Laser, Focus)
     // 4. Otherwise clear selection and return to Select tool
     if (ev.key === 'Escape') {
       ev.preventDefault();
+      // spotlightEscapeAction encodes the menu-vs-spotlight precedence table:
+      // one Esc press never closes the menu and the spotlight together.
+      const escAction = spotlightEscapeAction({
+        menuOpen: this.contextMenu?.isOpen?.() || false,
+        spotlightActive: this.spotlight.active,
+      });
+      if (escAction === 'close-menu') {
+        this.contextMenu.close();
+        return;
+      }
       if (this.paletteUI.isOpen()) {
         this.paletteUI.close();
         return;
@@ -2479,11 +2586,8 @@ export class WhiteboardApp {
         this.selectTool.cancel();
         return;
       }
-      if (this.spotlight.active) {
-        this.spotlight.active = false;
-        this.presentUI?.renderBar?.();
-        this.updateUI();
-        this.requestRender();
+      if (escAction === 'spotlight-off') {
+        this.turnSpotlightOff();
         return;
       }
       if (this.presentState.active) {

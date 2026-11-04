@@ -67,6 +67,17 @@ export const ICON_PACK_SOURCES = {
       'Covers Linux distributions (Ubuntu, RHEL, Debian, Alpine), Docker, Git, GitHub Actions, GitLab CI, Jenkins, Terraform, OpenTofu, Ansible, Grafana, Vault, Trivy, PostgreSQL, Redis, Kafka, and RabbitMQ.',
     reviewedAt: '2026-11-03',
   },
+  lucide: {
+    provider: 'Lucide',
+    name: 'Lucide General-Purpose Icon Set',
+    upstreamUrl: 'https://github.com/lucide-icons/lucide',
+    version: '1.68.0 (lucide-static)',
+    license: 'ISC License',
+    attribution: 'Lucide Contributors (https://lucide.dev).',
+    usageNotes:
+      'General-purpose 24x24 stroke icons (education, office, media, arrows, status). Safe for any diagram context; recolour freely — the set has no brand restrictions.',
+    reviewedAt: '2026-11-04',
+  },
   concepts: {
     provider: 'StudioBoard Teaching Symbol Set',
     name: 'Generic Systems & Networking Teaching Concepts',
@@ -144,6 +155,7 @@ export function inferIconPackKey(stencil = {}) {
   if (id.startsWith('gcp-') || cat.includes('GCP')) return 'gcp';
   if (id.startsWith('k8s-') || id.startsWith('k8s') || cat.includes('Kubernetes')) return 'kubernetes';
   if (id.startsWith('concept-') || cat.includes('Teaching Concepts')) return 'concepts';
+  if (id.startsWith('lucide-') || cat.startsWith('icons/')) return 'lucide';
   if (
     /^(cicd-argocd|cicd-flux|cicd-tekton|cnt-helm|cnt-containerd|obs-prometheus|obs-otel|obs-jaeger|obs-fluent|sec-opa|sec-falco|sec-certmgr|db-nats|db-ceph)/.test(
       id

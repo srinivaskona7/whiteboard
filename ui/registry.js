@@ -145,6 +145,7 @@ export const SHORTCUT_REFERENCE = [
   { key: 'F / Shift+F', desc: 'Toggle Full Screen / Teaching Focus Mode' },
   { key: 'Ctrl/Cmd + K', desc: 'Open Command Palette' },
   { key: '/', desc: 'Cursor Chat — Type at Your Pointer, Enter to Send' },
+  { key: 'Esc', desc: 'Close Menu / Dialog, or Exit Spotlight Mode' },
   { key: '?', desc: 'Open Keyboard Shortcuts Reference' },
 ];
 
