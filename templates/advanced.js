@@ -1,5 +1,6 @@
 // templates/advanced.js — the advanced pack: 14 deep-dive cloud architectures
-// plus 18 classroom / methodology boards, built to reach the 80-template catalog.
+// plus 20 classroom / methodology boards (arch packs and retro boards have
+// since grown the catalog past 150).
 // Same contract as the AWS and Azure/GCP packs: plain stencil + arrow elements,
 // a lesson frame with teacherNotes on every cloud diagram, and templateId stamped
 // on every built element so the configuration drawer adopts instead of duplicating.
@@ -579,6 +580,57 @@ const CLASSROOM_BOARDS = [
       const s5 = createElement('sticky', { x: 770, y: 280, w: 240, h: 110, text: 'New on-call rota works', fill: '#bbf7d0' });
       const voted = createElement('sticky', { x: 110, y: 560, w: 640, h: 90, text: 'Dot votes: "Staging is flaky" (5). Top action: make staging match prod config.', fill: '#fef08a' });
       return [f1, f2, f3, s1, s2, s3, s4, s5, voted];
+    },
+  }),
+
+  // Start / Stop / Continue: the action-oriented retro format. The action
+  // candidates carry el.votes so the LIVE dot-voting feature renders counts
+  // on them the moment the teacher opens a session (Secret voting first,
+  // reveal after — the facilitation note below spells out the flow).
+  board({
+    id: 'tpl-adv-retro-ssc',
+    name: 'Retro: Start / Stop / Continue',
+    description: 'Action-oriented retro with live dot-voting on next-sprint actions',
+    build() {
+      const f1 = createElement('frame', { x: 80, y: 80, w: 300, h: 420, text: '▶ Start', slideOrder: 1 });
+      const f2 = createElement('frame', { x: 410, y: 80, w: 300, h: 420, text: '■ Stop', slideOrder: 2 });
+      const f3 = createElement('frame', { x: 740, y: 80, w: 300, h: 420, text: '→ Continue', slideOrder: 3 });
+      const s1 = createElement('sticky', { x: 110, y: 150, w: 240, h: 110, text: 'Rotate the on-call handover', fill: '#bbf7d0' });
+      const s2 = createElement('sticky', { x: 440, y: 150, w: 240, h: 110, text: 'Friday-evening release cuts', fill: '#fee2e2' });
+      const s3 = createElement('sticky', { x: 770, y: 150, w: 240, h: 110, text: 'Demo every sprint review', fill: '#bfdbfe' });
+      // Vote candidates for the next sprint's top action — pre-seeded with a
+      // tie so the live voting feature has something to reveal.
+      const a1 = createElement('sticky', { x: 110, y: 560, w: 300, h: 90, text: 'Action: staging config parity with prod', fill: '#fef08a', votes: 3 });
+      const a2 = createElement('sticky', { x: 450, y: 560, w: 300, h: 90, text: 'Action: pair-review every security change', fill: '#fef08a', votes: 3 });
+      const howto = TXT(80, 670, 660, 60,
+        'Facilitation: 5 min silent notes → read out → 🙈 Secret dot voting on the two actions → reveal → top action becomes a sprint item.');
+      return [f1, f2, f3, s1, s2, s3, a1, a2, howto];
+    },
+  }),
+
+  // 4Ls (Liked / Learned / Lacked / Longed For): the debrief format for
+  // workshops and post-incident reviews.
+  board({
+    id: 'tpl-adv-retro-4ls',
+    name: 'Retro: 4Ls Debrief',
+    description: 'Liked / Learned / Lacked / Longed For — workshop and incident debrief',
+    build() {
+      const cols = [
+        ['Liked', 80, '#bbf7d0', 'Zero-downtime deploy worked first try'],
+        ['Learned', 410, '#bfdbfe', 'PrivateLink beats peering for Aurora'],
+        ['Lacked', 740, '#fee2e2', 'No runbook for the failover path'],
+        ['Longed For', 1070, '#f5d0fe', 'One-click prod-like environments'],
+      ];
+      const els = cols.map(([label, x, fill, sample], i) => [
+        createElement('frame', { x, y: 80, w: 300, h: 420, text: label, slideOrder: i + 1 }),
+        createElement('sticky', { x: x + 30, y: 150, w: 240, h: 110, text: sample, fill }),
+      ]).flat();
+      els.push(
+        TXT(80, 560, 700, 60,
+          'Debrief flow: each person adds one sticky per column → cluster duplicates → dot-vote the biggest lack → owner volunteers before the meeting ends.'),
+        createElement('text', { x: 80, y: 30, w: 620, h: 30, text: '4Ls debrief — what we liked, learned, lacked and longed for', fontSize: 20, bold: true })
+      );
+      return els;
     },
   }),
 

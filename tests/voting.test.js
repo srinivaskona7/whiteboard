@@ -13,7 +13,8 @@ import { createScene, createElement, cloneElement } from '../scene/model.js';
 import { serializeScene, parseSceneJson } from '../scene/storage.js';
 import { HistoryManager } from '../scene/history.js';
 import { initVotingUI } from '../ui/voting.js';
-import { CollabStore } from '../server/collab-server.js';
+import { CollabStore, wsEchoesToSender } from '../server/collab-server.js';
+import { CollabClient } from '../scene/collab-client.js';
 
 const sceneWithSticky = (text = 'Option A') => {
   const scene = createScene();
@@ -460,7 +461,15 @@ describe('Secret (hidden-until-reveal) voting', () => {
     assert.equal(voting.areCountsHidden(), false, 'stop is the reveal');
     assert.equal(voting.isSecret(), false);
     assert.deepEqual(sessions.at(-1), [false, false], 'the closed session clears the secret flag');
-    assert.ok(calls.toasts.some((m) => m.includes('Voting results')), `results must be announced: ${JSON.stringify(calls.toasts)}`);
+    // After a secret phase the local tally is stale, so the announcement
+    // waits for the reveal echo's authoritative counts.
+    assert.ok(calls.toasts.some((m) => m.includes('tallying')), `neutral toast at stop: ${JSON.stringify(calls.toasts)}`);
+    assert.ok(!calls.toasts.some((m) => m.includes('Voting results')), 'no stale-tally announcement');
+    voting.applyRemoteSession(
+      { active: false, secret: false },
+      [{ pageId: page.id, elementId: el.id, votes: 1 }]
+    );
+    assert.ok(calls.toasts.some((m) => m.includes('Voting results')), 'the echo counts drive the announcement');
   });
 
   test('a viewer receives the secret flag and cannot change it', () => {
@@ -530,5 +539,196 @@ describe('Secret (hidden-until-reveal) voting', () => {
     // Garbage secret values normalize to false, never to hidden-by-default.
     const garbage = store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: 'yes' });
     assert.equal(garbage.broadcast.session.secret, false);
+  });
+});
+
+describe('Vote reveal wire shape (live-collab regression, 2026-11-05)', () => {
+  // Found in two-client E2E: the server broadcasts reveal counts at the
+  // message ROOT ({type:'vote:session', session, counts}) — the client passed
+  // only msg.session, so a revealed tally never reached any browser.
+  test('applyRemoteSession accepts counts at the wire root', () => {
+    const { scene, page } = sceneWithSticky();
+    const app = {
+      scene,
+      getPage: () => page,
+      requestRender() {},
+      updateUI() {},
+      dialogs: { showToast() {} },
+    };
+    const voting = initVotingUI(app);
+    const el = page.elements[0];
+    voting.applyRemoteSession({ active: true, secret: true });
+    assert.equal(voting.areCountsHidden(), true);
+    voting.applyRemoteSession(
+      { active: true, secret: false },
+      [{ pageId: page.id, elementId: el.id, votes: 4 }]
+    );
+    assert.equal(el.votes, 4, 'root-level reveal counts must rebuild the local tally');
+    assert.equal(voting.areCountsHidden(), false);
+  });
+
+  test('CollabClient._handleServerMessage passes msg.counts to the voting UI', () => {
+    const seen = [];
+    const app = { votingUI: { applyRemoteSession: (s, c) => seen.push([s, c]) } };
+    const client = new CollabClient(app);
+    client._handleServerMessage({
+      type: 'vote:session',
+      session: { active: true, secret: false, updatedAt: 1 },
+      counts: [{ pageId: 'p1', elementId: 'e1', votes: 2 }],
+    });
+    assert.equal(seen.length, 1, 'the vote:session handler must fire');
+    assert.deepEqual(seen[0][1], [{ pageId: 'p1', elementId: 'e1', votes: 2 }], 'msg.counts must travel through');
+  });
+
+  test('the WS echo policy reaches the sender for server-authoritative ops only', () => {
+    // vote:cast: the caster never mutates locally, so the authoritative count
+    // must come back. vote:session: the reveal counts live only on the server,
+    // so the teacher who reveals must receive them too.
+    assert.equal(wsEchoesToSender('vote:cast'), true);
+    assert.equal(wsEchoesToSender('vote:session'), true);
+    // Everything else already lives on the sender's board — echoing would
+    // double-apply scene syncs and spotlights.
+    assert.equal(wsEchoesToSender('scene:sync'), false);
+    assert.equal(wsEchoesToSender('spotlight:sync'), false);
+    assert.equal(wsEchoesToSender('timer:sync'), false);
+    assert.equal(wsEchoesToSender('question:add'), false);
+  });
+});
+
+describe('Question vote-state secrecy (2026-11-05 security round)', () => {
+  const makeRoom = () => {
+    const store = new CollabStore(null);
+    const { scene } = sceneWithSticky();
+    const { roomId } = store.createRoom(scene);
+    return { store, roomId };
+  };
+  const question = (id, extra = {}) => ({
+    type: 'question',
+    id,
+    x: 100,
+    y: 100,
+    authorName: 'Student',
+    text: 'Why blue/green before rolling?',
+    ...extra,
+  });
+
+  test('question:add strips forged votes from the stored element, the wire and the reveal', () => {
+    const { store, roomId } = makeRoom();
+    const added = store.applyRoomOperation(roomId, 'viewer', {
+      type: 'question:add', clientId: 's', question: question('q1', { votes: 999 }),
+    });
+    assert.equal(added.ok, true);
+    assert.equal(added.broadcast.question.votes, undefined, 'forged votes must not ride the wire');
+    const stored = store.rooms.get(roomId).scene.pages[0].elements.find((e) => e.id === 'q1');
+    assert.equal(stored.votes, undefined, 'forged votes must not enter the room scene');
+
+    // The reveal collects only real casts — the forged 999 never resurfaces.
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: false, secret: false });
+    const scene = store.rooms.get(roomId).scene;
+    const qEl = scene.pages[0].elements.find((e) => e.id === 'q1');
+    assert.equal(qEl.votes, undefined);
+  });
+
+  test('question:update hides the live tally during a secret session, shows it after the reveal', () => {
+    const { store, roomId } = makeRoom();
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: true });
+    store.applyRoomOperation(roomId, 'viewer', { type: 'question:add', clientId: 's', question: question('q1') });
+    store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', clientId: 's', pageId: undefined, elementId: 'q1' });
+    const duringSecret = store.applyRoomOperation(roomId, 'viewer', {
+      type: 'question:update', clientId: 's', questionId: 'q1', resolved: true,
+    });
+    assert.equal(duringSecret.ok, true);
+    assert.equal(duringSecret.broadcast.question.votes, undefined, 'the tally must not leak mid-secret');
+
+    // Outside a secret session the same broadcast carries the public count —
+    // clients rebuild their element from this payload, stripping then would
+    // wipe legitimate counts.
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: false });
+    const publicUpdate = store.applyRoomOperation(roomId, 'viewer', {
+      type: 'question:update', clientId: 's', questionId: 'q1', resolved: false,
+    });
+    assert.equal(publicUpdate.broadcast.question.votes, 1, 'public counts ride the wire after the reveal');
+  });
+});
+
+describe('Live-room cast routing and deferred announcements (2026-11-05 round 2)', () => {
+  const makeApp = ({ live, viewer = false, toasts = [] } = {}) => {
+    const { scene, page } = sceneWithSticky();
+    const casts = [];
+    const app = {
+      scene,
+      getPage: () => page,
+      requestRender() {},
+      updateUI() {},
+      dialogs: { showToast(msg) { toasts.push(msg); } },
+      collab: live
+        ? {
+            status: 'live',
+            roomId: 'room-1',
+            canEditBoard: () => !viewer,
+            broadcastVoteCast: (pageId, elementId, votes) => casts.push({ pageId, elementId, votes }),
+            broadcastVoteSession() {},
+            broadcastSceneChange() {},
+          }
+        : { canEditBoard: () => !viewer, broadcastVoteCast() {}, broadcastVoteSession() {} },
+    };
+    return { app, page, casts, toasts };
+  };
+
+  test('a live-room OWNER casts through the server too — no local mutation', () => {
+    // During a secret session the server discards scene-synced counts, so an
+    // owner's locally-mutated dot would be erased by the reveal echo.
+    const { app, page, casts } = makeApp({ live: true });
+    const voting = initVotingUI(app);
+    voting.start();
+    const el = page.elements[0];
+    const res = voting.castVoteOn(el);
+    assert.equal(res, true);
+    assert.equal(casts.length, 1, 'the owner must route through broadcastVoteCast');
+    assert.equal(el.votes, undefined, 'no optimistic local dot in a live room');
+  });
+
+  test('a live-room owner still gets the cap warning when not secret', () => {
+    const toasts = [];
+    const { app, page } = makeApp({ live: true, toasts });
+    const voting = initVotingUI(app);
+    voting.start();
+    const el = page.elements[0];
+    el.votes = MAX_VOTES_PER_ELEMENT;
+    const res = voting.castVoteOn(el);
+    assert.equal(res, false);
+    assert.ok(toasts.some((t) => t.includes('maximum')), 'the owner is warned from the last broadcast count');
+  });
+
+  test('offline boards keep the local mutate path for owners', () => {
+    const { app, page, casts } = makeApp({ live: false });
+    app.commitChange = () => {};
+    const voting = initVotingUI(app);
+    voting.start();
+    const el = page.elements[0];
+    const res = voting.castVoteOn(el);
+    assert.equal(res, true);
+    assert.equal(el.votes, 1, 'offline voting mutates locally');
+    assert.equal(casts.length, 0, 'no server channel offline');
+  });
+
+  test('stop() during a secret phase defers the results toast to the echo counts', () => {
+    const toasts = [];
+    const { app, page } = makeApp({ live: false, toasts });
+    const voting = initVotingUI(app);
+    voting.start();
+    voting.setSecret(true);
+    voting.stop();
+    assert.ok(toasts.some((t) => t.includes('tallying')), 'a neutral tallying toast, not results');
+    assert.ok(!toasts.some((t) => t.includes('📊')), 'no stale-tally announcement at stop time');
+
+    // The reveal echo lands with the authoritative counts…
+    voting.applyRemoteSession(
+      { active: false, secret: false },
+      [{ pageId: page.id, elementId: page.elements[0].id, votes: 2 }]
+    );
+    assert.ok(toasts.some((t) => t.includes('📊')), 'the announcement fires from the echo counts');
+    assert.ok(toasts.some((t) => t.includes('2')), 'the announced count is the server tally');
   });
 });

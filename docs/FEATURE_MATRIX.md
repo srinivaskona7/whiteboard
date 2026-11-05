@@ -700,3 +700,116 @@ defect is fixed and test-locked (suite 413/413):
   never received the `change` that force-sends the final value.
 - **Style-Target scope buttons disable while a cell range is live** — they were
   dead controls (the range wins unconditionally); a tooltip explains how to re-enable.
+
+## 31. Recommended-5 improvement batch + live two-client E2E (2026-11-05)
+
+Four hardening features plus the first real two-client browser verification of the
+collab stack. All verified live on a teacher tab + viewer tab against the WebSocket
+server; 427/427 tests, vite build clean.
+
+- **Element-level scene merge** (`scene/collab-client.js` `_mergeElementsByRecency`):
+  a full-scene broadcast is now a recency UNION by element `updatedAt` (ties go to the
+  remote/server copy, mirroring the server's own merge), local-only elements survive
+  (absence ≠ deletion), `deletedIds` still delete, and per-page cameras are preserved.
+  This closes the documented vote-revert race: a second client's in-flight edit was
+  reverted by any teacher scene sync. Tests: `tests/element-merge.test.js`.
+- **Token-bucket rate limiting** (`server/collab-server.js` `OP_RATE_LIMITS` +
+  `_takeOpToken`): per-`clientId|opType` buckets on the student-writable social ops —
+  reaction:send 10 burst/1 per s, chat:cursor 5/0.5, question:add 4/0.2,
+  question:update 10/2, vote:cast 12/2. A flooding student gets a 429 ("Too fast —
+  wait a moment and try again."), classmates are unaffected, and board ops
+  (scene:sync etc.) are never limited. Buckets sweep lazily past 2000 stale entries.
+  Tests: `tests/rate-limit.test.js`.
+- **Retro-board classroom templates** (`templates/advanced.js`): Start/Stop/Continue
+  (live dot-voting action stickies + facilitation notes) and 4Ls debrief, registered
+  in the catalog — 152 templates total, 34 advanced, 20 classroom, counts exact-locked.
+- **Search at scale** (`tests/search.test.js`): regression-locked — full-catalog index
+  builds < 250 ms, searches < 100 ms, the results window caps at 40, totals stay honest.
+
+### Live E2E findings — three real bugs found only on the wire (all fixed)
+
+1. **Reveal counts never reached any browser.** The server broadcasts
+   `vote:session` with the reveal tally at the message ROOT
+   (`{type:'vote:session', session, counts}`), but the client passed only
+   `msg.session` to `applyRemoteSession`, which read `session.counts`. Unit tests
+   passed because they called the function with counts embedded — a unit/wire-shape
+   mismatch invisible without two real clients. Fix: the client passes `msg.counts`
+   through; `applyRemoteSession(session, wireCounts)` accepts both shapes.
+2. **The teacher who revealed never saw the tally either.** The WS dispatch excludes
+   the sender's socket for every op except `vote:cast` — so the teacher (who already
+   "knows" the session state) also missed the authoritative reveal counts, leaving
+   their board at the stale pre-secret tally. Fix: `vote:session` is now echoed to the
+   sender too (the echo is idempotent for session state and is the only way counts travel).
+3. **Spotlight-off left the viewer's `remote` flag set** (`active:false, remote:true`).
+   Fix: `applyRemoteSpotlight` sets `remote = Boolean(remote.active)` — the lens
+   release now releases the input guard.
+
+Verified live: teacher spotlight mirrors to the viewer (`active:true, remote:true`),
+viewer pointermove never moves the lens, secret vote hidden on the wire (viewer local
+tally unchanged while the server tally advances), reveal applies the authoritative
+count to BOTH clients, spotlight-off propagates and clears `remote`. The rate-limit
+429 path is covered by `tests/rate-limit.test.js` (not re-triggered in the browser).
+
+### 31a. Security review round (2026-11-05, post E2E)
+
+Three confirmed wire-level defects (adversarial security lens, each reproduced
+against `CollabStore` before fixing):
+
+- **Secret tallies leaked via `question:update`.** The broadcast carried the live
+  room element including `votes`, and the vote-strip only covered
+  `scene:synced`/`room:welcome`/`elements:upserted`. A viewer could toggle any
+  question's `resolved` flag mid-secret and read the authoritative tally from the
+  wire. Fix: `question:updated` sanitizes during `_voteCountsProtected` sessions
+  (public counts still ride outside secret sessions — clients rebuild their
+  element from this payload, so stripping always would wipe legitimate counts).
+- **Forged tallies via `question:add`.** The viewer-supplied payload was cloned
+  into the room scene verbatim, so `votes: 999` became server truth and rode out
+  in the next reveal as a legitimate count. Fix: `votes` is stripped from the
+  stored copy; the `question:added` broadcast carries the sanitized stored
+  element, never the raw payload.
+- **Rate-limit identity gaps.** A missing `clientId` bypassed the buckets entirely,
+  and bucket keys were not room-scoped. Fix: no exemption — unidentified ops share
+  one anonymous bucket per room (a flood is throttled collectively); keys are
+  `room|client|op`; the lazy sweep shrinks its stale window to 60 s once the map
+  passes 4000 entries so rotated-clientId flooding cannot grow it unboundedly.
+  The WS path already pins `clientId` to the connection's `sessionMeta`, so a
+  connected client cannot forge a peer's bucket.
+
+Echo policy extracted as `wsEchoesToSender(opType)` and test-locked
+(`tests/voting.test.js`); all three fixes regression-tested in
+`tests/voting.test.js` and `tests/rate-limit.test.js` — 432/432 green, live
+two-client pass re-verified after the round (fresh room: hidden secret cast →
+reveal count 1 on both teacher and viewer, spotlight-off clears `remote`).
+
+### 31b. Edge/integration review round (2026-11-05, round 2)
+
+Four confirmed findings, all fixed and live-verified on a fresh room:
+
+- **Snapshot regression (found by the edge lens):** repurposing `_applyRemoteScene`
+  for the live merge broke read-only `#/b/{id}` links — a snapshot shares element
+  ids with the creator's live board, so the union showed the creator's *current*
+  board instead of the stored content. Fix: `_applyRemoteScene(scene, deletedIds,
+  mode)` — `'replace'` for snapshot loads (exact stored content), `'merge'` for
+  live collab. Live-verified: post-snapshot edits no longer bleed into the view.
+- **REST rotation bypass (edge + integration lenses):** the unauthenticated
+  `/api/rooms/:id/ops` route passed the caller-controlled `body` as the op, so
+  rotating `clientId` minted a fresh bucket per request. Fix:
+  `applyRoomOperation(..., rateIdentity)` — the REST route keys buckets on
+  `req.socket.remoteAddress` (NAT shares one bucket on this fallback route only;
+  the primary WS path keys per connection). WS already pins the connection's
+  `sessionMeta.clientId`.
+- **Teacher dot-votes erased at reveal (integration lens):** owners cast by
+  local mutation, but during a secret session the server discards scene-synced
+  counts — so the owner's dots never reached the tally, and the new reveal echo
+  then overwrote their local counts with the (dotless) server truth. Fix: in a
+  live room, EVERY cast routes through the server `vote:cast` op, owner
+  included; offline boards keep the local path. Live-verified: a teacher dot
+  during a secret session stayed hidden locally and appeared in the reveal.
+- **stop() announced a stale winner (edge lens):** after a secret phase the
+  local tally never saw the secret-phase casts (they travel as null), so the
+  results toast could crown the wrong option before the echo landed. Fix: after
+  a secret phase, stop() shows "Voting closed — tallying…" and the announcement
+  fires from the echoed authoritative counts (2 s best-effort fallback if the
+  echo never arrives).
+
+Suite: 437/437 green, `vite build` clean.

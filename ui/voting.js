@@ -6,6 +6,9 @@ import { castVote, clearVotes, totalVotes, tally, voteVisibility, MAX_VOTES_PER_
 export function initVotingUI(app) {
   let active = false;
   let secret = false;
+  // stop() during a secret phase defers the results toast until the reveal
+  // echo's authoritative counts land (the local tally is stale mid-secret).
+  let pendingAnnounce = false;
 
   // The renderer (and the banner) query the counts-hidden flag through the
   // shared scene/voting.js holder — render must not import ui/.
@@ -46,14 +49,35 @@ export function initVotingUI(app) {
       return;
     }
     active = false;
+    const wasSecret = secret;
     // Closing the session is also the reveal: results are announced below
     // and the badges reappear for everyone.
     secret = false;
     syncVisibility();
     app.collab?.broadcastVoteSession?.(false, false);
-    // The session is room-wide and a student may have voted on any page, so
-    // the results tally every page — otherwise page-2 dots vanish from the
-    // announcement and never get cleared.
+    if (wasSecret) {
+      // The local tally is stale after a secret phase (secret-phase casts
+      // traveled as null and were never applied), so announcing now could
+      // crown the wrong winner. Wait for the reveal echo's authoritative
+      // counts; a timeout announces best-effort if it never lands.
+      pendingAnnounce = true;
+      app.dialogs?.showToast('Voting closed — tallying…', 'info');
+      setTimeout(() => {
+        if (!pendingAnnounce) return;
+        pendingAnnounce = false;
+        announceResults();
+      }, 2000);
+    } else {
+      announceResults();
+    }
+    app.updateUI();
+    app.requestRender();
+  }
+
+  // The session is room-wide and a student may have voted on any page, so
+  // the results tally every page — otherwise page-2 dots vanish from the
+  // announcement and never get cleared.
+  function announceResults() {
     const allElements = (app.scene?.pages || []).flatMap((p) => p.elements);
     const top = tally(allElements).slice(0, 3);
     if (top.length === 0) {
@@ -62,8 +86,6 @@ export function initVotingUI(app) {
       const results = top.map((r, i) => `${i + 1}. ${r.text} (${r.votes})`).join(' · ');
       app.dialogs?.showToast(`📊 Voting results — ${results}`, 'success');
     }
-    app.updateUI();
-    app.requestRender();
   }
 
   function reset() {
@@ -110,12 +132,18 @@ export function initVotingUI(app) {
   // One dot on one element, entered from the canvas pointerdown route.
   function castVoteOn(el) {
     if (!active || !el) return false;
-    if (app.collab ? !app.collab.canEditBoard() : false) {
-      // The local count is the server's last broadcast, so it is the right
-      // thing to warn from even though the server stays authoritative —
-      // except during a secret session, when announcing "at the maximum"
-      // would leak count information the room is hiding (the server caps
-      // silently).
+    const isViewer = app.collab ? !app.collab.canEditBoard() : false;
+    const liveRoom = Boolean(app.collab && app.collab.status === 'live' && app.collab.roomId);
+    if (isViewer || liveRoom) {
+      // Viewers NEVER mutate locally, and in a live room neither do owners:
+      // the server owns the tally. An owner's local mutation would drift
+      // from it — during a secret session the server discards scene-synced
+      // counts, so the vote:session reveal echo would then overwrite the
+      // owner's own dots with the (dotless) server tally.
+      // The cap warning reads the last broadcast count, which is the right
+      // thing to warn from — except during a secret session, when
+      // announcing "at the maximum" would leak count information the room
+      // is hiding (the server caps silently).
       if (voteVisibility.countsHidden !== true && (el.votes || 0) >= MAX_VOTES_PER_ELEMENT) {
         app.dialogs?.showToast(
           `"${String(el.text || '').trim().split('\n')[0] || el.name || 'item'}" already has the maximum of ${MAX_VOTES_PER_ELEMENT} votes.`,
@@ -123,11 +151,10 @@ export function initVotingUI(app) {
         );
         return false;
       }
-      // Viewers never mutate locally: the server owns the count and its
-      // authoritative broadcast brings the dot up for everyone, sender
-      // included. An optimistic dot would linger after a rejection (the
-      // teacher can close the session mid-flight) with nothing to roll it
-      // back until the next full sync.
+      // Nobody mutates locally: the server's authoritative broadcast brings
+      // the dot up for everyone, sender included. An optimistic dot would
+      // linger after a rejection (the teacher can close the session
+      // mid-flight) with nothing to roll it back until the next full sync.
       app.collab?.broadcastVoteCast?.(app.getPage().id, el.id, el.votes || 0);
       return true;
     }
@@ -147,8 +174,11 @@ export function initVotingUI(app) {
   }
 
   // Remote session toggles from the teacher arrive through the collab client.
-  function applyRemoteSession(session) {
+  function applyRemoteSession(session, wireCounts) {
     if (!session || typeof session !== 'object') return;
+    // Counts arrive at the wire message root; the session-embedded shape is
+    // kept as a fallback so both call sites (client handler, tests) work.
+    const counts = Array.isArray(wireCounts) ? wireCounts : session.counts;
     const next = Boolean(session.active);
     secret = next ? Boolean(session.secret) : false;
     const changed = next !== active || voteVisibility.countsHidden !== (next && secret);
@@ -159,11 +189,17 @@ export function initVotingUI(app) {
     }
     // The reveal payload: the server held the only live counts during the
     // secret phase; rebuild them locally now the session shows them.
-    if (Array.isArray(session.counts)) {
-      for (const c of session.counts) {
+    if (Array.isArray(counts)) {
+      for (const c of counts) {
         const page = app.scene.pages.find((p) => p.id === c.pageId);
         const el = page?.elements.find((e) => e.id === c.elementId);
         if (el) el.votes = Math.max(0, Number(c.votes) || 0);
+      }
+      // The stop() announcement waiting on the reveal: the counts above are
+      // now the authoritative tally, so announce from them.
+      if (pendingAnnounce && !next) {
+        pendingAnnounce = false;
+        announceResults();
       }
       app.updateUI();
       app.requestRender();

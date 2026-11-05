@@ -11,12 +11,12 @@ const cloudTemplates = ADVANCED_TEMPLATES.filter((t) => t.provider);
 const classroomTemplates = ADVANCED_TEMPLATES.filter((t) => !t.provider);
 
 describe('Advanced teaching templates', () => {
-  test('32 advanced templates are registered with unique ids under tpl-adv-', () => {
-    assert.equal(ADVANCED_TEMPLATES.length, 32);
+  test('34 advanced templates are registered with unique ids under tpl-adv-', () => {
+    assert.equal(ADVANCED_TEMPLATES.length, 34);
     assert.equal(cloudTemplates.length, 14);
-    assert.equal(classroomTemplates.length, 18);
+    assert.equal(classroomTemplates.length, 20);
     const ids = ADVANCED_TEMPLATES.map((t) => t.id);
-    assert.equal(new Set(ids).size, 32);
+    assert.equal(new Set(ids).size, 34);
     for (const id of ids) assert.match(id, /^tpl-adv-/);
     const registered = new Set(BUILTIN_TEMPLATES.map((t) => t.id));
     for (const id of ids) assert.ok(registered.has(id), `${id} not in BUILTIN_TEMPLATES`);

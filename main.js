@@ -2034,7 +2034,9 @@ export class WhiteboardApp {
     }
     const s = this.spotlight;
     s.active = Boolean(remote.active);
-    s.remote = true; // the local pointer must never fight the teacher's lens
+    // An off-lens broadcast must release the viewer's local-input guard —
+    // leaving remote=true with active=false would keep a stale flag around.
+    s.remote = Boolean(remote.active);
     s.x = Number(remote.x) || 0;
     s.y = Number(remote.y) || 0;
     s.radius = Number(remote.radius) || 180;

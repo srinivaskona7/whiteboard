@@ -171,3 +171,33 @@ describe('Unified local search', () => {
     assert.ok(prefs.recentQueries.length <= 8);
   });
 });
+
+// Scale regression: the real catalog (152 templates, 580 registered stencils
+// — the lazy DevOps pack loads on demand and is not in ALL_STENCILS) must
+// keep index building and searching in the low milliseconds, with the
+// detailed search reporting honest totals beyond the window.
+import { ALL_STENCILS, SEARCH_ALIASES } from '../stencils/index.js';
+import { BUILTIN_TEMPLATES } from '../templates/index.js';
+
+describe('Search at catalog scale', () => {
+  test('the full-catalog index builds and searches in milliseconds', () => {
+    const t0 = performance.now();
+    const entries = buildSearchEntries({
+      commands: [],
+      stencils: ALL_STENCILS,
+      templates: BUILTIN_TEMPLATES,
+      pages: [],
+      activePageId: null,
+      aliases: SEARCH_ALIASES,
+    });
+    const buildMs = performance.now() - t0;
+    assert.ok(entries.length >= ALL_STENCILS.length + BUILTIN_TEMPLATES.length, 'every stencil and template is indexed');
+    const t1 = performance.now();
+    const res = searchEntriesDetailed(entries, 'kubernetes', { limit: 40 });
+    const searchMs = performance.now() - t1;
+    assert.ok(res.total >= 40, 'a common cloud term hits across the catalog');
+    assert.equal(res.items.length, 40, 'the window is capped');
+    assert.ok(buildMs < 250, `index build took ${buildMs.toFixed(0)}ms`);
+    assert.ok(searchMs < 100, `search took ${searchMs.toFixed(0)}ms`);
+  });
+});

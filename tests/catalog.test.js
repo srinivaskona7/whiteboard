@@ -1,5 +1,5 @@
 // tests/catalog.test.js — the catalog's size target is a requirement, so it is
-// locked here: 150 templates, every pack registered, no duplicate ids.
+// locked here: 152 templates, every pack registered, no duplicate ids.
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
@@ -22,10 +22,10 @@ const PACKS = [
 ];
 
 describe('Template catalog', () => {
-  test('reaches the 150-template target with unique ids', () => {
-    assert.equal(BUILTIN_TEMPLATES.length, 150);
+  test('reaches the 152-template catalog with unique ids', () => {
+    assert.equal(BUILTIN_TEMPLATES.length, 152);
     const ids = BUILTIN_TEMPLATES.map((t) => t.id);
-    assert.equal(new Set(ids).size, 150, 'duplicate template ids');
+    assert.equal(new Set(ids).size, 152, 'duplicate template ids');
   });
 
   test('every architecture pack is registered in BUILTIN_TEMPLATES', () => {

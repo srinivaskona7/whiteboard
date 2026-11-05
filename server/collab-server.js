@@ -55,11 +55,35 @@ export function stripSceneVoteCounts(scene) {
   return clone;
 }
 
+// Per-client token buckets for the student-writable social ops (§25
+// follow-up). Burst = how many may fire back-to-back; refillPerSec = steady
+// rate. Generous enough for a real classroom, tight enough that a spam loop
+// cannot flood every screen: a blocked op costs the sender a toast, nothing
+// else — the room never sees it.
+const OP_RATE_LIMITS = {
+  'reaction:send': { burst: 10, refillPerSec: 1 },
+  'chat:cursor': { burst: 5, refillPerSec: 0.5 },
+  'question:add': { burst: 4, refillPerSec: 0.2 },
+  'question:update': { burst: 10, refillPerSec: 2 },
+  'vote:cast': { burst: 12, refillPerSec: 2 },
+};
+
+// Which ops the WS dispatch echoes back to the sender's own socket. Most ops
+// already live on the sender's board (scene syncs, spotlights), so their
+// broadcast excludes the sender. Server-authoritative payloads — the caster's
+// own count, and the reveal tally of a secret vote:session — must reach the
+// sender too, or they never learn what the server decided. Exported so the
+// echo policy is test-locked, not just a comment.
+export function wsEchoesToSender(opType) {
+  return opType === 'vote:cast' || opType === 'vote:session';
+}
+
 export class CollabStore {
   constructor(storagePath = null) {
     this.storagePath = storagePath;
     this.boards = new Map(); // id -> { id, title, scene, createdAt, expiresAt, readOnly: true }
     this.rooms = new Map(); // roomId -> { roomId, title, scene, deletedIds: [], teacherToken, editorToken, createdAt, expiresAt, updatedAt, teacherViewport }
+    this.opBuckets = new Map(); // `${clientId}|${opType}` -> { tokens, at } — social-op rate limits
     this.clients = new Map(); // ws -> { clientId, sessionId, roomId, role, name, color, pageId, cursor, selectionIds, lastSeen }
     if (this.storagePath) {
       this._loadFromDisk();
@@ -300,11 +324,49 @@ export class CollabStore {
     };
   }
 
-  applyRoomOperation(roomId, role, op) {
+  // Token bucket: one bucket per (room, clientId, opType), refilled
+  // continuously. A missing clientId is NOT an exemption — unidentified ops
+  // share one anonymous bucket per room, so an attacker cannot mint fresh
+  // buckets by omitting the field. Buckets sweep lazily; once the map is
+  // under pressure the stale window shrinks so rotated-clientId flooding
+  // cannot grow it unboundedly between sweeps.
+  _takeOpToken(opType, clientId, { burst, refillPerSec }, roomId = '') {
+    const key = `${roomId}|${clientId || 'anonymous'}|${opType}`;
+    const now = Date.now();
+    if (this.opBuckets.size > 2000) {
+      const maxAge = this.opBuckets.size > 4000 ? 60 * 1000 : 10 * 60 * 1000;
+      for (const [k, b] of this.opBuckets) {
+        if (now - b.at > maxAge) this.opBuckets.delete(k);
+      }
+    }
+    const b = this.opBuckets.get(key) || { tokens: burst, at: now };
+    b.tokens = Math.min(burst, b.tokens + ((now - b.at) / 1000) * refillPerSec);
+    b.at = now;
+    if (b.tokens < 1) {
+      this.opBuckets.set(key, b);
+      return false;
+    }
+    b.tokens -= 1;
+    this.opBuckets.set(key, b);
+    return true;
+  }
+
+  // rateIdentity: a server-derived identity for the buckets. WS calls pin it
+  // to the connection's sessionMeta.clientId; the REST ops route passes the
+  // caller's socket address, because body.clientId is caller-controlled there
+  // — rotating it would otherwise mint a fresh bucket per request.
+  applyRoomOperation(roomId, role, op, rateIdentity = null) {
     const room = this.rooms.get(roomId);
     if (!room) return { ok: false, code: 404, error: 'Room not found.' };
     if (room.expiresAt && Date.now() > room.expiresAt) {
       return { ok: false, code: 410, error: 'Room expired.' };
+    }
+    // Student-writable social ops are rate-limited per client (§25 follow-up):
+    // a single misbehaving viewer must not flood every screen in the room.
+    // Board ops (scene:sync etc.) are untouched — teachers sync constantly.
+    const limit = OP_RATE_LIMITS[op.type];
+    if (limit && !this._takeOpToken(op.type, rateIdentity || op.clientId, limit, roomId)) {
+      return { ok: false, code: 429, error: 'Too fast — wait a moment and try again.' };
     }
 
     const pageId = op.pageId || room.scene.activePageId;
@@ -381,11 +443,20 @@ export class CollabStore {
       }
       const existingIdx = page.elements.findIndex((e) => e.id === q.id);
       if (existingIdx === -1) {
-        page.elements.push(structuredClone(q));
+        // The payload is viewer-supplied: strip any forged vote state before
+        // it touches the room scene — the server is the only tally holder,
+        // and a question arriving with votes:999 must never ride out in a
+        // reveal as a legitimate count.
+        const copy = structuredClone(q);
+        delete copy.votes;
+        page.elements.push(copy);
       }
       room.updatedAt = Date.now();
       this._saveToDisk();
-      return { ok: true, broadcast: { type: 'question:added', pageId: page.id, question: q } };
+      // Broadcast the sanitized stored copy, never the raw payload.
+      const stored = existingIdx === -1 ? page.elements[page.elements.length - 1] : page.elements[existingIdx];
+      const { votes, ...questionForWire } = stored;
+      return { ok: true, broadcast: { type: 'question:added', pageId: page.id, question: questionForWire } };
     }
 
     if (op.type === 'question:update') {
@@ -397,7 +468,20 @@ export class CollabStore {
       existing.updatedAt = Date.now();
       room.updatedAt = Date.now();
       this._saveToDisk();
-      return { ok: true, broadcast: { type: 'question:updated', pageId: page.id, question: existing } };
+      // The live room element carries the authoritative vote tally — during
+      // a secret session it must not ride the wire (the same strip the
+      // scene payloads get). Outside a secret session counts are public and
+      // clients replace their element from this payload, so stripping then
+      // would wipe legitimate public counts.
+      const { votes, ...questionForWire } = existing;
+      return {
+        ok: true,
+        broadcast: {
+          type: 'question:updated',
+          pageId: page.id,
+          question: this._voteCountsProtected(room) ? questionForWire : existing,
+        },
+      };
     }
 
     // Dot voting: any participant may cast a dot while a session the teacher
@@ -1065,7 +1149,12 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
           return true;
         }
         const role = store.resolveRole(room, body.token || '', body.roleHint || '');
-        const outcome = store.applyRoomOperation(roomId, role, body);
+        // body.clientId is caller-controlled on this unauthenticated route —
+        // rate-limit social ops by the socket address so rotating the JSON
+        // field cannot mint fresh buckets. NAT classrooms share a bucket only
+        // on this fallback route; the app's primary WS path keys per client.
+        const rateIdentity = `rest|${req.socket?.remoteAddress || 'unknown'}`;
+        const outcome = store.applyRoomOperation(roomId, role, body, rateIdentity);
         if (!outcome.ok) {
           sendJson(res, outcome.code || 400, { error: outcome.error });
           return true;
@@ -1218,11 +1307,10 @@ export function attachCollabRoutes(httpServer, store = new CollabStore()) {
                     })
                   );
                 } else if (outcome.broadcast) {
-                  // vote:cast is server-authoritative: the caster never
-                  // mutates locally, so the sender must receive its own
-                  // authoritative count back. Every other op already lives
-                  // on the sender's board, which is why they exclude it.
-                  broadcastToRoom(roomId, outcome.broadcast, msg.type === 'vote:cast' ? null : socket);
+                  // Server-authoritative ops echo to the sender (see
+                  // wsEchoesToSender); every other op already lives on the
+                  // sender's board, which is why they exclude it.
+                  broadcastToRoom(roomId, outcome.broadcast, wsEchoesToSender(msg.type) ? null : socket);
                 }
               }
             } catch {

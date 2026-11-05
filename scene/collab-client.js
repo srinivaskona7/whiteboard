@@ -326,7 +326,7 @@ export class CollabClient {
     this.status = 'snapshot';
     this.expiresAt = data.expiresAt;
     this.statusMessage = 'Read-only Snapshot';
-    this._applyRemoteScene(data.scene, []);
+    this._applyRemoteScene(data.scene, [], 'replace');
     this.app.dialogs?.showToast(`Loaded read-only snapshot "${data.title}".`);
     return true;
   }
@@ -684,7 +684,9 @@ export class CollabClient {
     }
 
     if (msg.type === 'vote:session' && msg.session) {
-      this.app.votingUI?.applyRemoteSession?.(msg.session);
+      // The reveal counts ride at the message root (server wire shape),
+      // not inside the session object — pass them through explicitly.
+      this.app.votingUI?.applyRemoteSession?.(msg.session, msg.counts);
       return;
     }
 
@@ -717,7 +719,12 @@ export class CollabClient {
     }
   }
 
-  _applyRemoteScene(remoteScene, deletedIds = []) {
+  // mode 'merge' (live collab): a recency union — the newer copy of each
+  // element wins, ties go to the remote/server copy, local-only elements
+  // survive. Mode 'replace' (stored snapshots, #/b/{id}): the remote scene IS
+  // the document — a snapshot link must show exactly what was stored, never
+  // the viewer's own newer copies of the same element ids.
+  _applyRemoteScene(remoteScene, deletedIds = [], mode = 'merge') {
     if (!remoteScene || !Array.isArray(remoteScene.pages)) return;
     this._suppressOutboundSync = true;
     try {
@@ -725,11 +732,25 @@ export class CollabClient {
       const currentCamByPage = new Map(
         this.app.scene.pages.map((p) => [p.id, { ...p.camera }])
       );
+      const localElementsByPage = new Map(
+        this.app.scene.pages.map((p) => [p.id, p.elements || []])
+      );
       this.app.scene.title = remoteScene.title || this.app.scene.title;
+      // Element-level merge, mirroring the server's _mergeSceneIntoRoom: a
+      // full-scene broadcast is a UNION of elements where the newer
+      // updatedAt wins. The old wholesale replace reverted a second client's
+      // in-flight edit (e.g. a vote cast a moment ago) whenever anyone else's
+      // slightly older scene arrived — last-write-wins at scene granularity.
       this.app.scene.pages = remoteScene.pages.map((p) => ({
         ...p,
         camera: currentCamByPage.get(p.id) || p.camera || { x: 0, y: 0, zoom: 1 },
-        elements: (p.elements || []).filter((e) => !this.deletedIds.has(e.id)),
+        elements:
+          mode === 'replace'
+            ? (p.elements || []).filter((e) => !this.deletedIds.has(e.id))
+            : this._mergeElementsByRecency(
+                localElementsByPage.get(p.id) || [],
+                p.elements || []
+              ).filter((e) => !this.deletedIds.has(e.id)),
       }));
       if (!this.app.scene.pages.some((p) => p.id === this.app.scene.activePageId)) {
         this.app.scene.activePageId =
@@ -743,6 +764,21 @@ export class CollabClient {
     } finally {
       this._suppressOutboundSync = false;
     }
+  }
+
+  // Union of local and remote elements; the newer updatedAt wins (ties go to
+  // the remote copy, matching the server). Local-only elements survive —
+  // deletions travel through deletedIds, never through absence.
+  _mergeElementsByRecency(localEls = [], remoteEls = []) {
+    const byId = new Map();
+    for (const el of localEls) byId.set(el.id, el);
+    for (const el of remoteEls) {
+      const prev = byId.get(el.id);
+      if (!prev || (el.updatedAt || 0) >= (prev.updatedAt || 0)) {
+        byId.set(el.id, el);
+      }
+    }
+    return Array.from(byId.values());
   }
 
   _applyTeacherCamera(tv) {
