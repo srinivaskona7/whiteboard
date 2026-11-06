@@ -81,8 +81,8 @@ export const ICON_PACK_SOURCES = {
   iconpack: {
     provider: 'DevOps, Cloud & Teaching Icon Pack (user-supplied)',
     name: 'DevOps, Cloud, Networking & Teaching Icon Pack',
-    upstreamUrl: 'local://~/Downloads/aws-keys/icons.js (offline pack)',
-    version: '2 (2015 icons, 38 groups)',
+    upstreamUrl: 'local://icon-pack/icons.json + commands.json (offline pack)',
+    version: '3 (3404 icons in 77 groups + 263 line glyphs, 183 commands)',
     license: 'Unstated by the pack author — user-supplied, internal use',
     attribution: 'Anonymous pack author; SVG markup baked in verbatim with per-icon defs namespacing.',
     usageNotes:

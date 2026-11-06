@@ -12,6 +12,7 @@ import { UML_STENCILS } from './uml.js';
 import { ER_STENCILS } from './er.js';
 import { GENERIC_STENCILS } from './generic.js';
 import { LUCIDE_STENCILS } from './lucide-icons.js';
+import { WORKFLOW_ICON_STENCILS } from './workflow-icons.js';
 import { ICON_PACK_SOURCES, getIconProvenance, describeIcon } from './manifest.js';
 
 export { ICON_PACK_SOURCES, getIconProvenance, describeIcon };
@@ -95,6 +96,7 @@ export const ALL_STENCILS = dedupeById([
   ...KUBERNETES_STENCILS,
   ...NETWORK_STENCILS,
   ...LUCIDE_STENCILS,
+  ...WORKFLOW_ICON_STENCILS,
 ]);
 
 const STENCIL_MAP = new Map(ALL_STENCILS.map((s) => [s.id, s]));
@@ -103,10 +105,11 @@ export function getStencilById(id) {
   return STENCIL_MAP.get(id) || ALL_STENCILS[0];
 }
 
-// The DevOps icon pack (~2.6 MB of baked SVG markup, 2015 icons) is too
-// large to merge into the initial bundle, so it registers lazily: the
-// library's Icon Pack tab imports it on first open, and the render/export
-// paths trigger the same load when they meet an unloaded `pk-` element.
+// The DevOps icon pack (~5 MB of baked SVG markup: 3404 tiles + 263 line
+// glyphs) is too large to merge into the initial bundle, so it registers
+// lazily: the library's Topics and Icon Pack tabs import it on first use, and
+// the render/export paths trigger the same load when they meet an unloaded
+// `pk-` element.
 export const ICON_PACK_ID_PREFIX = 'pk-';
 
 export function isStencilLoaded(id) {
@@ -142,6 +145,19 @@ export function ensureIconPackLoaded() {
     );
   }
   return iconPackPromise;
+}
+
+// The pack's 183 copy-ready commands (~60 KB) load the same way, the first
+// time the library opens a topic or runs a search.
+let packCommandsPromise = null;
+export function ensurePackCommandsLoaded() {
+  if (!packCommandsPromise) {
+    packCommandsPromise = import('./icon-pack-commands.js').catch((err) => {
+      packCommandsPromise = null; // retry on the next request, as above
+      throw err;
+    });
+  }
+  return packCommandsPromise;
 }
 
 export function getAllCategories() {

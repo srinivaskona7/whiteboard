@@ -48,6 +48,7 @@ import {
   STORAGE_KEY,
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
+import { createCodeSnippetElement } from './scene/code-snippet.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
 import { buildQuickAdd } from './scene/quick-add.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
@@ -1602,6 +1603,30 @@ export class WhiteboardApp {
 
   insertMathTool(kind = 'ruler') {
     return this.insertMathOverlay(kind);
+  }
+
+  // Insert a library command as a code block (scene/code-snippet.js builds it:
+  // title and note as shell comments, risky commands keep their warning).
+  insertCodeSnippet(snippet = {}) {
+    if (!this.collab.canEditBoard()) {
+      this.dialogs.showToast('Viewers cannot insert elements onto the board.');
+      return null;
+    }
+    const page = this.getPage();
+    const origin = computeNonOverlappingOrigin(page, this.getUsableViewportCenter());
+    const el = createCodeSnippetElement(snippet, origin);
+    if (!el) return null;
+    const check = validateElementsBatch([el]);
+    if (!check.valid) {
+      this.dialogs.showToast(`Insertion rejected: ${check.reason}`);
+      return null;
+    }
+    page.elements.push(el);
+    this.selectedIds = new Set([el.id]);
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    return el;
   }
 
   addSelectionToLibrary() {

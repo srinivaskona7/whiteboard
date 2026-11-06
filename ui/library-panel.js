@@ -11,10 +11,17 @@ import {
   ICON_PACK_SOURCES,
   getIconProvenance,
 } from '../stencils/index.js';
-import { LUCIDE_STENCILS } from '../stencils/lucide-icons.js';
+import { LUCIDE_STENCILS as LUCIDE_ONLY } from '../stencils/lucide-icons.js';
+import { WORKFLOW_ICON_STENCILS } from '../stencils/workflow-icons.js';
+
+// Line-icon tab = Lucide plus the workflow concept icons, drawn in the same style.
+const LUCIDE_STENCILS = [...LUCIDE_ONLY, ...WORKFLOW_ICON_STENCILS];
 import { BUILTIN_TEMPLATES } from '../templates/index.js';
 import { WORKFLOW_INDEX } from '../templates/workflows-index.js';
 import { renderWorkflowsTab } from './workflows-tab.js';
+import { renderTopicsTab } from './library-topics-tab.js';
+import { LIBRARY_TOPICS, classifyCategory } from '../stencils/library-topics.js';
+import { PACK_INDEX } from '../stencils/icon-pack-index.js';
 import { buildDevOpsDiagramPacks } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
 import { saveWorkspacePreferences } from '../scene/storage.js';
@@ -74,7 +81,7 @@ export function initLibraryPanel(app) {
   const panel = document.getElementById('wb-library-panel');
   if (!panel) return { update() {}, recordRecent() {} };
 
-  let activeTab = 'stencils'; // 'stencils' | 'lucide' | 'iconpack' | 'packs' | 'user' | 'workflows' | 'templates'
+  let activeTab = 'topics'; // 'topics' | 'stencils' | 'lucide' | 'iconpack' | 'packs' | 'user' | 'workflows' | 'templates'
   let activeCategory = 'all'; // 'all' | 'favorites' | 'recent' | category name
   let lucideActiveCategory = 'all'; // 'all' | 'icons/<sub>'
   let lucideSearchQuery = '';
@@ -153,9 +160,10 @@ export function initLibraryPanel(app) {
         </div>
       </div>
       <div class="wb-tabs" role="tablist">
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'topics' ? 'active' : ''}" data-tab="topics" title="Everything by topic, in learning order">Topics</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'stencils' ? 'active' : ''}" data-tab="stencils">Icons (${ALL_STENCILS.length})</button>
-        <button type="button" role="tab" class="wb-tab ${activeTab === 'lucide' ? 'active' : ''}" data-tab="lucide">Lucide Icons (${LUCIDE_STENCILS.length})</button>
-        <button type="button" role="tab" class="wb-tab ${activeTab === 'iconpack' ? 'active' : ''}" data-tab="iconpack">DevOps Pack (2015)</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'lucide' ? 'active' : ''}" data-tab="lucide">Line Icons (${LUCIDE_STENCILS.length})</button>
+        <button type="button" role="tab" class="wb-tab ${activeTab === 'iconpack' ? 'active' : ''}" data-tab="iconpack">DevOps Pack (${PACK_INDEX.icons + PACK_INDEX.glyphs})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'packs' ? 'active' : ''}" data-tab="packs">Diagram Packs</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'user' ? 'active' : ''}" data-tab="user">My Library (${app.userLibrary.length})</button>
         <button type="button" role="tab" class="wb-tab ${activeTab === 'workflows' ? 'active' : ''}" data-tab="workflows">Workflows (${WORKFLOW_INDEX.workflows.length})</button>
@@ -193,7 +201,8 @@ export function initLibraryPanel(app) {
   function renderTabContent() {
     const content = panel.querySelector('#wb-library-content');
     if (!content) return;
-    if (activeTab === 'stencils') renderStencilsTab(content);
+    if (activeTab === 'topics') renderTopicsTab(content, { app, layout: iconSizeLayout(iconSize), favorites, toggleFavorite, recordRecent });
+    else if (activeTab === 'stencils') renderStencilsTab(content);
     else if (activeTab === 'lucide') renderLucideIconsTab(content);
     else if (activeTab === 'iconpack') renderIconPackTab(content);
     else if (activeTab === 'packs') renderDiagramPacksTab(content);
@@ -203,7 +212,7 @@ export function initLibraryPanel(app) {
   }
 
   function renderStencilsTab(content) {
-    // pack/* categories belong to the DevOps Pack tab (38 groups would flood
+    // pack/* categories belong to the DevOps Pack tab (86 groups would flood
     // this strip); the pack icons stay reachable here via the All search.
     const categories = getAllCategories().filter((c) => !c.startsWith('pack/'));
     content.innerHTML = `
@@ -339,7 +348,9 @@ export function initLibraryPanel(app) {
 
       let renderedCount = 0;
       let totalCount = groups.reduce((acc, g) => acc + g.items.length, 0);
-      const isWindowed = activeCategory === 'all' && !searchQuery.trim() && totalCount > visibleLimit;
+      // "All" is windowed with or without a query: once the pack loads, one
+      // short query can match thousands of icons.
+      const isWindowed = activeCategory === 'all' && totalCount > visibleLimit;
 
       const htmlParts = [];
       for (const grp of groups) {
@@ -363,7 +374,7 @@ export function initLibraryPanel(app) {
       if (isWindowed && renderedCount < totalCount) {
         htmlParts.push(`
           <button type="button" class="wb-btn wb-sm" id="btn-lib-load-more" style="width:100%;margin-top:8px;">
-            Show All ${totalCount} Icons (${totalCount - renderedCount} more)
+            Show ${Math.min(240, totalCount - renderedCount)} more (${totalCount - renderedCount} left of ${totalCount})
           </button>
         `);
       }
@@ -380,7 +391,7 @@ export function initLibraryPanel(app) {
       resultsBox.innerHTML = htmlParts.join('');
 
       resultsBox.querySelector('#btn-lib-load-more')?.addEventListener('click', () => {
-        visibleLimit = 999;
+        visibleLimit += 240;
         updateResults();
       });
 
@@ -447,6 +458,7 @@ export function initLibraryPanel(app) {
 
     searchInput?.addEventListener('input', (e) => {
       searchQuery = e.target.value;
+      visibleLimit = 64;
       updateResults();
     });
 
@@ -644,14 +656,15 @@ export function initLibraryPanel(app) {
     updateResults();
   }
 
-  // DevOps, Cloud, Networking & Teaching Icon Pack (2015 icons, 38 groups).
-  // The pack module (~2.6 MB) is imported lazily on first open — it registers
+  // DevOps, Cloud, Networking & Teaching Icon Pack (3404 icons in 77 groups,
+  // plus 263 line glyphs in 9 sets). The pack module (~5 MB) is imported
+  // lazily on first open — it registers
   // its stencils into the shared registry, so placement, canvas render, SVG
   // export and the All search all pick them up from then on.
   async function renderIconPackTab(content) {
     packRenderToken++;
     const token = packRenderToken;
-    content.innerHTML = `<p class="wb-muted">Loading icon pack (2.6 MB, first open only)…</p>`;
+    content.innerHTML = `<p class="wb-muted">Loading icon pack (about 5 MB, first open only)…</p>`;
     let m;
     try {
       m = iconPackModule || (await ensureIconPackLoaded());
@@ -661,24 +674,40 @@ export function initLibraryPanel(app) {
     }
     iconPackModule = m;
     if (token !== packRenderToken || activeTab !== 'iconpack') return;
-    const stencils = m.PACK_STENCILS;
-    const groupBySlug = Object.fromEntries(m.PACK_GROUPS.map((g) => [g.slug, g]));
+    // "All" runs in the Topics tab's learning order: topic, then concept folder.
+    const packOrder = (s) => {
+      const home = classifyCategory(s.category);
+      if (!home) return Number.MAX_SAFE_INTEGER;
+      const ti = LIBRARY_TOPICS.findIndex((t) => t.id === home.topicId);
+      return ti * 100 + LIBRARY_TOPICS[ti].folders.findIndex((fo) => fo.id === home.folderId);
+    };
+    const stencils = m.PACK_STENCILS.map((s, i) => ({ s, i, o: packOrder(s) }))
+      .sort((a, b) => a.o - b.o || a.i - b.i)
+      .map((x) => x.s);
+    const groupBySlug = m.PACK_GROUP_BY_SLUG;
     const groupLabel = (slug) => groupBySlug[slug]?.label || slug;
+    // One <select> grouped by topic instead of 86 pills.
+    const groupOptions = LIBRARY_TOPICS.map((t) => {
+      const slugs = t.folders
+        .flatMap((fo) => fo.categories)
+        .filter((c) => c.startsWith('pack/') && groupBySlug[c.slice('pack/'.length)])
+        .map((c) => c.slice('pack/'.length));
+      if (!slugs.length) return '';
+      const opts = slugs
+        .map((slug) => `<option value="${escapeXml(slug)}" ${packActiveGroup === slug ? 'selected' : ''}>${escapeXml(groupLabel(slug))} (${groupBySlug[slug].count})</option>`)
+        .join('');
+      return `<optgroup label="${escapeXml(t.label)}">${opts}</optgroup>`;
+    }).join('');
 
     content.innerHTML = `
       <div class="wb-lib-controls">
         <div class="wb-lib-search-row">
           <input type="search" id="pack-search" class="wb-input" placeholder="Search pack icons: EC2, kubectl, ansible, firewall, chaos…" value="${escapeXml(packSearchQuery)}" aria-label="Search Icon Pack"/>
         </div>
-        <div class="wb-cat-pills" role="group" aria-label="Icon Pack Groups">
-          <button type="button" class="wb-cat-pill ${packActiveGroup === 'all' ? 'active' : ''}" data-pcat="all">All (${stencils.length})</button>
-          ${m.PACK_GROUPS
-            .map(
-              (g) =>
-                `<button type="button" class="wb-cat-pill ${packActiveGroup === g.slug ? 'active' : ''}" data-pcat="${escapeXml(g.slug)}">${escapeXml(g.label)} (${g.count})</button>`
-            )
-            .join('')}
-        </div>
+        <select id="pack-group" class="wb-input wb-pack-group-select" aria-label="Icon pack group">
+          <option value="all" ${packActiveGroup === 'all' ? 'selected' : ''}>All groups, in topic order (${stencils.length})</option>
+          ${groupOptions}
+        </select>
       </div>
       <div id="pack-results" class="wb-lib-results wb-density-${iconSizeLayout(iconSize).densityClass}" role="listbox" aria-label="Icon Pack"></div>
     `;
@@ -722,7 +751,7 @@ export function initLibraryPanel(app) {
       }
 
       const totalCount = matched.length;
-      const isWindowed = packActiveGroup === 'all' && tokens.length === 0 && totalCount > packVisibleLimit;
+      const isWindowed = packActiveGroup === 'all' && totalCount > packVisibleLimit;
       const htmlParts = [];
       let renderedCount = 0;
       for (const [slug, items] of groups) {
@@ -746,21 +775,21 @@ export function initLibraryPanel(app) {
       if (isWindowed && renderedCount < totalCount) {
         htmlParts.push(`
           <button type="button" class="wb-btn wb-sm" id="pack-load-more" style="width:100%;margin-top:8px;">
-            Show All ${totalCount} Icons (${totalCount - renderedCount} more)
+            Show ${Math.min(240, totalCount - renderedCount)} more (${totalCount - renderedCount} left of ${totalCount})
           </button>
         `);
       }
 
       htmlParts.push(`
         <div class="wb-muted" style="font-size:10px;margin-top:10px;padding-top:6px;border-top:1px solid var(--border-subtle);">
-          <strong>DevOps Pack:</strong> 2015 icons · 38 groups · user-supplied offline pack, license unstated · gradients baked in, rasterized on demand
+          <strong>DevOps Pack:</strong> ${m.PACK_GROUPS.reduce((n, g) => n + g.count, 0)} icons · ${m.PACK_GROUPS.length} groups · ${m.GLYPH_SETS.reduce((n, g) => n + g.count, 0)} line glyphs in ${m.GLYPH_SETS.length} sets · user-supplied offline pack, license unstated · gradients baked in, rasterized on demand
         </div>
       `);
 
       resultsBox.innerHTML = htmlParts.join('');
 
       resultsBox.querySelector('#pack-load-more')?.addEventListener('click', () => {
-        packVisibleLimit = 999;
+        packVisibleLimit += 240;
         updateResults();
       });
 
@@ -812,15 +841,10 @@ export function initLibraryPanel(app) {
       updateResults();
     });
 
-    content.querySelectorAll('[data-pcat]').forEach((pill) => {
-      pill.addEventListener('click', () => {
-        packActiveGroup = pill.dataset.pcat;
-        packVisibleLimit = 64;
-        content.querySelectorAll('[data-pcat]').forEach((p) =>
-          p.classList.toggle('active', p.dataset.pcat === packActiveGroup)
-        );
-        updateResults();
-      });
+    content.querySelector('#pack-group')?.addEventListener('change', (e) => {
+      packActiveGroup = e.target.value;
+      packVisibleLimit = 64;
+      updateResults();
     });
 
     updateResults();
