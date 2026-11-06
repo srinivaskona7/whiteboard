@@ -606,6 +606,8 @@ export class WhiteboardApp {
     }
     this.cancelActiveInteractions();
     this.activeTool = toolId;
+    // Dismiss empty state guidance once user selects any drawing tool
+    document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
     // Each ink tool keeps its own natural preset instead of inheriting whichever
     // brush was last used by the other one (Highlighter must not draw Technical).
     const brushKind = getBrushPreset(this.currentBrush)?.kind;
