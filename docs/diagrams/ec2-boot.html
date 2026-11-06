@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How a Linux instance boots on EC2</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:        #2e5aa8;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+      color: var(--color-ink);
+    }
+
+    .container { max-width: 1280px; margin: 0 auto; }
+
+    .header { margin-bottom: 2.5rem; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.55;
+      color: var(--color-muted);
+      max-width: 60ch;
+    }
+
+    .subtitle code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      color: var(--color-ink);
+    }
+
+    .diagram-container {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow-x: auto;
+    }
+
+    svg { width: 100%; min-width: 1000px; display: block; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 0.85fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .cards { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid var(--color-rule);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.875rem;
+      padding-bottom: 0.875rem;
+      border-bottom: 1px solid rgba(45,49,66,0.08);
+    }
+
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.soft  { background: var(--color-soft); }
+
+    .card h3 {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      letter-spacing: -0.005em;
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--color-muted);
+      font-size: 0.8125rem;
+      line-height: 1.55;
+    }
+
+    .card li {
+      margin-bottom: 0.3rem;
+      padding-left: 0.875rem;
+      position: relative;
+    }
+
+    .card li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: rgba(45,49,66,0.25);
+      font-size: 0.75rem;
+    }
+
+    .card code {
+      font-family: var(--font-mono);
+      font-size: 0.92em;
+      color: var(--color-ink);
+    }
+
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">AWS EC2 · Linux boot chain</p>
+      <h1>How a Linux instance boots on EC2</h1>
+      <p class="subtitle">Eight stages from <code>RunInstances</code> to first-boot configuration, laid out by the layer that owns each hand-off — the AWS control plane, the hypervisor, firmware, the kernel, and userspace.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 728" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ec2-boot-title ec2-boot-desc">
+        <title id="ec2-boot-title">Linux boot chain on AWS EC2</title>
+        <desc id="ec2-boot-desc">A six-lane process diagram showing eight stages of an EC2 Linux boot: instance request in the EC2 control plane, host placement by the Nitro hypervisor, UEFI POST and GRUB in firmware, kernel load and root pivot in the Linux kernel, systemd init in userspace, and cloud-init first-boot configuration, with the kernel load marked as the focal pivot.</desc>
+
+        <defs>
+          <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+            <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+          </pattern>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+          <marker id="arrow-sm" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+            <polygon points="0 0, 6 2.5, 0 5" fill="#4f5d75"/>
+          </marker>
+        </defs>
+
+        <!-- ── Background ─────────────────────────────────────────── -->
+        <rect width="1280" height="728" fill="#f5f5f5"/>
+        <rect width="1280" height="728" fill="url(#dots)" opacity="0.55"/>
+
+        <!-- Alternating lane tints -->
+        <rect x="120" y="40"  width="1160" height="96" fill="rgba(45,49,66,0.018)"/>
+        <rect x="120" y="232" width="1160" height="96" fill="rgba(45,49,66,0.018)"/>
+        <rect x="120" y="424" width="1160" height="96" fill="rgba(45,49,66,0.018)"/>
+
+        <!-- Lane dividers -->
+        <line x1="0" y1="40"  x2="1280" y2="40"  stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="136" x2="1280" y2="136" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="232" x2="1280" y2="232" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="328" x2="1280" y2="328" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="424" x2="1280" y2="424" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="520" x2="1280" y2="520" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="616" x2="1280" y2="616" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+
+        <!-- Label column divider -->
+        <line x1="120" y1="40" x2="120" y2="616" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+
+        <!-- ── Step header chips ──────────────────────────────────── -->
+        <rect x="187" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="196" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">1</text>
+        <text x="196" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">REQUEST</text>
+
+        <rect x="327" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="336" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">2</text>
+        <text x="336" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">PLACE</text>
+
+        <rect x="467" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="476" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">3</text>
+        <text x="476" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">POST</text>
+
+        <rect x="607" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="616" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">4</text>
+        <text x="616" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">GRUB</text>
+
+        <rect x="747" y="8" width="18" height="18" rx="9" fill="rgba(235,108,54,0.20)"/>
+        <text x="756" y="21" fill="#eb6c36" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">5</text>
+        <text x="756" y="36" fill="#eb6c36" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">KERNEL</text>
+
+        <rect x="887" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="896" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">6</text>
+        <text x="896" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ROOTFS</text>
+
+        <rect x="1027" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="1036" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">7</text>
+        <text x="1036" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">INIT</text>
+
+        <rect x="1167" y="8" width="18" height="18" rx="9" fill="rgba(45,49,66,0.12)"/>
+        <text x="1176" y="21" fill="#2d3142" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">8</text>
+        <text x="1176" y="36" fill="#4f5d75" font-size="7" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">READY</text>
+
+        <!-- ── Lane labels ────────────────────────────────────────── -->
+        <text x="60" y="84"  fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EC2</text>
+        <text x="60" y="96"  fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CONTROL PLANE</text>
+
+        <text x="60" y="180" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NITRO</text>
+        <text x="60" y="192" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HYPERVISOR</text>
+
+        <text x="60" y="284" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FIRMWARE</text>
+
+        <text x="60" y="372" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LINUX</text>
+        <text x="60" y="384" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">KERNEL</text>
+
+        <text x="60" y="476" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SYSTEMD</text>
+
+        <text x="60" y="572" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLOUD-INIT</text>
+
+        <!-- ══════════════════════════════════════════════════════════
+             CONNECTORS — drawn before boxes so they paint behind them
+             ══════════════════════════════════════════════════════════ -->
+
+        <!-- 1 → 2  Request → Placement -->
+        <path d="M 260 88 H 328 Q 336 88 336 96 V 144"
+              fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+        <!-- 2 → 3  Placement → POST -->
+        <path d="M 400 184 H 468 Q 476 184 476 192 V 240"
+              fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+        <!-- 3 → 4  POST → Boot Loader (same lane) -->
+        <line x1="540" y1="280" x2="550" y2="280" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+        <!-- 4 → 5  Boot Loader → Kernel Load (focal in) -->
+        <path d="M 680 280 H 748 Q 756 280 756 288 V 336"
+              fill="none" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+
+        <!-- 5 → 6  Kernel Load → Root Pivot (focal out, same lane) -->
+        <line x1="820" y1="376" x2="830" y2="376" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+
+        <!-- 6 → 7  Root Pivot → systemd -->
+        <path d="M 960 376 H 1028 Q 1036 376 1036 384 V 432"
+              fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+
+        <!-- 7 → 8  systemd starts the cloud-init unit (trigger) -->
+        <path d="M 1100 472 H 1168 Q 1176 472 1176 480 V 528"
+              fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-sm)"/>
+
+        <!-- ══════════════════════════════════════════════════════════
+             NODES — opaque mask rect, then styled box
+             ══════════════════════════════════════════════════════════ -->
+
+        <!-- 1 · EC2 control plane · instance request (rust-red: identity / authz) -->
+        <rect x="132" y="50" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="132" y="50" width="128" height="76" rx="6" fill="rgba(184,84,80,0.06)" stroke="rgba(184,84,80,0.35)" stroke-width="1"/>
+        <rect x="138" y="56" width="18" height="12" rx="2" fill="rgba(184,84,80,0.18)"/>
+        <text x="147" y="65" fill="#b85450" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EC2</text>
+        <text x="196" y="84" fill="#b85450" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Instance Request</text>
+        <text x="196" y="100" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">AMI · type · subnet</text>
+        <text x="196" y="114" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">RunInstances API</text>
+
+        <!-- 2 · Nitro hypervisor · host placement -->
+        <rect x="272" y="146" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="272" y="146" width="128" height="76" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <rect x="278" y="152" width="18" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="287" y="161" fill="#4f5d75" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HST</text>
+        <text x="336" y="180" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Host Placement</text>
+        <text x="336" y="196" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">AZ · capacity · EBS</text>
+        <text x="336" y="210" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Nitro · ENA · NVMe</text>
+
+        <!-- 3 · Firmware · UEFI / POST -->
+        <rect x="412" y="242" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="412" y="242" width="128" height="76" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <rect x="418" y="248" width="18" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="427" y="257" fill="#4f5d75" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FWR</text>
+        <text x="476" y="276" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">UEFI / POST</text>
+        <text x="476" y="292" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">vNIC · NVMe found</text>
+        <text x="476" y="306" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">OVMF firmware</text>
+
+        <!-- 4 · Firmware · boot loader -->
+        <rect x="552" y="242" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="552" y="242" width="128" height="76" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <rect x="558" y="248" width="18" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="567" y="257" fill="#4f5d75" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FWR</text>
+        <text x="616" y="276" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Boot Loader</text>
+        <text x="616" y="292" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">GRUB 2 · EFI stub</text>
+        <text x="616" y="306" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">/boot/grub.cfg</text>
+
+        <!-- 5 · Linux kernel · kernel load — FOCAL -->
+        <rect x="692" y="338" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="692" y="338" width="128" height="76" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="698" y="344" width="18" height="12" rx="2" fill="rgba(235,108,54,0.20)"/>
+        <text x="707" y="353" fill="#eb6c36" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KRN</text>
+        <text x="756" y="372" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Kernel Load</text>
+        <text x="756" y="388" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">vmlinuz + initramfs</text>
+        <text x="756" y="402" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">bzImage · initrd</text>
+
+        <!-- 6 · Linux kernel · root pivot -->
+        <rect x="832" y="338" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="832" y="338" width="128" height="76" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <rect x="838" y="344" width="18" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="847" y="353" fill="#4f5d75" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KRN</text>
+        <text x="896" y="372" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Root Pivot</text>
+        <text x="896" y="388" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">initramfs → root fs</text>
+        <text x="896" y="402" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">mount · switch_root</text>
+
+        <!-- 7 · systemd -->
+        <rect x="972" y="434" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="972" y="434" width="128" height="76" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <rect x="978" y="440" width="18" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="987" y="449" fill="#4f5d75" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYS</text>
+        <text x="1036" y="468" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">systemd init</text>
+        <text x="1036" y="484" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">default.target</text>
+        <text x="1036" y="498" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">parallel unit start</text>
+
+        <!-- 8 · cloud-init (olive: first-boot ready) -->
+        <rect x="1112" y="530" width="128" height="76" rx="6" fill="#f5f5f5"/>
+        <rect x="1112" y="530" width="128" height="76" rx="6" fill="rgba(122,140,71,0.06)" stroke="rgba(122,140,71,0.35)" stroke-width="1"/>
+        <rect x="1118" y="536" width="18" height="12" rx="2" fill="rgba(122,140,71,0.18)"/>
+        <text x="1127" y="545" fill="#7a8c47" font-size="7" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CLD</text>
+        <text x="1176" y="564" fill="#7a8c47" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">cloud-init</text>
+        <text x="1176" y="580" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">IMDS · user-data</text>
+        <text x="1176" y="594" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">169.254.169.254</text>
+
+        <!-- ══════════════════════════════════════════════════════════
+             LEGEND — horizontal strip below the lanes
+             ══════════════════════════════════════════════════════════ -->
+        <text x="124" y="641" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PHASE</text>
+        <rect x="224" y="632" width="12" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="244" y="641" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">AWS AUTOMATED (1–2)</text>
+        <rect x="376" y="632" width="12" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="396" y="641" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">FIRMWARE (3–4)</text>
+        <rect x="500" y="632" width="12" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="520" y="641" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">KERNEL (5–6)</text>
+        <rect x="612" y="632" width="12" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="632" y="641" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">SYSTEMD (7)</text>
+        <rect x="716" y="632" width="12" height="12" rx="2" fill="rgba(45,49,66,0.12)"/>
+        <text x="736" y="641" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">CLOUD-INIT (8)</text>
+
+        <text x="124" y="667" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CONCERN</text>
+        <rect x="224" y="658" width="12" height="12" rx="2" fill="rgba(184,84,80,0.18)" stroke="rgba(184,84,80,0.50)" stroke-width="1"/>
+        <text x="244" y="667" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">IDENTITY · AUTHZ</text>
+        <rect x="376" y="658" width="12" height="12" rx="2" fill="rgba(122,140,71,0.18)" stroke="rgba(122,140,71,0.50)" stroke-width="1"/>
+        <text x="396" y="667" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">FIRST-BOOT READY</text>
+        <rect x="520" y="658" width="12" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="540" y="667" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">BOOT PIVOT (FOCAL)</text>
+
+        <text x="124" y="696" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">FLOW</text>
+        <line x1="224" y1="693" x2="252" y2="693" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+        <text x="264" y="696" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">STAGE HANDOFF</text>
+        <line x1="376" y1="693" x2="404" y2="693" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <text x="416" y="696" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">BOOT PIVOT</text>
+        <line x1="520" y1="693" x2="548" y2="693" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-sm)"/>
+        <text x="560" y="696" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">SYSTEMD STARTS THE UNIT</text>
+
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>The two halves</h3>
+        </div>
+        <ul>
+          <li>Steps 1–2 run entirely in the AWS control plane — nothing of yours executes yet</li>
+          <li>The AMI's root volume is cloned and attached before any guest instruction runs</li>
+          <li>Step 3 is the first code that executes inside your instance</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Where boots stall</h3>
+        </div>
+        <ul>
+          <li><strong>GRUB</strong> — missing or corrupt <code>/boot</code>, or a stale <code>root=UUID</code></li>
+          <li><strong>Kernel</strong> — initramfs with no ENA or NVMe driver, so the root device never appears</li>
+          <li><strong>cloud-init</strong> — no route to 169.254.169.254, or an IMDSv2 token refused</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-dot muted"></span>
+          <h3>Where to look</h3>
+        </div>
+        <ul>
+          <li>Console → Actions → Monitor and troubleshoot → Get system log</li>
+          <li>Serial console, for GRUB and early kernel output</li>
+          <li>Status checks: instance reachability first, then system</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>AWS EC2 · Linux boot chain</span>
+      <span>November 2026</span>
+    </div>
+
+  </div>
+</body>
+</html>
