@@ -35,6 +35,19 @@
           <canvas id="wb-minimap" class="wb-minimap" width="180" height="120" aria-label="Minimap Navigation"></canvas>
           <div id="wb-notebook" class="wb-notebook wb-hidden" role="region" aria-label="Notebook — vertically stacked lesson pages"></div>
           <button type="button" id="wb-canvas-settings-chip" class="wb-canvas-settings-chip wb-hidden" title="Open Canvas Settings (background, grid, snapping)" aria-label="Open Canvas Settings">⚙ Canvas</button>
+
+          <!-- Empty board guidance — shows when the active page has no content -->
+          <div id="wb-empty-state" class="wb-empty-state wb-hidden" role="region" aria-label="Get started on an empty board">
+            <div class="wb-empty-state-card">
+              <h2>Start with a blank board</h2>
+              <p>Nothing on the canvas yet. Choose how to begin:</p>
+              <div class="wb-empty-actions">
+                <button type="button" class="wb-btn wb-sm" id="btn-empty-blank">Blank board</button>
+                <button type="button" class="wb-btn wb-sm wb-primary" id="btn-empty-template">Use a template</button>
+                <button type="button" class="wb-btn wb-sm" id="btn-empty-workflows">Explore workflows</button>
+              </div>
+            </div>
+          </div>
         </main>
 
         <!-- Right Properties Inspector -->

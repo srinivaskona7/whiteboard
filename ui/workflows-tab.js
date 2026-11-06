@@ -17,6 +17,16 @@ export function filterWorkflows({ topic = 'all', level = 0, q = '' } = {}) {
   });
 }
 
+// Estimated minutes per workflow step; capped for readability.
+export const EST_MIN_PER_STEP = 3;
+export const EST_MIN_MIN = 5;
+export const EST_MIN_MAX = 30;
+
+export function estimateDuration(steps) {
+  const minutes = Math.min(EST_MIN_MAX, Math.max(EST_MIN_MIN, steps * EST_MIN_PER_STEP));
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} hr`;
+}
+
 export function renderWorkflowsTab(content, app) {
   const topics = WORKFLOW_INDEX.topics;
   const topicColor = Object.fromEntries(topics.map((t) => [t.id, t.color]));
@@ -26,13 +36,22 @@ export function renderWorkflowsTab(content, app) {
     return filterWorkflows(ui)
       .map(
         (w) => `
-        <div class="wb-template-card" data-wf-card="${escapeXml(w.id)}">
-          <div>
-            <strong>${escapeXml(w.title)}</strong>
-            <p class="wb-muted"><span style="color:${escapeXml(topicColor[w.topic] || '#2563eb')}">\u25cf</span> ${escapeXml(LEVEL_NAMES[w.level])} \u00b7 ${w.steps} steps</p>
-            <p class="wb-muted">${escapeXml(w.summary)}</p>
+        <div class="wb-topic-wf" data-wf-card="${escapeXml(w.id)}">
+          <div class="wb-wf-head">
+            <span class="wb-wf-dot" style="background:${escapeXml(topicColor[w.topic] || '#2563eb')}" aria-hidden="true"></span>
+            <div class="wb-wf-body">
+              <div class="wb-wf-title">${escapeXml(w.title)}</div>
+              <div class="wb-wf-meta">
+                <span class="wb-wf-level" style="color:${escapeXml(topicColor[w.topic] || '#2563eb')}">${escapeXml(LEVEL_NAMES[w.level] || 'Beginner')}</span>
+                <span class="wb-wf-separator" aria-hidden="true">\u00b7</span>
+                <span class="wb-wf-duration">${escapeXml(estimateDuration(w.steps))}</span>
+                <span class="wb-wf-separator" aria-hidden="true">\u00b7</span>
+                <span class="wb-wf-steps">${w.steps} step${w.steps === 1 ? '' : 's'}</span>
+              </div>
+              <div class="wb-wf-outcome">${escapeXml(w.summary)}</div>
+            </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:4px;">
+          <div class="wb-wf-actions">
             <button type="button" class="wb-btn wb-sm wb-primary" data-wf-insert="${escapeXml(w.id)}">Insert</button>
             <button type="button" class="wb-btn wb-sm" data-wf-present="${escapeXml(w.id)}" title="Insert, then start step-by-step presentation">Insert &amp; present</button>
           </div>

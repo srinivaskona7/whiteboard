@@ -475,6 +475,25 @@ export class WhiteboardApp {
     return screenToWorldPoint(clientX, clientY, rect, this.getCamera());
   }
 
+  // True when the active page has no visible (non-hidden) elements — used to
+  // show the empty-board guidance overlay that offers a useful starting point.
+  isBoardEmpty() {
+    const page = this.getPage();
+    return !page || !page.elements || page.elements.length === 0 ||
+      page.elements.every((e) => e.hidden);
+  }
+
+  toggleEmptyState() {
+    const el = document.getElementById('wb-empty-state');
+    if (!el) return;
+    const show =
+      !this.presentState.active &&
+      this.viewMode === 'diagram' &&
+      this.isBoardEmpty() &&
+      !this.dialogs.isOpen();
+    el.classList.toggle('wb-hidden', !show);
+  }
+
   getOpenPanelInsets() {
     let left = 64;
     let right = 16;
@@ -675,6 +694,7 @@ export class WhiteboardApp {
     this.layersUI.update();
     this.classroomUI?.update();
     this.notebookView?.update();
+    this.toggleEmptyState();
   }
 
   setViewMode(mode) {
@@ -2407,6 +2427,24 @@ export class WhiteboardApp {
       }
       if (e.target.files?.length) handleImageFiles(this, e.target.files);
       e.target.value = '';
+    });
+
+    // Empty board guidance actions
+    document.getElementById('btn-empty-blank')?.addEventListener('click', () => {
+      document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
+    });
+    document.getElementById('btn-empty-template')?.addEventListener('click', () => {
+      document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
+      app.togglePanel('wb-library-panel');
+      app.libraryUI?.update?.();
+    });
+    document.getElementById('btn-empty-workflows')?.addEventListener('click', () => {
+      document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
+      app.togglePanel('wb-library-panel');
+      // Switch library to the Workflows tab by clicking its tab button if present.
+      const panel = document.getElementById('wb-library-panel');
+      const wfTab = panel?.querySelector('[data-tab="workflows"]');
+      if (wfTab) wfTab.click();
     });
 
     document.getElementById('wb-file-import-lib')?.addEventListener('change', async (e) => {

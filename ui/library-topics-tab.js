@@ -18,6 +18,7 @@ import {
 } from '../stencils/library-topics.js';
 import { WORKFLOW_INDEX } from '../templates/workflows-index.js';
 import { escapeXml } from '../render/svg-export.js';
+import { estimateDuration } from './workflows-tab.js';
 
 const PAGE = 120; // icons per "show more" step inside a folder
 const SEARCH_ICON_CAP = 300; // icons rendered for one search
@@ -137,13 +138,22 @@ function commandCard(c) {
 // Matches the Workflows tab card, so the dot colour means the same thing.
 function workflowCard(w) {
   return `
-    <div class="wb-template-card wb-topic-wf">
-      <div>
-        <strong>${escapeXml(w.title)}</strong>
-        <p class="wb-muted"><span style="color:${escapeXml(WORKFLOW_COLOR[w.topic] || '#2563eb')}">●</span> ${escapeXml(LEVEL_LABELS[w.level] || '')} · ${plural(w.steps, 'step')}</p>
-        <p class="wb-muted">${escapeXml(w.summary)}</p>
+    <div class="wb-topic-wf" data-wf-card="${escapeXml(w.id)}">
+      <div class="wb-wf-head">
+        <span class="wb-wf-dot" style="background:${escapeXml(WORKFLOW_COLOR[w.topic] || '#2563eb')}" aria-hidden="true"></span>
+        <div class="wb-wf-body">
+          <div class="wb-wf-title">${escapeXml(w.title)}</div>
+          <div class="wb-wf-meta">
+            <span class="wb-wf-level" style="color:${escapeXml(WORKFLOW_COLOR[w.topic] || '#2563eb')}">${escapeXml(LEVEL_LABELS[w.level] || 'Beginner')}</span>
+            <span class="wb-wf-separator" aria-hidden="true">·</span>
+            <span class="wb-wf-duration">${escapeXml(estimateDuration(w.steps))}</span>
+            <span class="wb-wf-separator" aria-hidden="true">·</span>
+            <span class="wb-wf-steps">${w.steps} step${w.steps === 1 ? '' : 's'}</span>
+          </div>
+          <div class="wb-wf-outcome">${escapeXml(w.summary)}</div>
+        </div>
       </div>
-      <div class="wb-topic-wf-actions">
+      <div class="wb-wf-actions">
         <button type="button" class="wb-btn wb-sm wb-primary" data-wf-insert="${escapeXml(w.id)}">Insert</button>
         <button type="button" class="wb-btn wb-sm" data-wf-present="${escapeXml(w.id)}" title="Insert, then present it step by step">Insert &amp; present</button>
       </div>
