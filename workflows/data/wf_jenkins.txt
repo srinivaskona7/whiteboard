@@ -1,0 +1,175 @@
+@topic jenkins | Jenkins: CI/CD from scratch | #D24939 | cicd-jenkins | Run Jenkins in a container, create jobs, write a Jenkinsfile, trigger builds from Git, handle credentials and agents, deploy a Docker image, and keep the setup as code. Outputs are examples.
+
+= jen-install-tour | Module 1: Run Jenkins and take a first look | 1 | cicd-jenkins | Understand the controller and agents, start Jenkins in Docker, unlock it and find where its data lives.
+> The pieces of Jenkins | cicd-pipeline
+text: The controller schedules jobs and shows the web UI. Agents (nodes) run the builds. Plugins add features such as Git, Docker and credentials.
+cmd: docker --version
+cmd: java -version
+> Start the controller in Docker | play
+text: Port 8080 is the web UI and 50000 is for inbound agents. The named volume jenkins_home keeps your data when the container is replaced.
+cmd: docker run -d --name jenkins -p 8080:8080 -p 50000:50000 -v jenkins_home:/var/jenkins_home jenkins/jenkins:lts-jdk17
+cmd: docker logs -f jenkins
+out: Jenkins initial setup is required. An admin user has been created and a password generated.\nPlease use the following password to proceed to installation:\n\n4f1b2c9a8d7e4a3b9c0d1e2f3a4b5c6d
+> Unlock and finish setup | key
+text: Open http://localhost:8080, paste the password, choose Install suggested plugins, then create your admin user.
+cmd: docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+cmd: curl -s -I http://localhost:8080/login | grep -i x-jenkins
+out: X-Jenkins: 2.462.3
+> Create an API token for the command line | lock
+text: In the UI open your user, Configure, API Token, Add new token. Use the token instead of your password for scripts.
+cmd: export JENKINS_URL=http://localhost:8080 JENKINS_USER=admin JENKINS_TOKEN=<paste-token>
+cmd: curl -s -u $JENKINS_USER:$JENKINS_TOKEN $JENKINS_URL/api/json?tree=mode,numExecutors
+out: {"mode":"NORMAL","numExecutors":2}
+> Where Jenkins keeps its data | folder
+text: Everything is plain files under JENKINS_HOME: jobs, plugins, credentials (encrypted) and config.xml. Back up this folder.
+cmd: docker exec jenkins ls /var/jenkins_home
+cmd: docker exec jenkins ls /var/jenkins_home/plugins | head -n 5
+out: config.xml  jobs  nodes  plugins  secrets  users  war
+
+= jen-freestyle-job | Module 2: Your first job: Hello Srinivas | 1 | play | Create a freestyle job from the command line, run it, read the console and inspect the workspace.
+> Download the Jenkins CLI | download
+text: The CLI is a jar served by your own controller. It can create, build and inspect jobs.
+cmd: curl -sO $JENKINS_URL/jnlpJars/jenkins-cli.jar
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN who-am-i
+out: Authenticated as: admin\nAuthorities:\n  authenticated
+> Describe the job in XML | doc
+text: A freestyle job is an XML file with one shell build step. The same XML is what Jenkins stores in jobs/hello/config.xml.
+cmd: cat > hello-job.xml <<'EOF'\n<?xml version='1.1' encoding='UTF-8'?>\n<project>\n  <description>Hello Srinivas job</description>\n  <builders>\n    <hudson.tasks.Shell>\n      <command>echo "Hello Srinivas from build $BUILD_NUMBER"\ndate</command>\n    </hudson.tasks.Shell>\n  </builders>\n</project>\nEOF
+> Create it | plus
+text: create-job reads the XML from standard input. list-jobs confirms it exists.
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN create-job hello < hello-job.xml
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN list-jobs
+out: hello
+> Build it and watch | rocket
+text: -s waits for the result, -v streams the console. Each run gets a number.
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN build hello -s -v
+out: Started hello #1\nHello Srinivas from build 1\nMon Nov  4 10:15:02 UTC 2026\nFinished: SUCCESS
+> Console, workspace and history | eye
+text: Every build keeps its console log. The workspace is the folder where the job ran.
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN console hello 1
+cmd: curl -s -u $JENKINS_USER:$JENKINS_TOKEN "$JENKINS_URL/job/hello/api/json?tree=builds[number,result]"
+out: {"builds":[{"number":1,"result":"SUCCESS"}]}
+note: Freestyle jobs are fine for learning. Real projects use a Jenkinsfile (next module) so the pipeline lives in Git.
+
+= jen-pipeline-jenkinsfile | Module 3: A pipeline as code: the Jenkinsfile | 2 | cicd-pipeline | Write a declarative pipeline with stages, environment, post actions and an archive, validate it and run it.
+> The shape of a declarative pipeline | doc
+text: pipeline contains agent (where), stages (what) and post (what happens afterwards). Each stage has steps.
+cmd: mkdir -p ~/pipe-demo && cd ~/pipe-demo
+cmd: cat > Jenkinsfile <<'EOF'\npipeline {\n  agent any\n  environment { APP = 'hello-srinivas' }\n  stages {\n    stage('Checkout') { steps { echo "Building ${env.APP}" } }\n    stage('Build')    { steps { sh 'echo Hello Srinivas > hello.txt && cat hello.txt' } }\n    stage('Test')     { steps { sh 'grep -q Srinivas hello.txt' } }\n    stage('Archive')  { steps { archiveArtifacts artifacts: 'hello.txt' } }\n  }\n  post {\n    success { echo 'passed' }\n    failure { echo 'failed' }\n    always  { cleanWs() }\n  }\n}\nEOF
+> Validate it before you commit | check
+text: Jenkins can lint a Jenkinsfile for syntax errors without running anything.
+cmd: curl -s -X POST -u $JENKINS_USER:$JENKINS_TOKEN -F "jenkinsfile=<Jenkinsfile" $JENKINS_URL/pipeline-model-converter/validate
+out: Jenkinsfile successfully validated.
+> Create a pipeline job from it | plus
+text: The simplest way is New Item, Pipeline, and paste the script. In the next module the job reads it from Git instead.
+cmd: cat > pipe-job.xml <<'EOF'\n<flow-definition plugin="workflow-job">\n  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">\n    <script>@@SCRIPT@@</script>\n    <sandbox>true</sandbox>\n  </definition>\n</flow-definition>\nEOF
+cmd: python3 -c "import html;s=open('Jenkinsfile').read();print(open('pipe-job.xml').read().replace('@@SCRIPT@@',html.escape(s)))" > pipe-job-final.xml
+cmd: java -jar ../jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN create-job pipe-demo < pipe-job-final.xml
+> Run and read the stages | rocket
+text: The Stage View shows each stage with its time. A red stage tells you exactly where it failed.
+cmd: java -jar ../jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN build pipe-demo -s -v
+out: [Pipeline] stage\n[Pipeline] { (Build)\n+ echo Hello Srinivas\n+ cat hello.txt\nHello Srinivas\n[Pipeline] archiveArtifacts\nFinished: SUCCESS
+> Add parameters, conditions and a timeout | sliders
+text: parameters ask for input, when skips a stage, options set a timeout and retry. Add them inside the pipeline block.
+cmd: printf "parameters { string(name: 'WHO', defaultValue: 'Srinivas') }\noptions { timeout(time: 10, unit: 'MINUTES'); timestamps() }\n" 
+cmd: printf "stage('Deploy') { when { branch 'main' }\n  steps { echo \"Deploying for \${params.WHO}\" } }\n"
+note: Use a Groovy double-quoted string when you need ${params.WHO}. Use single quotes in sh steps so secrets are never expanded by Groovy.
+
+= jen-scm-webhook | Module 4: Pipeline from Git and automatic builds with webhooks | 2 | git-github | Keep the Jenkinsfile in the repository, build every branch with a multibranch pipeline and trigger builds on push.
+> Put the Jenkinsfile in the repo | git-repo
+text: The Jenkinsfile sits next to the code, so changing the pipeline is a normal commit that can be reviewed.
+cmd: cd ~/pipe-demo && git init -q -b main
+cmd: git add Jenkinsfile && git commit -qm "Add Jenkinsfile"
+cmd: git remote add origin https://github.com/<you>/hello-srinivas.git
+cmd: git push -u origin main
+> Create a multibranch pipeline | branch
+text: New Item, Multibranch Pipeline, add a Git source (GitHub, GitLab or Bitbucket), save. Jenkins scans the repository and creates one job per branch that has a Jenkinsfile.
+cmd: git switch -c feature/greeting
+cmd: git push -u origin feature/greeting
+out: Scan Multibranch Pipeline: Examining you/hello-srinivas\n  Checking branch main\n    'Jenkinsfile' found\n  Checking branch feature/greeting\n    'Jenkinsfile' found\nFinished: SUCCESS
+> Trigger on push with a webhook | bolt
+text: Polling wastes time. Add a webhook in the repository settings so the host tells Jenkins when something changes. GitHub uses /github-webhook/, GitLab uses /project/<job>, Bitbucket uses /bitbucket-scmsource-hook/notify.
+cmd: curl -s -o /dev/null -w '%{http_code}\n' -X POST $JENKINS_URL/github-webhook/ -H 'X-GitHub-Event: ping' -H 'Content-Type: application/json' -d '{}'
+out: 200
+note: Jenkins must be reachable from GitHub, GitLab or Bitbucket. Behind a firewall use polling or a reverse proxy.
+> Fallback: poll the repository | clock
+text: If webhooks cannot reach Jenkins, ask it to check on a schedule. H spreads the load.
+cmd: printf "triggers { pollSCM('H/5 * * * *') }\n"
+> Branches and pull requests | merge
+text: Each branch and pull request gets its own build and reports a status check back to the host, so merges can be blocked until the build is green.
+cmd: git switch main && git merge --no-ff feature/greeting -m "Merge greeting"
+cmd: git push
+
+= jen-credentials-agents | Module 5: Secrets and agents | 3 | key | Store a secret safely, use it in a pipeline without leaking it, and run builds on a separate agent.
+> Where secrets go | lock
+text: Never write passwords in a Jenkinsfile or job. Manage Jenkins, Credentials stores secret text, username and password, SSH keys and files, encrypted on disk.
+cmd: curl -s -u $JENKINS_USER:$JENKINS_TOKEN "$JENKINS_URL/credentials/store/system/domain/_/api/json?tree=credentials[id,typeName]"
+out: {"credentials":[{"id":"api-token","typeName":"Secret text"}]}
+> Use a credential in a pipeline | key
+text: withCredentials puts the secret in an environment variable for these steps only. Jenkins masks it in the log.
+cmd: cat > Jenkinsfile <<'EOF'\npipeline {\n  agent any\n  stages {\n    stage('Call API') {\n      steps {\n        withCredentials([string(credentialsId: 'api-token', variable: 'TOKEN')]) {\n          sh 'curl -s -H "Authorization: Bearer $TOKEN" https://api.example.com/health'\n        }\n      }\n    }\n  }\n}\nEOF
+out: + curl -s -H 'Authorization: Bearer ****' https://api.example.com/health
+note: Use single quotes around the sh script. Double quotes make Groovy substitute the secret into the command line.
+> Start an agent | server
+text: Create a node in Manage Jenkins, Nodes. It shows a secret. An inbound agent container connects to the controller with it.
+cmd: docker run -d --init --name agent1 jenkins/inbound-agent -url http://host.docker.internal:8080 -workDir=/home/jenkins/agent <agent-secret> agent1
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN list-computers
+out: Built-In Node\nagent1
+> Send a job to the agent by label | target
+text: Give the node a label such as docker. A pipeline with agent label asks for any node with that label.
+cmd: printf "pipeline { agent { label 'docker' }\n  stages { stage('Where') { steps { sh 'hostname' } } } }\n"
+out: Running on agent1 in /home/jenkins/agent/workspace/where\n+ hostname\n8f3c1a2b9d4e
+> Keep the controller clean | shield
+text: Set the built-in node to 0 executors so builds run only on agents. Give jobs the least access they need and rotate tokens.
+cmd: curl -s -u $JENKINS_USER:$JENKINS_TOKEN "$JENKINS_URL/computer/api/json?tree=computer[displayName,numExecutors]"
+out: {"computer":[{"displayName":"Built-In Node","numExecutors":0},{"displayName":"agent1","numExecutors":2}]}
+
+= jen-docker-deploy | Module 6: Pipeline that tests, builds a Docker image and deploys | 3 | docker-image | Build and push an image to ECR, deploy it with an approval step, and roll back if it fails.
+> The plan | map
+text: Checkout, test, build the image, push it tagged with the commit, ask for approval, deploy, and notify.
+cmd: git rev-parse --short HEAD
+out: 3a9f2c1
+> The Jenkinsfile | cicd-jenkins
+text: The image tag is the short Git commit, so every build is traceable. A parameter chooses the environment.
+cmd: cat > Jenkinsfile <<'EOF'\npipeline {\n  agent { label 'docker' }\n  parameters { choice(name: 'ENV', choices: ['dev', 'prod']) }\n  environment {\n    REGISTRY = '123456789012.dkr.ecr.ap-south-1.amazonaws.com'\n    IMAGE = "${REGISTRY}/hello-app:${GIT_COMMIT.take(7)}"\n  }\n  stages {\n    stage('Test')  { steps { sh 'python3 -m unittest discover || true' } }\n    stage('Build') { steps { sh 'docker build -t $IMAGE .' } }\n    stage('Push')  {\n      steps {\n        withCredentials([usernamePassword(credentialsId: 'aws-ecr', usernameVariable: 'U', passwordVariable: 'P')]) {\n          sh 'echo $P | docker login --username $U --password-stdin $REGISTRY && docker push $IMAGE'\n        }\n      }\n    }\n    stage('Approve') { when { expression { params.ENV == 'prod' } } steps { input message: 'Deploy to production?' } }\n    stage('Deploy') { steps { sh 'kubectl set image deployment/hello hello=$IMAGE && kubectl rollout status deployment/hello --timeout=120s' } }\n  }\n  post { failure { sh 'kubectl rollout undo deployment/hello || true' } }\n}\nEOF
+> Run it for dev | rocket
+text: Dev has no approval. Watch each stage turn green and read the rollout message.
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN build hello-deploy -p ENV=dev -s -v
+out: The push refers to repository [123456789012.dkr.ecr.ap-south-1.amazonaws.com/hello-app]\n3a9f2c1: digest: sha256:8d9c... size: 1573\ndeployment "hello" successfully rolled out
+> Run for production with approval | gate
+text: The pipeline pauses at Approve. Someone with permission clicks Proceed or Abort.
+cmd: java -jar jenkins-cli.jar -s $JENKINS_URL -auth $JENKINS_USER:$JENKINS_TOKEN build hello-deploy -p ENV=prod
+out: Input requested: Deploy to production?
+> Roll back | undo
+text: post failure undoes a bad deploy automatically. You can also roll back by hand or redeploy an older tag.
+cmd: kubectl rollout history deployment/hello
+cmd: kubectl rollout undo deployment/hello
+out: deployment.apps/hello rolled back
+> Tell people | bell
+text: Add a post section that sends a message to Slack or email with the job name, build number and link.
+cmd: printf "post { failure { mail to: 'team@example.com', subject: \"FAILED: \${env.JOB_NAME} #\${env.BUILD_NUMBER}\", body: \"\${env.BUILD_URL}\" } }\n"
+
+= jen-config-as-code | Module 7: Jenkins as code: plugins, JCasC and backups | 3 | gear | Rebuild the same Jenkins from files: a plugin list, a YAML configuration and a custom image, plus a backup routine.
+> List plugins in a file | listcheck
+text: A plugins.txt pins what the controller needs. jenkins-plugin-cli installs it while the image is built.
+cmd: mkdir -p ~/jenkins-as-code && cd ~/jenkins-as-code
+cmd: printf "configuration-as-code\ngit\nworkflow-aggregator\ncredentials-binding\ndocker-workflow\n" > plugins.txt
+cmd: cat plugins.txt
+> Describe the configuration in YAML | doc
+text: Configuration as Code reads jenkins.yaml at start-up. The admin password comes from an environment variable, not the file.
+cmd: cat > jenkins.yaml <<'EOF'\njenkins:\n  systemMessage: "Hello Srinivas CI"\n  numExecutors: 0\n  securityRealm:\n    local:\n      allowsSignup: false\n      users:\n        - id: "admin"\n          password: "${ADMIN_PASSWORD}"\nunclassified:\n  location:\n    url: http://localhost:8080/\nEOF
+> Build your own image | package
+text: The Dockerfile installs the plugins and copies the YAML, so every start gives the same Jenkins.
+cmd: cat > Dockerfile <<'EOF'\nFROM jenkins/jenkins:lts-jdk17\nCOPY plugins.txt /usr/share/jenkins/ref/plugins.txt\nRUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt\nCOPY jenkins.yaml /var/jenkins_home/casc_configs/jenkins.yaml\nENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs/jenkins.yaml JAVA_OPTS=-Djenkins.install.runSetupWizard=false\nEOF
+cmd: docker build -t my-jenkins:1 .
+> Start it, no setup wizard | play
+text: It starts configured: no unlock screen, no clicking. Throw it away and start again whenever you like.
+cmd: docker run -d --name jenkins2 -p 8090:8080 -e ADMIN_PASSWORD=change-me -v jenkins2_home:/var/jenkins_home my-jenkins:1
+cmd: curl -s -u admin:change-me http://localhost:8090/api/json?tree=description,numExecutors
+risk: 1
+note: change-me is a lab value. Pass real secrets from a secret store.
+> Back up and upgrade | save
+text: Back up JENKINS_HOME and keep it off the host. To upgrade, build the image with the new tag and start it on the same volume.
+cmd: docker run --rm -v jenkins2_home:/data -v $PWD:/backup alpine:3.20 tar -czf /backup/jenkins-backup.tar.gz -C /data .
+cmd: ls -lh jenkins-backup.tar.gz
+out: -rw-r--r-- 1 you you 38M Nov  4 10:40 jenkins-backup.tar.gz

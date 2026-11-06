@@ -1,0 +1,161 @@
+# Q&A per workflow: situations, pitfalls, next step. Format: "= id", then q:/a: pairs.
+
+= net-ping
+q: In which situation do we use this?
+a: First check that a host is reachable, and to measure round-trip delay and packet loss.
+q: What does a failed ping prove?
+a: Not much alone: many networks block ICMP on purpose. Test the real port with curl or nc as well.
+q: What comes next?
+a: net-traceroute to see where packets stop.
+
+= net-ping-pong
+q: In which situation do we use this?
+a: To learn how any client and server talk: a request goes out, a response comes back.
+q: Why teach it with code?
+a: A tiny socket server and client show that a protocol is just agreed messages over a connection.
+q: What comes next?
+a: net-tcp-ports and net-http build on the same pattern.
+
+= net-osi-tcpip
+q: In which situation do we use this?
+a: To decide where a problem lives: cable and Wi-Fi, IP routing, TCP port, or the application.
+q: How do I use the layers?
+a: Test bottom up: link, IP, TCP port, then the application protocol. The first failing layer is your suspect.
+q: What comes next?
+a: net-troubleshoot-method turns this into a checklist.
+
+= net-ip-cidr
+q: In which situation do we use this?
+a: Planning networks, reading security rules, or deciding whether two addresses can talk directly.
+q: How do I read /24?
+a: The first 24 bits are the network and the last 8 bits are hosts: 256 addresses, 254 usable in classic subnets.
+q: What comes next?
+a: net-subnet-plan applies it to a VPC.
+
+= net-subnet-plan
+q: In which situation do we use this?
+a: Before creating a VPC: choose a CIDR that fits public, app and database tiers in several zones without overlap.
+q: What goes wrong?
+a: Overlapping ranges block peering and VPN later. Plan for growth and for other networks you will connect.
+q: What comes next?
+a: net-aws-vpc builds the plan.
+
+= net-dns
+q: In which situation do we use this?
+a: A name does not resolve, resolves to the wrong address, or a change has not taken effect yet.
+q: Which tool?
+a: dig shows the record and its TTL; dig +trace follows the chain from the root; resolvectl shows what the host uses.
+q: What comes next?
+a: Remember that TTL controls how long old answers are cached.
+
+= net-http
+q: In which situation do we use this?
+a: Testing a web service or API from the terminal, without a browser.
+q: Which curl options help?
+a: -I for headers only, -v for the full exchange, -L to follow redirects, -w for timing.
+q: What comes next?
+a: net-tls when the failure is about certificates.
+
+= net-tcp-ports
+q: In which situation do we use this?
+a: A service is running but cannot be reached: check whether it is actually listening, and on which address.
+q: What does 127.0.0.1 versus 0.0.0.0 mean?
+a: 127.0.0.1 accepts only local connections; 0.0.0.0 accepts from every interface.
+q: What comes next?
+a: ss -tulpn lists listeners and the owning process.
+
+= net-traceroute
+q: In which situation do we use this?
+a: A connection is slow or fails somewhere in the middle and you want to see which hop is responsible.
+q: How do I read stars?
+a: A hop showing * may just not reply to probes. Judge by whether later hops respond.
+q: What comes next?
+a: mtr combines ping and traceroute for a live view.
+
+= net-nat
+q: In which situation do we use this?
+a: Private instances need to reach the internet, or many devices share one public address.
+q: What does NAT hide?
+a: Private source addresses. The router rewrites them and tracks connections so replies find the right host.
+q: What comes next?
+a: In AWS, a NAT gateway in a public subnet serves private subnets.
+
+= net-dhcp-arp
+q: In which situation do we use this?
+a: A machine joins a LAN with no address, or two devices fight over one IP.
+q: What do DHCP and ARP each do?
+a: DHCP hands out address, gateway and DNS. ARP maps an IP on the local network to a MAC address.
+q: What comes next?
+a: ip neigh shows the ARP cache.
+
+= net-routing
+q: In which situation do we use this?
+a: Traffic goes the wrong way, or only some networks are reachable.
+q: What is the default gateway?
+a: The route used when nothing more specific matches, usually your router.
+q: What comes next?
+a: ip route get a.b.c.d tells you which route a given destination will use.
+
+= net-firewall-rules
+q: In which situation do we use this?
+a: Opening only the ports a service needs and blocking everything else.
+q: What is the safe approach?
+a: Default deny, allow what is required, and allow your own management port before enabling the firewall.
+q: What comes next?
+a: In AWS the same idea appears as security groups and network ACLs.
+
+= net-tls
+q: In which situation do we use this?
+a: HTTPS errors, expired certificates, or checking what a server presents.
+q: Which command shows the certificate?
+a: openssl s_client -connect host:443 and then x509 to see subject, issuer and dates.
+q: What comes next?
+a: Automate renewal, and check the chain and the hostname match.
+
+= net-load-balancing
+q: In which situation do we use this?
+a: One server is not enough or must stay available while another is updated.
+q: What does the balancer need?
+a: A list of backends and a health check so failed ones are skipped.
+q: What comes next?
+a: Choose the algorithm to match the workload: round robin, least connections or hash.
+
+= net-ssh-tunnels
+q: In which situation do we use this?
+a: Reaching a database or admin page that is not public, through a bastion host you are allowed to use.
+q: Which flag does what?
+a: -L forwards a local port to a remote service, -R does the reverse, -J jumps through a host.
+q: What comes next?
+a: Keep tunnels short-lived and only to systems you are authorised to access.
+
+= net-packet-capture
+q: In which situation do we use this?
+a: Logs say nothing, but you need to see what really crosses the wire: handshakes, resets, DNS queries.
+q: How do I keep it manageable?
+a: Filter by host and port and capture to a file with -w, then read it with -r.
+q: What comes next?
+a: Capture only on systems you own or administer, and avoid storing sensitive payloads.
+
+= net-aws-vpc
+q: In which situation do we use this?
+a: Building a clean network for an environment: public, private and database subnets with routes and gateways.
+q: Why use the CLI?
+a: The steps are explicit and repeatable, and they map directly to Terraform or CloudFormation later.
+q: What comes next?
+a: Delete test resources to avoid cost, in reverse order of creation.
+
+= net-k8s-network
+q: In which situation do we use this?
+a: Pods cannot reach each other, a Service has no endpoints, or an Ingress returns 404.
+q: How is traffic organised?
+a: Pods get their own IPs, a Service gives them a stable name and address, and Ingress routes outside traffic to Services.
+q: What comes next?
+a: kubectl get endpoints shows whether the Service found any Pods.
+
+= net-troubleshoot-method
+q: In which situation do we use this?
+a: Any "it does not connect" report, to avoid guessing.
+q: What is the method?
+a: Define the failure, test from the bottom layer up, change one thing at a time and write down each result.
+q: What comes next?
+a: Reproduce from both sides when you can: the client and the server.

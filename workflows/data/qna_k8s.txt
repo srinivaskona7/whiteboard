@@ -1,0 +1,105 @@
+# Q&A for the Kubernetes workflows.
+
+= k8s-first-look
+q: In which situation do we use this?
+a: Before any kubectl work on a new or unfamiliar cluster: confirm which cluster and namespace you are pointed at.
+q: What is the most common costly mistake?
+a: Running a change against the wrong context. Read kubectl config current-context first, and practise on a local kind cluster.
+q: What comes next?
+a: Module 2 runs your first pod.
+
+= k8s-pod-hello
+q: In which situation do we use this?
+a: Trying an image quickly, or learning how a pod starts and what its events say.
+q: Why not run bare pods in production?
+a: Nothing recreates a deleted or crashed bare pod. Use a Deployment.
+q: What comes next?
+a: Module 3 adds self-healing and updates.
+
+= k8s-deployment-rollout
+q: In which situation do we use this?
+a: Running a stateless application with several copies that must stay up during updates.
+q: What happens when a rollout goes wrong?
+a: New pods fail to become ready while the old ones keep serving. kubectl rollout undo returns to the last good version.
+q: What comes next?
+a: Module 4 gives the pods a stable address.
+
+= k8s-service-expose
+q: In which situation do we use this?
+a: Other pods or users need a stable name and address for a changing set of pods.
+q: What does an empty ENDPOINTS list mean?
+a: The selector matches no ready pod. Compare the service selector with the pod labels and check readiness.
+q: What comes next?
+a: Module 5 moves settings out of the image.
+
+= k8s-config-secrets
+q: In which situation do we use this?
+a: The same image must run in dev and prod with different settings, or needs a password.
+q: Is a Secret encrypted?
+a: Not by default. It is base64 encoded. Limit access with RBAC and enable encryption at rest or use an external secret store.
+q: What comes next?
+a: Module 6 keeps data beyond a pod's life.
+
+= k8s-storage
+q: In which situation do we use this?
+a: A database, upload folder or any data that must survive pod restarts.
+q: Deployment or StatefulSet for a database?
+a: StatefulSet. It gives stable names and a separate disk per pod.
+q: What comes next?
+a: Module 7 brings outside traffic in.
+
+= k8s-ingress-dns
+q: In which situation do we use this?
+a: Several web services share one public address and need host or path routing and HTTPS.
+q: Why is my Ingress ignored?
+a: There is no ingress controller, or ingressClassName does not match the controller's class.
+q: What comes next?
+a: Module 8 makes pods healthy and well sized.
+
+= k8s-probes-resources
+q: In which situation do we use this?
+a: Pods receive traffic before they are ready, hang without restarting, or hog a node.
+q: Readiness or liveness?
+a: Readiness controls traffic. Liveness restarts a stuck container. A wrong liveness probe can cause restart loops.
+q: What comes next?
+a: Module 9 scales on load.
+
+= k8s-scaling-hpa
+q: In which situation do we use this?
+a: Traffic changes over the day and you want pods added and removed automatically.
+q: Why does the HPA show unknown?
+a: Metrics-server is missing, or the pods have no CPU request to compare with.
+q: What comes next?
+a: Module 10 controls who can do what.
+
+= k8s-rbac
+q: In which situation do we use this?
+a: Giving a person, pipeline or pod only the access it needs.
+q: How do I check what an account can do?
+a: kubectl auth can-i with --as, or --list for everything.
+q: What comes next?
+a: Module 11 packages and reuses manifests.
+
+= k8s-helm-kustomize
+q: In which situation do we use this?
+a: The same application must be deployed many times with different values, or you install third-party software.
+q: Helm or Kustomize?
+a: Helm for packaged, versioned applications. Kustomize for patching your own plain YAML per environment.
+q: What comes next?
+a: Module 12 fixes what breaks.
+
+= k8s-debug
+q: In which situation do we use this?
+a: A pod is Pending, crashing, not pulling its image, or a service does not answer.
+q: What is the first command?
+a: kubectl describe on the object, and read the Events at the bottom.
+q: What comes next?
+a: Module 13 covers planned node work.
+
+= k8s-node-maintenance
+q: In which situation do we use this?
+a: Patching, resizing or replacing a node, or upgrading the cluster.
+q: What must I always do after a drain?
+a: Uncordon the node and confirm no node shows SchedulingDisabled.
+q: What comes next?
+a: Combine these skills with the Terraform and Jenkins topics for full delivery.

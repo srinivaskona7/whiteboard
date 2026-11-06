@@ -1,0 +1,6609 @@
+{
+ "tool": "git version 2.54.0 (Apple Git-157)",
+ "workflows": {
+  "git-first-repo": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "pwd",
+     "out": "/home/you/git-lab/hello-git"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"Hello World\" > hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello World"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "cat -e hello.txt",
+     "out": "Hello World$"
+    },
+    {
+     "cmd": "wc -l hello.txt",
+     "out": "1 hello.txt"
+    },
+    {
+     "cmd": "wc -c hello.txt",
+     "out": "12 hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/hello-git/.git/"
+    },
+    {
+     "cmd": "ls -a",
+     "out": ".\n..\n.git\nhello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git status",
+     "out": "On branch main\n\nNo commits yet\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\thello.txt\n\nnothing added to commit but untracked files present (use \"git add\" to track)"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\n\nNo commits yet\n\nChanges to be committed:\n  (use \"git rm --cached <file>...\" to unstage)\n\tnew file:   hello.txt"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git commit -m \"Add hello.txt\"",
+     "out": "[main (root-commit) 8423b95] Add hello.txt\n 1 file changed, 1 insertion(+)\n create mode 100644 hello.txt"
+    }
+   ],
+   "7": [
+    {
+     "cmd": "git log --oneline",
+     "out": "8423b95 Add hello.txt"
+    },
+    {
+     "cmd": "git log",
+     "out": "commit 8423b95f9e87659ee63db3d96d47695d437937f9\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:10:50 2026 +0530\n\n    Add hello.txt"
+    }
+   ],
+   "8": [
+    {
+     "cmd": "echo \"Hello Git\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    },
+    {
+     "cmd": "git diff",
+     "out": "diff --git a/hello.txt b/hello.txt\nindex 557db03..93f515c 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1,2 @@\n Hello World\n+Hello Git"
+    }
+   ],
+   "9": [
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add greeting line\"",
+     "out": "[main fffd78f] Add greeting line\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "fffd78f Add greeting line\n8423b95 Add hello.txt"
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ]
+  },
+  "git-three-areas": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/areas && cd ~/git-lab/areas",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/areas/.git/"
+    },
+    {
+     "cmd": "echo \"v1\" > notes.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add notes.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Start notes\"",
+     "out": "[main (root-commit) 732c186] Start notes\n 1 file changed, 1 insertion(+)\n create mode 100644 notes.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"v2\" >> notes.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M notes.txt"
+    },
+    {
+     "cmd": "git diff",
+     "out": "diff --git a/notes.txt b/notes.txt\nindex 626799f..2139d8b 100644\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1,2 @@\n v1\n+v2"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git add notes.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git diff",
+     "out": ""
+    },
+    {
+     "cmd": "git diff --staged",
+     "out": "diff --git a/notes.txt b/notes.txt\nindex 626799f..2139d8b 100644\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1,2 @@\n v1\n+v2"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "echo \"v3\" >> notes.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "MM notes.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git commit -m \"Add v2\"",
+     "out": "[main bb63cc3] Add v2\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M notes.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "bb63cc3 Add v2\n732c186 Start notes"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git add -A",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add v3\"",
+     "out": "[main c95dce5] Add v3\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ]
+  },
+  "git-config-identity": {
+   "0": [
+    {
+     "cmd": "git config --global user.name \"Alice Dev\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global user.email \"alice@example.com\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global user.name",
+     "out": "Alice Dev"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git config --global init.defaultBranch main",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global pull.rebase false",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global --list",
+     "out": "user.name=Alice Dev\nuser.email=alice@example.com\ninit.defaultbranch=main\npull.rebase=false"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git config --global alias.st \"status --short\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global alias.lg \"log --oneline --graph --decorate --all\"",
+     "out": ""
+    },
+    {
+     "cmd": "mkdir -p ~/git-lab/alias && cd ~/git-lab/alias && git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/alias/.git/"
+    },
+    {
+     "cmd": "echo hi > a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git st",
+     "out": "?? a.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git config --local user.email \"alice@work.example\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config user.email",
+     "out": "alice@work.example"
+    },
+    {
+     "cmd": "git config --show-scope user.email",
+     "out": "local\talice@work.example"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git config --local --unset user.email",
+     "out": ""
+    },
+    {
+     "cmd": "git config user.email",
+     "out": "alice@example.com"
+    },
+    {
+     "cmd": "cat .git/config",
+     "out": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n\tignorecase = true\n\tprecomposeunicode = true"
+    }
+   ]
+  },
+  "git-status-diff": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/sd && cd ~/git-lab/sd",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/sd/.git/"
+    },
+    {
+     "cmd": "echo \"alpha\" > a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"beta\" > b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add .",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add a and b\"",
+     "out": "[main (root-commit) 822e0b2] Add a and b\n 2 files changed, 2 insertions(+)\n create mode 100644 a.txt\n create mode 100644 b.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"alpha two\" >> a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "rm b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"gamma\" > c.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nChanges not staged for commit:\n  (use \"git add/rm <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   a.txt\n\tdeleted:    b.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tc.txt\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git status --short",
+     "out": " M a.txt\n D b.txt\n?? c.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git diff",
+     "out": "diff --git a/a.txt b/a.txt\nindex 4a58007..d50109e 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n alpha\n+alpha two\ndiff --git a/b.txt b/b.txt\ndeleted file mode 100644\nindex 65b2df8..0000000\n--- a/b.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-beta"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git diff --stat",
+     "out": " a.txt | 1 +\n b.txt | 1 -\n 2 files changed, 1 insertion(+), 1 deletion(-)"
+    },
+    {
+     "cmd": "git diff --name-only",
+     "out": "a.txt\nb.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git add a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git diff --name-only",
+     "out": "b.txt"
+    },
+    {
+     "cmd": "git diff --staged",
+     "out": "diff --git a/a.txt b/a.txt\nindex 4a58007..d50109e 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n alpha\n+alpha two"
+    }
+   ]
+  },
+  "git-undo-changes": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/undo && cd ~/git-lab/undo",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/undo/.git/"
+    },
+    {
+     "cmd": "echo \"good line\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add app.txt\"",
+     "out": "[main (root-commit) 9ba4127] Add app.txt\n 1 file changed, 1 insertion(+)\n create mode 100644 app.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"oops\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat app.txt",
+     "out": "good line\noops"
+    },
+    {
+     "cmd": "git restore app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat app.txt",
+     "out": "good line"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"not ready\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "M  app.txt"
+    },
+    {
+     "cmd": "git restore --staged app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M app.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git restore app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"bad change\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Add bad change\"",
+     "out": "[main 4614c8f] Add bad change\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git revert --no-edit HEAD",
+     "out": "[main 84cbdd4] Revert \"Add bad change\"\n Date: Mon Oct 26 13:21:20 2026 +0530\n 1 file changed, 1 deletion(-)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "84cbdd4 Revert \"Add bad change\"\n4614c8f Add bad change\n9ba4127 Add app.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "echo \"small step\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Too early commit\"",
+     "out": "[main 69c74ac] Too early commit\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git reset --soft HEAD~1",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "M  app.txt"
+    },
+    {
+     "cmd": "git commit -m \"Add small step properly\"",
+     "out": "[main 6fd166d] Add small step properly\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "6fd166d Add small step properly\n84cbdd4 Revert \"Add bad change\"\n4614c8f Add bad change\n9ba4127 Add app.txt"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git reflog -n 6",
+     "out": "6fd166d HEAD@{0}: commit: Add small step properly\n84cbdd4 HEAD@{1}: reset: moving to HEAD~1\n69c74ac HEAD@{2}: commit: Too early commit\n84cbdd4 HEAD@{3}: revert: Revert \"Add bad change\"\n4614c8f HEAD@{4}: commit: Add bad change\n9ba4127 HEAD@{5}: commit (initial): Add app.txt"
+    }
+   ]
+  },
+  "git-gitignore": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/ignore/build && cd ~/git-lab/ignore",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/ignore/.git/"
+    },
+    {
+     "cmd": "echo \"print('hi')\" > app.py",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"debug line\" > debug.log",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"binary\" > build/app.bin",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "?? app.py\n?? build/\n?? debug.log"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"*.log\" > .gitignore",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"build/\" >> .gitignore",
+     "out": ""
+    },
+    {
+     "cmd": "cat .gitignore",
+     "out": "*.log\nbuild/"
+    },
+    {
+     "cmd": "git status --short",
+     "out": "?? .gitignore\n?? app.py"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git check-ignore -v debug.log build/app.bin",
+     "out": ".gitignore:1:*.log\tdebug.log\n.gitignore:2:build/\tbuild/app.bin"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git add .gitignore app.py",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add app and gitignore\"",
+     "out": "[main (root-commit) 16cbb09] Add app and gitignore\n 2 files changed, 3 insertions(+)\n create mode 100644 .gitignore\n create mode 100644 app.py"
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"SECRET=1\" > .env",
+     "out": ""
+    },
+    {
+     "cmd": "git add -f .env",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Oops: add .env\"",
+     "out": "[main 1e41252] Oops: add .env\n 1 file changed, 1 insertion(+)\n create mode 100644 .env"
+    },
+    {
+     "cmd": "echo \".env\" >> .gitignore",
+     "out": ""
+    },
+    {
+     "cmd": "git rm --cached .env",
+     "out": "rm '.env'"
+    },
+    {
+     "cmd": "git commit -am \"Stop tracking .env\"",
+     "out": "[main bec2d85] Stop tracking .env\n 2 files changed, 1 insertion(+), 1 deletion(-)\n delete mode 100644 .env"
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    }
+   ]
+  },
+  "git-branching": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/branching && cd ~/git-lab/branching",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/branching/.git/"
+    },
+    {
+     "cmd": "echo \"home page\" > index.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add index.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add home page\"",
+     "out": "[main (root-commit) 9fc45cf] Add home page\n 1 file changed, 1 insertion(+)\n create mode 100644 index.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c feature/login",
+     "out": "Switched to a new branch 'feature/login'"
+    },
+    {
+     "cmd": "git branch",
+     "out": "* feature/login\n  main"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"login page\" > login.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add login.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add login page\"",
+     "out": "[feature/login 931142a] Add login page\n 1 file changed, 1 insertion(+)\n create mode 100644 login.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "* 931142a Add login page\n* 9fc45cf Add home page"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "ls",
+     "out": "index.txt"
+    },
+    {
+     "cmd": "git switch feature/login",
+     "out": "Switched to branch 'feature/login'"
+    },
+    {
+     "cmd": "ls",
+     "out": "index.txt\nlogin.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git branch -v",
+     "out": "* feature/login 931142a Add login page\n  main          9fc45cf Add home page"
+    },
+    {
+     "cmd": "git log main..feature/login --oneline",
+     "out": "931142a Add login page"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git branch -m feature/login feature/sign-in",
+     "out": ""
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "git branch -d feature/sign-in",
+     "out": "error: the branch 'feature/sign-in' is not fully merged\nhint: If you are sure you want to delete it, run 'git branch -D feature/sign-in'\nhint: Disable this message with \"git config set advice.forceDeleteBranch false\""
+    },
+    {
+     "cmd": "git merge feature/sign-in",
+     "out": "Updating 9fc45cf..931142a\nFast-forward\n login.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 login.txt"
+    },
+    {
+     "cmd": "git branch -d feature/sign-in",
+     "out": "Deleted branch feature/sign-in (was 931142a)."
+    }
+   ]
+  },
+  "git-merge": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/merge && cd ~/git-lab/merge",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/merge/.git/"
+    },
+    {
+     "cmd": "echo \"base\" > base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add base\"",
+     "out": "[main (root-commit) 2a724e5] Add base\n 1 file changed, 1 insertion(+)\n create mode 100644 base.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c feature-a",
+     "out": "Switched to a new branch 'feature-a'"
+    },
+    {
+     "cmd": "echo \"a\" > a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add a\"",
+     "out": "[feature-a 2b2fa15] Add a\n 1 file changed, 1 insertion(+)\n create mode 100644 a.txt"
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git merge feature-a",
+     "out": "Updating 2a724e5..2b2fa15\nFast-forward\n a.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 a.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "* 2b2fa15 Add a\n* 2a724e5 Add base"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git switch -c feature-b",
+     "out": "Switched to a new branch 'feature-b'"
+    },
+    {
+     "cmd": "echo \"b\" > b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add b\"",
+     "out": "[feature-b 07e2d87] Add b\n 1 file changed, 1 insertion(+)\n create mode 100644 b.txt"
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "echo \"main change\" > main.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add main.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add main change\"",
+     "out": "[main 44da36e] Add main change\n 1 file changed, 1 insertion(+)\n create mode 100644 main.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git merge feature-b -m \"Merge feature-b\"",
+     "out": "Merge made by the 'ort' strategy.\n b.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 b.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "*   d9f4c5a Merge feature-b\n|\\\n| * 07e2d87 Add b\n* | 44da36e Add main change\n|/\n* 2b2fa15 Add a\n* 2a724e5 Add base"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "*   d9f4c5a Merge feature-b\n|\\\n| * 07e2d87 Add b\n* | 44da36e Add main change\n|/\n* 2b2fa15 Add a\n* 2a724e5 Add base"
+    },
+    {
+     "cmd": "git show --no-patch --pretty=%P HEAD",
+     "out": "44da36e4b91bf4420481cc9df99c085a0ea0300f 07e2d877e1c9ff753cdd71bb5bb808e2727e33e4"
+    }
+   ]
+  },
+  "git-merge-conflict": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/conflict && cd ~/git-lab/conflict",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/conflict/.git/"
+    },
+    {
+     "cmd": "echo \"greeting: hello\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add greeting\"",
+     "out": "[main (root-commit) a1ab07c] Add greeting\n 1 file changed, 1 insertion(+)\n create mode 100644 app.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c feature",
+     "out": "Switched to a new branch 'feature'"
+    },
+    {
+     "cmd": "echo \"greeting: hello team\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Greet the team\"",
+     "out": "[feature a0cd16a] Greet the team\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "echo \"greeting: hello world\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Greet the world\"",
+     "out": "[main 0f0cb73] Greet the world\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git merge feature",
+     "out": "Auto-merging app.txt\nCONFLICT (content): Merge conflict in app.txt\nAutomatic merge failed; fix conflicts and then commit the result."
+    },
+    {
+     "cmd": "git status --short",
+     "out": "UU app.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "cat app.txt",
+     "out": "<<<<<<< HEAD\ngreeting: hello world\n=======\ngreeting: hello team\n>>>>>>> feature"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "echo \"greeting: hello team and world\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Merge feature: combine greetings\"",
+     "out": "[main 1ab33a2] Merge feature: combine greetings"
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "*   1ab33a2 Merge feature: combine greetings\n|\\\n| * a0cd16a Greet the team\n* | 0f0cb73 Greet the world\n|/\n* a1ab07c Add greeting"
+    }
+   ]
+  },
+  "git-rebase": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/rebase && cd ~/git-lab/rebase",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/rebase/.git/"
+    },
+    {
+     "cmd": "echo \"base\" > base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add base\"",
+     "out": "[main (root-commit) 2a724e5] Add base\n 1 file changed, 1 insertion(+)\n create mode 100644 base.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c feature",
+     "out": "Switched to a new branch 'feature'"
+    },
+    {
+     "cmd": "echo \"one\" > f1.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add f1.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Feature part 1\"",
+     "out": "[feature 4510b9a] Feature part 1\n 1 file changed, 1 insertion(+)\n create mode 100644 f1.txt"
+    },
+    {
+     "cmd": "echo \"two\" > f2.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add f2.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Feature part 2\"",
+     "out": "[feature 710c560] Feature part 2\n 1 file changed, 1 insertion(+)\n create mode 100644 f2.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "echo \"hotfix\" > hotfix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add hotfix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add hotfix\"",
+     "out": "[main 2683d6c] Add hotfix\n 1 file changed, 1 insertion(+)\n create mode 100644 hotfix.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "* 2683d6c Add hotfix\n| * 710c560 Feature part 2\n| * 4510b9a Feature part 1\n|/\n* 2a724e5 Add base"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git switch feature",
+     "out": "Switched to branch 'feature'"
+    },
+    {
+     "cmd": "git rebase main",
+     "out": "Rebasing (1/2)\nRebasing (2/2)\nSuccessfully rebased and updated refs/heads/feature."
+    },
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "* 3d308b5 Feature part 2\n* 0303a3a Feature part 1\n* 2683d6c Add hotfix\n* 2a724e5 Add base"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "git merge feature",
+     "out": "Updating 2683d6c..3d308b5\nFast-forward\n f1.txt | 1 +\n f2.txt | 1 +\n 2 files changed, 2 insertions(+)\n create mode 100644 f1.txt\n create mode 100644 f2.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "* 3d308b5 Feature part 2\n* 0303a3a Feature part 1\n* 2683d6c Add hotfix\n* 2a724e5 Add base"
+    }
+   ]
+  },
+  "git-remote-push": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/remote && cd ~/git-lab/remote",
+     "out": ""
+    },
+    {
+     "cmd": "git init --bare origin.git",
+     "out": "Initialized empty Git repository in /home/you/git-lab/remote/origin.git/"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "mkdir -p ~/git-lab/project && cd ~/git-lab/project",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/project/.git/"
+    },
+    {
+     "cmd": "echo \"# Project\" > README.md",
+     "out": ""
+    },
+    {
+     "cmd": "git add README.md",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add README\"",
+     "out": "[main (root-commit) 999621a] Add README\n 1 file changed, 1 insertion(+)\n create mode 100644 README.md"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git remote add origin ~/git-lab/remote/origin.git",
+     "out": ""
+    },
+    {
+     "cmd": "git remote -v",
+     "out": "origin\t/home/you/git-lab/remote/origin.git (fetch)\norigin\t/home/you/git-lab/remote/origin.git (push)"
+    },
+    {
+     "cmd": "git push -u origin main",
+     "out": "To /home/you/git-lab/remote/origin.git\n * [new branch]      main -> main\nbranch 'main' set up to track 'origin/main'."
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git clone ~/git-lab/remote/origin.git ~/git-lab/teammate",
+     "out": "Cloning into '/home/you/git-lab/teammate'...\ndone."
+    },
+    {
+     "cmd": "cd ~/git-lab/teammate",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "999621a Add README"
+    },
+    {
+     "cmd": "git branch -vv",
+     "out": "* main 999621a [origin/main] Add README"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"More docs\" >> README.md",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Update README\"",
+     "out": "[main a6d1c47] Update README\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/remote/origin.git\n   999621a..a6d1c47  main -> main"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "cd ~/git-lab/project",
+     "out": ""
+    },
+    {
+     "cmd": "git fetch",
+     "out": "From /home/you/git-lab/remote/origin\n   999621a..a6d1c47  main       -> origin/main"
+    },
+    {
+     "cmd": "git status -sb",
+     "out": "## main...origin/main [behind 1]"
+    },
+    {
+     "cmd": "git pull --ff-only",
+     "out": "Updating 999621a..a6d1c47\nFast-forward\n README.md | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "a6d1c47 Update README\n999621a Add README"
+    }
+   ]
+  },
+  "git-collaborate": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/team && cd ~/git-lab/team",
+     "out": ""
+    },
+    {
+     "cmd": "git init --bare origin.git",
+     "out": "Initialized empty Git repository in /home/you/git-lab/team/origin.git/"
+    },
+    {
+     "cmd": "git clone origin.git alice",
+     "out": "Cloning into 'alice'...\nwarning: You appear to have cloned an empty repository.\ndone."
+    },
+    {
+     "cmd": "cd alice && echo \"# Team project\" > README.md",
+     "out": ""
+    },
+    {
+     "cmd": "git add README.md && git commit -m \"Initial commit\"",
+     "out": "[main (root-commit) fa879bb] Initial commit\n 1 file changed, 1 insertion(+)\n create mode 100644 README.md"
+    },
+    {
+     "cmd": "git push -u origin main",
+     "out": "To /home/you/git-lab/team/origin.git\n * [new branch]      main -> main\nbranch 'main' set up to track 'origin/main'."
+    },
+    {
+     "cmd": "cd .. && git clone origin.git bob",
+     "out": "Cloning into 'bob'...\ndone."
+    }
+   ],
+   "1": [
+    {
+     "cmd": "cd ~/git-lab/team/bob",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"bob\" > bob.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add bob.txt && git commit -m \"Bob adds a file\"",
+     "out": "[main 06cd42d] Bob adds a file\n 1 file changed, 1 insertion(+)\n create mode 100644 bob.txt"
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/team/origin.git\n   fa879bb..06cd42d  main -> main"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "cd ~/git-lab/team/alice",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"alice\" > alice.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add alice.txt && git commit -m \"Alice adds a file\"",
+     "out": "[main 60aca92] Alice adds a file\n 1 file changed, 1 insertion(+)\n create mode 100644 alice.txt"
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/team/origin.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs to '/home/you/git-lab/team/origin.git'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally. This is usually caused by another repository pushing to\nhint: the same ref. If you want to integrate the remote changes, use\nhint: 'git pull' before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git pull --rebase",
+     "out": "From /home/you/git-lab/team/origin\n   fa879bb..06cd42d  main       -> origin/main\nRebasing (1/1)\nSuccessfully rebased and updated refs/heads/main."
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "* 4027c90 Alice adds a file\n* 06cd42d Bob adds a file\n* fa879bb Initial commit"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/team/origin.git\n   06cd42d..4027c90  main -> main"
+    },
+    {
+     "cmd": "git status -sb",
+     "out": "## main...origin/main"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "cd ~/git-lab/team/bob",
+     "out": ""
+    },
+    {
+     "cmd": "git pull --ff-only",
+     "out": "From /home/you/git-lab/team/origin\n   06cd42d..4027c90  main       -> origin/main\nUpdating 06cd42d..4027c90\nFast-forward\n alice.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 alice.txt"
+    },
+    {
+     "cmd": "ls",
+     "out": "README.md\nalice.txt\nbob.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "4027c90 Alice adds a file\n06cd42d Bob adds a file\nfa879bb Initial commit"
+    }
+   ]
+  },
+  "git-stash": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/stash && cd ~/git-lab/stash",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/stash/.git/"
+    },
+    {
+     "cmd": "echo \"search v1\" > search.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add search.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add search\"",
+     "out": "[main (root-commit) be88c7a] Add search\n 1 file changed, 1 insertion(+)\n create mode 100644 search.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"search v2 (unfinished)\" >> search.txt",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"draft\" > ideas.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M search.txt\n?? ideas.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git stash push -u -m \"wip: search page\"",
+     "out": "Saved working directory and index state On main: wip: search page"
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    },
+    {
+     "cmd": "git stash list",
+     "out": "stash@{0}: On main: wip: search page"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "echo \"hotfix\" > hotfix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add hotfix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Urgent hotfix\"",
+     "out": "[main dbea786] Urgent hotfix\n 1 file changed, 1 insertion(+)\n create mode 100644 hotfix.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git stash pop",
+     "out": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   search.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tideas.txt\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\nDropped refs/stash@{0} (12d3378a68a83647757dd25ce0762c98b7772333)"
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M search.txt\n?? ideas.txt"
+    },
+    {
+     "cmd": "git stash list",
+     "out": ""
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git stash push -m \"second try\"",
+     "out": "Saved working directory and index state On main: second try"
+    },
+    {
+     "cmd": "git stash apply",
+     "out": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   search.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tideas.txt\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")"
+    },
+    {
+     "cmd": "git stash list",
+     "out": "stash@{0}: On main: second try"
+    },
+    {
+     "cmd": "git stash drop",
+     "out": "Dropped refs/stash@{0} (aafba89b8a38d04bbc96af6fa5ff572b409688ce)"
+    }
+   ]
+  },
+  "git-tags-releases": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/tags && cd ~/git-lab/tags",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/tags/.git/"
+    },
+    {
+     "cmd": "for i in 1 2 3; do echo \"feature $i\" >> app.txt; git add app.txt; git commit -m \"Add feature $i\"; done",
+     "out": "[main (root-commit) bd48a3f] Add feature 1\n 1 file changed, 1 insertion(+)\n create mode 100644 app.txt\n[main 204462e] Add feature 2\n 1 file changed, 1 insertion(+)\n[main fb2fcc6] Add feature 3\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "fb2fcc6 Add feature 3\n204462e Add feature 2\nbd48a3f Add feature 1"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git tag -a v1.0.0 -m \"First release\"",
+     "out": ""
+    },
+    {
+     "cmd": "git tag -n",
+     "out": "v1.0.0          First release"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git tag -a v0.9.0 -m \"Beta\" HEAD~1",
+     "out": ""
+    },
+    {
+     "cmd": "git tag --list \"v*\"",
+     "out": "v0.9.0\nv1.0.0"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git describe --tags",
+     "out": "v1.0.0"
+    },
+    {
+     "cmd": "git show v1.0.0 --no-patch --pretty=%s",
+     "out": "tag v1.0.0\nTagger: Srinivas <srinivas@example.com>\n\nFirst release\nAdd feature 3"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git init --bare ../tags-origin.git",
+     "out": "Initialized empty Git repository in /home/you/git-lab/tags-origin.git/"
+    },
+    {
+     "cmd": "git remote add origin ../tags-origin.git",
+     "out": ""
+    },
+    {
+     "cmd": "git push origin main",
+     "out": "To ../tags-origin.git\n * [new branch]      main -> main"
+    },
+    {
+     "cmd": "git push origin v1.0.0",
+     "out": "To ../tags-origin.git\n * [new tag]         v1.0.0 -> v1.0.0"
+    },
+    {
+     "cmd": "git ls-remote --tags origin",
+     "out": "f24209b54fbd102ae6a63a7085bed1d52c261a16\trefs/tags/v1.0.0\nfb2fcc6c0775205fdbd67d8377b15a3a05515ba4\trefs/tags/v1.0.0^{}"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git switch --detach v0.9.0",
+     "out": "HEAD is now at 204462e Add feature 2"
+    },
+    {
+     "cmd": "git status",
+     "out": "HEAD detached at v0.9.0\nnothing to commit, working tree clean"
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Previous HEAD position was 204462e Add feature 2\nSwitched to branch 'main'"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git tag -d v0.9.0",
+     "out": "Deleted tag 'v0.9.0' (was 75c173f)"
+    },
+    {
+     "cmd": "git tag",
+     "out": "v1.0.0"
+    }
+   ]
+  },
+  "git-history-search": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/hist && cd ~/git-lab/hist",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/hist/.git/"
+    },
+    {
+     "cmd": "for i in 1 2 3 4 5; do echo \"line $i\" >> log.txt; git add log.txt; git commit -m \"Add line $i\"; done",
+     "out": "[main (root-commit) 3250244] Add line 1\n 1 file changed, 1 insertion(+)\n create mode 100644 log.txt\n[main 1d392c5] Add line 2\n 1 file changed, 1 insertion(+)\n[main 16cc082] Add line 3\n 1 file changed, 1 insertion(+)\n[main 4606d7c] Add line 4\n 1 file changed, 1 insertion(+)\n[main 1b04353] Add line 5\n 1 file changed, 1 insertion(+)"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "* 1b04353 (HEAD -> main) Add line 5\n* 4606d7c Add line 4\n* 16cc082 Add line 3\n* 1d392c5 Add line 2\n* 3250244 Add line 1"
+    },
+    {
+     "cmd": "git log -3 --oneline",
+     "out": "1b04353 Add line 5\n4606d7c Add line 4\n16cc082 Add line 3"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git show HEAD --stat",
+     "out": "commit 1b04353b03c7e2cfa9f9bcd0c6c33178bab099cf\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:19:50 2026 +0530\n\n    Add line 5\n\n log.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log -p -1",
+     "out": "commit 1b04353b03c7e2cfa9f9bcd0c6c33178bab099cf\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:19:50 2026 +0530\n\n    Add line 5\n\ndiff --git a/log.txt b/log.txt\nindex 9c2a709..94c99a3 100644\n--- a/log.txt\n+++ b/log.txt\n@@ -2,3 +2,4 @@ line 1\n line 2\n line 3\n line 4\n+line 5"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git log -S\"line 3\" --oneline",
+     "out": "16cc082 Add line 3"
+    },
+    {
+     "cmd": "git log --grep=\"line 4\" --oneline",
+     "out": "4606d7c Add line 4"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git blame log.txt",
+     "out": "^3250244 (Srinivas 2026-10-26 13:07:50 +0530 1) line 1\n1d392c5f (Srinivas 2026-10-26 13:10:50 +0530 2) line 2\n16cc082f (Srinivas 2026-10-26 13:13:50 +0530 3) line 3\n4606d7cf (Srinivas 2026-10-26 13:16:50 +0530 4) line 4\n1b04353b (Srinivas 2026-10-26 13:19:50 +0530 5) line 5"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git grep -n \"line\"",
+     "out": "log.txt:1:line 1\nlog.txt:2:line 2\nlog.txt:3:line 3\nlog.txt:4:line 4\nlog.txt:5:line 5"
+    },
+    {
+     "cmd": "git shortlog -sn",
+     "out": ""
+    },
+    {
+     "cmd": "git log --author=\"Alice\" --oneline",
+     "out": ""
+    }
+   ]
+  },
+  "git-amend-cleanup": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/amend && cd ~/git-lab/amend",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/amend/.git/"
+    },
+    {
+     "cmd": "echo \"hello\" > greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Ad greting file\"",
+     "out": "[main (root-commit) 9e555ed] Ad greting file\n 1 file changed, 1 insertion(+)\n create mode 100644 greeting.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "9e555ed Ad greting file"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git commit --amend -m \"Add greeting file\"",
+     "out": "[main 701b1b5] Add greeting file\n Date: Mon Oct 26 13:07:50 2026 +0530\n 1 file changed, 1 insertion(+)\n create mode 100644 greeting.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "701b1b5 Add greeting file"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"bye\" > farewell.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add farewell.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit --amend --no-edit",
+     "out": "[main e786a7e] Add greeting file\n Date: Mon Oct 26 13:07:50 2026 +0530\n 2 files changed, 2 insertions(+)\n create mode 100644 farewell.txt\n create mode 100644 greeting.txt"
+    },
+    {
+     "cmd": "git show --stat --oneline HEAD",
+     "out": "e786a7e Add greeting file\n farewell.txt | 1 +\n greeting.txt | 1 +\n 2 files changed, 2 insertions(+)"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git log --oneline",
+     "out": "e786a7e Add greeting file"
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ]
+  },
+  "git-cherry-pick-revert": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/pick && cd ~/git-lab/pick",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/pick/.git/"
+    },
+    {
+     "cmd": "echo \"v1\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Release 1 code\"",
+     "out": "[main (root-commit) 80dbfd3] Release 1 code\n 1 file changed, 1 insertion(+)\n create mode 100644 app.txt"
+    },
+    {
+     "cmd": "git branch release",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"fixed\" > fix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add fix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Fix important bug\"",
+     "out": "[main 4e81e1c] Fix important bug\n 1 file changed, 1 insertion(+)\n create mode 100644 fix.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git switch release",
+     "out": "Switched to branch 'release'"
+    },
+    {
+     "cmd": "git cherry-pick main",
+     "out": "[release ba9b76f] Fix important bug\n Date: Mon Oct 26 13:12:20 2026 +0530\n 1 file changed, 1 insertion(+)\n create mode 100644 fix.txt"
+    },
+    {
+     "cmd": "git log --oneline --all --graph",
+     "out": "* ba9b76f Fix important bug\n| * 4e81e1c Fix important bug\n|/\n* 80dbfd3 Release 1 code"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git revert --no-edit HEAD",
+     "out": "[release 2fb519a] Revert \"Fix important bug\"\n Date: Mon Oct 26 13:18:20 2026 +0530\n 1 file changed, 1 deletion(-)\n delete mode 100644 fix.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "2fb519a Revert \"Fix important bug\"\nba9b76f Fix important bug\n80dbfd3 Release 1 code"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git log main..release --oneline",
+     "out": "2fb519a Revert \"Fix important bug\"\nba9b76f Fix important bug"
+    },
+    {
+     "cmd": "git diff main release --stat",
+     "out": " fix.txt | 1 -\n 1 file changed, 1 deletion(-)"
+    }
+   ]
+  },
+  "git-reset-reflog": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/reset && cd ~/git-lab/reset",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/reset/.git/"
+    },
+    {
+     "cmd": "for n in one two three; do echo \"$n\" >> f.txt; git add f.txt; git commit -m \"Commit $n\"; done",
+     "out": "[main (root-commit) 6c27de3] Commit one\n 1 file changed, 1 insertion(+)\n create mode 100644 f.txt\n[main 5b5bc17] Commit two\n 1 file changed, 1 insertion(+)\n[main fd4d616] Commit three\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "fd4d616 Commit three\n5b5bc17 Commit two\n6c27de3 Commit one"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git reset --soft HEAD~1",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "M  f.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "5b5bc17 Commit two\n6c27de3 Commit one"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git reset --mixed HEAD~1",
+     "out": "Unstaged changes after reset:\nM\tf.txt"
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M f.txt"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "6c27de3 Commit one"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git reset --hard",
+     "out": "HEAD is now at 6c27de3 Commit one"
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    },
+    {
+     "cmd": "cat f.txt",
+     "out": "one"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git reflog",
+     "out": "6c27de3 HEAD@{0}: reset: moving to HEAD\n6c27de3 HEAD@{1}: reset: moving to HEAD~1\n5b5bc17 HEAD@{2}: reset: moving to HEAD~1\nfd4d616 HEAD@{3}: commit: Commit three\n5b5bc17 HEAD@{4}: commit: Commit two\n6c27de3 HEAD@{5}: commit (initial): Commit one"
+    },
+    {
+     "cmd": "git reset --hard $(git reflog | grep \"commit: Commit three\" | head -n 1 | cut -d' ' -f1)",
+     "out": "HEAD is now at fd4d616 Commit three"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "fd4d616 Commit three\n5b5bc17 Commit two\n6c27de3 Commit one"
+    }
+   ]
+  },
+  "git-feature-workflow": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/flow && cd ~/git-lab/flow",
+     "out": ""
+    },
+    {
+     "cmd": "git init --bare origin.git",
+     "out": "Initialized empty Git repository in /home/you/git-lab/flow/origin.git/"
+    },
+    {
+     "cmd": "git clone origin.git app && cd app",
+     "out": "Cloning into 'app'...\nwarning: You appear to have cloned an empty repository.\ndone."
+    },
+    {
+     "cmd": "echo \"# App\" > README.md",
+     "out": ""
+    },
+    {
+     "cmd": "git add README.md && git commit -m \"Initial commit\"",
+     "out": "[main (root-commit) 5c4d3bf] Initial commit\n 1 file changed, 1 insertion(+)\n create mode 100644 README.md"
+    },
+    {
+     "cmd": "git push -u origin main",
+     "out": "To /home/you/git-lab/flow/origin.git\n * [new branch]      main -> main\nbranch 'main' set up to track 'origin/main'."
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git pull --ff-only",
+     "out": "Already up to date."
+    },
+    {
+     "cmd": "git switch -c feature/greeting",
+     "out": "Switched to a new branch 'feature/greeting'"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"Hello\" > greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add greeting.txt && git commit -m \"Add greeting\"",
+     "out": "[feature/greeting f920bfc] Add greeting\n 1 file changed, 1 insertion(+)\n create mode 100644 greeting.txt"
+    },
+    {
+     "cmd": "echo \"Goodbye\" >> greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"Add farewell\"",
+     "out": "[feature/greeting 0f36094] Add farewell\n 1 file changed, 1 insertion(+)"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git push -u origin feature/greeting",
+     "out": "To /home/you/git-lab/flow/origin.git\n * [new branch]      feature/greeting -> feature/greeting\nbranch 'feature/greeting' set up to track 'origin/feature/greeting'."
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git log origin/main..feature/greeting --oneline",
+     "out": "0f36094 Add farewell\nf920bfc Add greeting"
+    },
+    {
+     "cmd": "git diff origin/main...feature/greeting --stat",
+     "out": " greeting.txt | 2 ++\n 1 file changed, 2 insertions(+)"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'\nYour branch is up to date with 'origin/main'."
+    },
+    {
+     "cmd": "git merge --no-ff feature/greeting -m \"Merge feature/greeting\"",
+     "out": "Merge made by the 'ort' strategy.\n greeting.txt | 2 ++\n 1 file changed, 2 insertions(+)\n create mode 100644 greeting.txt"
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/flow/origin.git\n   5c4d3bf..586cba9  main -> main"
+    },
+    {
+     "cmd": "git log --oneline --graph",
+     "out": "*   586cba9 Merge feature/greeting\n|\\\n| * 0f36094 Add farewell\n| * f920bfc Add greeting\n|/\n* 5c4d3bf Initial commit"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git branch -d feature/greeting",
+     "out": "Deleted branch feature/greeting (was 0f36094)."
+    },
+    {
+     "cmd": "git push origin --delete feature/greeting",
+     "out": "To /home/you/git-lab/flow/origin.git\n - [deleted]         feature/greeting"
+    },
+    {
+     "cmd": "git fetch --prune",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -a",
+     "out": "* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/main"
+    }
+   ]
+  },
+  "git-hooks": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/hooks && cd ~/git-lab/hooks",
+     "out": ""
+    },
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/git-lab/hooks/.git/"
+    },
+    {
+     "cmd": "echo \"app\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add app\"",
+     "out": "[main (root-commit) 1722a87] Add app\n 1 file changed, 1 insertion(+)\n create mode 100644 app.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "cat > .git/hooks/pre-commit <<'EOF'\n#!/bin/sh\nif git diff --cached | grep -q \"SECRET=\"; then\n  echo \"Blocked: possible secret in staged changes\" >&2\n  exit 1\nfi\nEOF",
+     "out": ""
+    },
+    {
+     "cmd": "chmod +x .git/hooks/pre-commit",
+     "out": ""
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"SECRET=abc123\" > config.env",
+     "out": ""
+    },
+    {
+     "cmd": "git add config.env",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add config\"",
+     "out": "Blocked: possible secret in staged changes"
+    },
+    {
+     "cmd": "git status --short",
+     "out": "A  config.env"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "echo \"SECRET_FROM_ENV=true\" > config.env",
+     "out": ""
+    },
+    {
+     "cmd": "git add config.env",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add config without secret\"",
+     "out": "[main 55d4e49] Add config without secret\n 1 file changed, 1 insertion(+)\n create mode 100644 config.env"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "55d4e49 Add config without secret\n1722a87 Add app"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "cat > .git/hooks/commit-msg <<'EOF'\n#!/bin/sh\nif ! grep -qE '^(feat|fix|docs|chore): ' \"$1\"; then\n  echo \"Start the message with feat:, fix:, docs: or chore:\" >&2\n  exit 1\nfi\nEOF",
+     "out": ""
+    },
+    {
+     "cmd": "chmod +x .git/hooks/commit-msg",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"x\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -am \"update stuff\"",
+     "out": "Start the message with feat:, fix:, docs: or chore:"
+    },
+    {
+     "cmd": "git commit -am \"chore: update app\"",
+     "out": "[main 719fd42] chore: update app\n 1 file changed, 1 insertion(+)"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "mkdir .githooks",
+     "out": ""
+    },
+    {
+     "cmd": "cp .git/hooks/pre-commit .git/hooks/commit-msg .githooks/",
+     "out": ""
+    },
+    {
+     "cmd": "git config core.hooksPath .githooks",
+     "out": ""
+    },
+    {
+     "cmd": "git config core.hooksPath",
+     "out": ".githooks"
+    }
+   ]
+  },
+  "git-bisect": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/bisect",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/bisect",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "for i in 1 2 3 4 5 6 7 8; do echo \"feature $i\" >> app.txt; if [ $i -ge 5 ]; then echo broken > flag.txt; fi; git add .; git commit -qm \"Add feature $i\"; done",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "b651ee5 Add feature 8\n5eb5aab Add feature 7\nc11b080 Add feature 6\nd32ab54 Add feature 5\n3ccd1b7 Add feature 4\nfb2fcc6 Add feature 3\n204462e Add feature 2\nbd48a3f Add feature 1"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "test -f flag.txt && echo \"BAD: flag.txt exists\" || echo \"GOOD\"",
+     "out": "BAD: flag.txt exists"
+    },
+    {
+     "cmd": "git bisect start",
+     "out": "status: waiting for both good and bad commits"
+    },
+    {
+     "cmd": "git bisect bad",
+     "out": "status: waiting for good commit(s), bad commit known"
+    },
+    {
+     "cmd": "git bisect good HEAD~7",
+     "out": "Bisecting: 3 revisions left to test after this (roughly 2 steps)\n[3ccd1b72f07df6629d1f5e3201b39fe9eacaf84c] Add feature 4"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "if test -f flag.txt; then git bisect bad; else git bisect good; fi",
+     "out": "Bisecting: 1 revision left to test after this (roughly 1 step)\n[c11b080add88486cc8ef0e3897a8ad30e2d810ac] Add feature 6"
+    },
+    {
+     "cmd": "if test -f flag.txt; then git bisect bad; else git bisect good; fi",
+     "out": "Bisecting: 0 revisions left to test after this (roughly 0 steps)\n[d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580] Add feature 5"
+    },
+    {
+     "cmd": "if test -f flag.txt; then git bisect bad; else git bisect good; fi",
+     "out": "d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580 is the first bad commit\ncommit d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:19:50 2026 +0530\n\n    Add feature 5\n\n app.txt  | 1 +\n flag.txt | 1 +\n 2 files changed, 2 insertions(+)\n create mode 100644 flag.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git bisect log",
+     "out": "git bisect start\n# status: waiting for both good and bad commits\n# bad: [b651ee58be6245c7fa2cc167d075e2547d45308e] Add feature 8\ngit bisect bad b651ee58be6245c7fa2cc167d075e2547d45308e\n# status: waiting for good commit(s), bad commit known\n# good: [bd48a3f8b2fd160b16c0e55697963df68e331c48] Add feature 1\ngit bisect good bd48a3f8b2fd160b16c0e55697963df68e331c48\n# good: [3ccd1b72f07df6629d1f5e3201b39fe9eacaf84c] Add feature 4\ngit bisect good 3ccd1b72f07df6629d1f5e3201b39fe9eacaf84c\n# bad: [c11b080add88486cc8ef0e3897a8ad30e2d810ac] Add feature 6\ngit bisect bad c11b080add88486cc8ef0e3897a8ad30e2d810ac\n# bad: [d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580] Add feature 5\ngit bisect bad d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580\n# first bad commit: [d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580] Add feature 5"
+    },
+    {
+     "cmd": "git bisect reset",
+     "out": "Previous HEAD position was d32ab54 Add feature 5\nSwitched to branch 'main'"
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git bisect start HEAD HEAD~7",
+     "out": "Bisecting: 3 revisions left to test after this (roughly 2 steps)\n[3ccd1b72f07df6629d1f5e3201b39fe9eacaf84c] Add feature 4"
+    },
+    {
+     "cmd": "git bisect run sh -c '! test -f flag.txt'",
+     "out": "running 'sh' '-c' ''\\!' test -f flag.txt'\nBisecting: 1 revision left to test after this (roughly 1 step)\n[c11b080add88486cc8ef0e3897a8ad30e2d810ac] Add feature 6\nrunning 'sh' '-c' ''\\!' test -f flag.txt'\nBisecting: 0 revisions left to test after this (roughly 0 steps)\n[d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580] Add feature 5\nrunning 'sh' '-c' ''\\!' test -f flag.txt'\nd32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580 is the first bad commit\ncommit d32ab54c40ac25b4a8ec7bdb5b2f73629e9fa580\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:19:50 2026 +0530\n\n    Add feature 5\n\n app.txt  | 1 +\n flag.txt | 1 +\n 2 files changed, 2 insertions(+)\n create mode 100644 flag.txt\nbisect found first bad commit"
+    },
+    {
+     "cmd": "git bisect reset",
+     "out": "Previous HEAD position was d32ab54 Add feature 5\nSwitched to branch 'main'"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git log --oneline --diff-filter=A -- flag.txt",
+     "out": "d32ab54 Add feature 5"
+    }
+   ]
+  },
+  "git-worktree": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/wt/app",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/wt/app",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"version 1\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Version 1\"",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git worktree add ../hotfix -b hotfix",
+     "out": "Preparing worktree (new branch 'hotfix')\nHEAD is now at 1ed9621 Version 1"
+    },
+    {
+     "cmd": "git worktree list",
+     "out": "/home/you/git-lab/wt/app    1ed9621 [main]\n/home/you/git-lab/wt/hotfix 1ed9621 [hotfix]"
+    },
+    {
+     "cmd": "ls ~/git-lab/wt",
+     "out": "app\nhotfix"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "cd ../hotfix",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"urgent fix\" > fix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add fix.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Fix the urgent bug\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "* 37b2da2 Fix the urgent bug\n* 1ed9621 Version 1"
+    },
+    {
+     "cmd": "cd ../app",
+     "out": ""
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git merge hotfix",
+     "out": "Updating 1ed9621..37b2da2\nFast-forward\n fix.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 fix.txt"
+    },
+    {
+     "cmd": "git worktree remove ../hotfix",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -d hotfix",
+     "out": "Deleted branch hotfix (was 37b2da2)."
+    },
+    {
+     "cmd": "git worktree list",
+     "out": "/home/you/git-lab/wt/app 37b2da2 [main]"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git worktree add ../scratch -b scratch",
+     "out": "Preparing worktree (new branch 'scratch')\nHEAD is now at 37b2da2 Fix the urgent bug"
+    },
+    {
+     "cmd": "rm -rf ../scratch",
+     "out": ""
+    },
+    {
+     "cmd": "git worktree list",
+     "out": "/home/you/git-lab/wt/app     37b2da2 [main]\n/home/you/git-lab/wt/scratch 37b2da2 [scratch] prunable"
+    },
+    {
+     "cmd": "git worktree prune",
+     "out": ""
+    },
+    {
+     "cmd": "git worktree list",
+     "out": "/home/you/git-lab/wt/app 37b2da2 [main]"
+    }
+   ]
+  },
+  "git-rebase-interactive": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/ri",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/ri",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"start\" > form.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add form.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add form\"",
+     "out": ""
+    },
+    {
+     "cmd": "for m in \"Add login form\" \"wip\" \"fix typo\" \"more wip\"; do echo \"$m\" >> form.txt; git commit -qam \"$m\"; done",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "cadcb02 more wip\n2ffe666 fix typo\n8b85d1b wip\n0a54763 Add login form\n5966565 Add form"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "GIT_SEQUENCE_EDITOR=\"sed -i.bak -e '2,4s/^pick/fixup/'\" git rebase -i HEAD~4",
+     "out": "Rebasing (2/4)\nRebasing (3/4)\nRebasing (4/4)\nSuccessfully rebased and updated refs/heads/main."
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "1ad1556 Add login form\n5966565 Add form"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "GIT_SEQUENCE_EDITOR=\"sed -i.bak -e '1s/^pick/reword/'\" GIT_EDITOR=\"sed -i.bak -e '1s/.*/Add login form page/'\" git rebase -i HEAD~1",
+     "out": "Rebasing (1/1)\n[detached HEAD f35751f] Add login form page\n Date: Mon Oct 26 13:09:20 2026 +0530\n 1 file changed, 4 insertions(+)\nSuccessfully rebased and updated refs/heads/main."
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "f35751f Add login form page\n5966565 Add form"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git reflog | head -n 8",
+     "out": "f35751f HEAD@{0}: rebase (finish): returning to refs/heads/main\nf35751f HEAD@{1}: rebase (reword): Add login form page\n1ad1556 HEAD@{2}: rebase: fast-forward\n5966565 HEAD@{3}: rebase (start): checkout HEAD~1\n1ad1556 HEAD@{4}: rebase (finish): returning to refs/heads/main\n1ad1556 HEAD@{5}: rebase (fixup): Add login form\n96b8203 HEAD@{6}: rebase (fixup): # This is a combination of 3 commits.\n16fe2fb HEAD@{7}: rebase (fixup): # This is a combination of 2 commits."
+    }
+   ]
+  },
+  "git-submodules": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/sub/lib",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/sub/lib",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"v1\" > util.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add util.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Library v1\"",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "mkdir -p ~/git-lab/sub/app",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/sub/app",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "git -c protocol.file.allow=always submodule add \"$HOME/git-lab/sub/lib\" libs/util",
+     "out": "Cloning into '/home/you/git-lab/sub/app/libs/util'...\ndone."
+    },
+    {
+     "cmd": "cat .gitmodules",
+     "out": "[submodule \"libs/util\"]\n\tpath = libs/util\n\turl = /home/you/git-lab/sub/lib"
+    },
+    {
+     "cmd": "git status --short",
+     "out": "A  .gitmodules\nA  libs/util"
+    },
+    {
+     "cmd": "git commit -qm \"Add util submodule\"",
+     "out": ""
+    },
+    {
+     "cmd": "git ls-files -s libs/util",
+     "out": "160000 9d2c85662a27cd5e8b6a786a3a15409e54436995 0\tlibs/util"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "cd ../lib",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"v2\" >> util.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Library v2\"",
+     "out": ""
+    },
+    {
+     "cmd": "cd ../app/libs/util",
+     "out": ""
+    },
+    {
+     "cmd": "git -c protocol.file.allow=always pull -q",
+     "out": ""
+    },
+    {
+     "cmd": "cd ../..",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M libs/util"
+    },
+    {
+     "cmd": "git diff --submodule",
+     "out": "Submodule libs/util 9d2c856..b143aa2:\n  > Library v2"
+    },
+    {
+     "cmd": "git commit -qam \"Bump util to v2\"",
+     "out": ""
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git -c protocol.file.allow=always clone -q --recurse-submodules \"$HOME/git-lab/sub/app\" \"$HOME/git-lab/sub/copy\"",
+     "out": ""
+    },
+    {
+     "cmd": "cat ~/git-lab/sub/copy/libs/util/util.txt",
+     "out": "v1\nv2"
+    },
+    {
+     "cmd": "cd ~/git-lab/sub/copy",
+     "out": ""
+    },
+    {
+     "cmd": "git submodule status",
+     "out": " b143aa2fea20e526e36806505e308b14c4cf4355 libs/util (heads/main)"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git submodule deinit -f libs/util",
+     "out": "Cleared directory 'libs/util'\nSubmodule 'libs/util' (/home/you/git-lab/sub/lib) unregistered for path 'libs/util'"
+    },
+    {
+     "cmd": "git rm -qf libs/util",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Remove util submodule\"",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "libs"
+    }
+   ]
+  },
+  "git-sparse-shallow": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/big/src ~/git-lab/big/docs ~/git-lab/big/assets",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/big",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "for i in 1 2 3 4 5; do echo \"code $i\" > src/a.txt; echo \"doc $i\" > docs/readme.txt; echo \"asset $i\" > assets/logo.txt; git add .; git commit -qm \"Release $i\"; done",
+     "out": ""
+    },
+    {
+     "cmd": "git rev-list --count HEAD",
+     "out": "5"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git clone -q --depth 1 \"file://$HOME/git-lab/big\" ~/git-lab/shallow",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/shallow",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "6b4af4b Release 5"
+    },
+    {
+     "cmd": "git rev-list --count HEAD",
+     "out": "1"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git fetch -q --deepen 2",
+     "out": ""
+    },
+    {
+     "cmd": "git rev-list --count HEAD",
+     "out": "3"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "6b4af4b Release 5\n9d86252 Release 4\n69df2bc Release 3"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git clone -q --no-checkout \"file://$HOME/git-lab/big\" ~/git-lab/sparse",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/sparse",
+     "out": ""
+    },
+    {
+     "cmd": "git sparse-checkout set --cone src",
+     "out": ""
+    },
+    {
+     "cmd": "git checkout -q main",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "src"
+    },
+    {
+     "cmd": "git sparse-checkout list",
+     "out": "src"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git sparse-checkout add docs",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "docs\nsrc"
+    },
+    {
+     "cmd": "git sparse-checkout disable",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "assets\ndocs\nsrc"
+    }
+   ]
+  },
+  "git-aliases-tips": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/tips",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q --bare -b main ~/git-lab/tips/origin.git",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q ~/git-lab/tips/origin.git ~/git-lab/tips/work",
+     "out": "warning: You appear to have cloned an empty repository."
+    },
+    {
+     "cmd": "cd ~/git-lab/tips/work",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"hello\" > a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"First commit\"",
+     "out": ""
+    },
+    {
+     "cmd": "git push -q -u origin main",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git config --global alias.st \"status -sb\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global alias.lg \"log --oneline --graph --decorate --all\"",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global alias.co switch",
+     "out": ""
+    },
+    {
+     "cmd": "git st",
+     "out": "## main...origin/main"
+    },
+    {
+     "cmd": "git lg",
+     "out": "* 7b3874f (HEAD -> main, origin/main) First commit"
+    },
+    {
+     "cmd": "git config --global --get-regexp '^alias\\.'",
+     "out": "alias.st status -sb\nalias.lg log --oneline --graph --decorate --all\nalias.co switch"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git co -c feature",
+     "out": "Switched to a new branch 'feature'"
+    },
+    {
+     "cmd": "echo \"work\" >> a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Feature work\"",
+     "out": ""
+    },
+    {
+     "cmd": "git push -q -u origin feature",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -vv",
+     "out": "* feature 95b34f2 [origin/feature] Feature work\n  main    7b3874f [origin/main] First commit"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git config --global pull.rebase true",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global rerere.enabled true",
+     "out": ""
+    },
+    {
+     "cmd": "git config --global --get pull.rebase",
+     "out": "true"
+    },
+    {
+     "cmd": "git config --global --get rerere.enabled",
+     "out": "true"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git push -q origin --delete feature",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -r",
+     "out": "  origin/main"
+    },
+    {
+     "cmd": "git fetch --prune",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -r",
+     "out": "  origin/HEAD -> origin/main\n  origin/main"
+    }
+   ]
+  },
+  "git-objects": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/obj",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/obj",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"hello\" > a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git hash-object a.txt",
+     "out": "ce013625030ba8dba906f756967f9e9ca394464a"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git add a.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git cat-file -t $(git hash-object a.txt)",
+     "out": "blob"
+    },
+    {
+     "cmd": "git cat-file -p $(git hash-object a.txt)",
+     "out": "hello"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git commit -qm \"Add a.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git cat-file -t HEAD",
+     "out": "commit"
+    },
+    {
+     "cmd": "git cat-file -p HEAD",
+     "out": "tree 2e81171448eb9f2ee3821e3d447aa6b2fe3ddba1\nauthor Srinivas <srinivas@example.com> 1793000540 +0530\ncommitter Srinivas <srinivas@example.com> 1793000540 +0530\n\nAdd a.txt"
+    },
+    {
+     "cmd": "git ls-tree HEAD",
+     "out": "100644 blob ce013625030ba8dba906f756967f9e9ca394464a\ta.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "cp a.txt b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add b.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add b.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git ls-tree HEAD",
+     "out": "100644 blob ce013625030ba8dba906f756967f9e9ca394464a\ta.txt\n100644 blob ce013625030ba8dba906f756967f9e9ca394464a\tb.txt"
+    },
+    {
+     "cmd": "git count-objects -v",
+     "out": "count: 5\nsize: 20\nin-pack: 0\npacks: 0\nsize-pack: 0\nprune-packable: 0\ngarbage: 0\nsize-garbage: 0"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "find .git/objects -type f | sort | head -n 6",
+     "out": ".git/objects/1f/05e610f138784de1c4648ee83c02f868e7294b\n.git/objects/2e/81171448eb9f2ee3821e3d447aa6b2fe3ddba1\n.git/objects/a0/ae2ac55e71a058a2a23d69419daec18c35e04c\n.git/objects/b5/b0cccf7401633f12e0fafc6b85731251b86850\n.git/objects/ce/013625030ba8dba906f756967f9e9ca394464a"
+    },
+    {
+     "cmd": "git cat-file --batch-check --batch-all-objects",
+     "out": "1f05e610f138784de1c4648ee83c02f868e7294b commit 172\n2e81171448eb9f2ee3821e3d447aa6b2fe3ddba1 tree 33\na0ae2ac55e71a058a2a23d69419daec18c35e04c commit 220\nb5b0cccf7401633f12e0fafc6b85731251b86850 tree 66\nce013625030ba8dba906f756967f9e9ca394464a blob 6"
+    }
+   ]
+  },
+  "git-large-files": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/large",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/large",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "yes \"log line for the demo\" | head -n 20000 > data.log",
+     "out": ""
+    },
+    {
+     "cmd": "git add data.log",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add data.log\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"more\" >> data.log",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Update data.log\"",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git count-objects -vH",
+     "out": "count: 6\nsize: 24.00 KiB\nin-pack: 0\npacks: 0\nsize-pack: 0 bytes\nprune-packable: 0\ngarbage: 0\nsize-garbage: 0 bytes"
+    },
+    {
+     "cmd": "git rev-list --count HEAD",
+     "out": "2"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3 -n -r | head -n 3",
+     "out": "blob 4f7c5f39be1c4cb3c93dcb0bc802895c9c4080bf 440005 data.log\nblob e58a046898f49a79f6b3cbb2311bd951ab911615 440000 data.log\ncommit 57bcbebcbc364b3fb4b0e0aa873e8ffa3c0b4b16 226"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git rm -q --cached data.log",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"*.log\" > .gitignore",
+     "out": ""
+    },
+    {
+     "cmd": "git add .gitignore",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Stop tracking data.log\"",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git gc -q",
+     "out": ""
+    },
+    {
+     "cmd": "git count-objects -vH",
+     "out": "count: 0\nsize: 0 bytes\nin-pack: 9\npacks: 1\nsize-pack: 3.03 KiB\nprune-packable: 0\ngarbage: 0\nsize-garbage: 0 bytes"
+    }
+   ]
+  },
+  "git-notes-range-diff": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/rd",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/rd",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"base\" > base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add base.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Base\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch -qc feature",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"one\" > f1.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add f1.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Feature part 1\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"two\" > f2.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add f2.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Feature part 2\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch -q main",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"update\" > m.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add m.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Main update\"",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git branch old-feature feature",
+     "out": ""
+    },
+    {
+     "cmd": "git switch -q feature",
+     "out": ""
+    },
+    {
+     "cmd": "git rebase -q main",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --all",
+     "out": "* 6d6184a Feature part 2\n* df5f0b0 Feature part 1\n* ec3aa44 Main update\n| * 94155ec Feature part 2\n| * bc21b89 Feature part 1\n|/\n* a884e8b Base"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git range-diff main old-feature feature",
+     "out": "1:  bc21b89 = 1:  df5f0b0 Feature part 1\n2:  94155ec = 2:  6d6184a Feature part 2"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git notes add -m \"Reviewed by Priya on the team call\" HEAD",
+     "out": ""
+    },
+    {
+     "cmd": "git log -1",
+     "out": "commit 6d6184a74212971506898cc31e44a30d73f520c8\nAuthor: Srinivas <srinivas@example.com>\nDate:   Mon Oct 26 13:15:20 2026 +0530\n\n    Feature part 2\n\nNotes:\n    Reviewed by Priya on the team call"
+    },
+    {
+     "cmd": "git notes list",
+     "out": "7576e2eb6f8a4b011ddfb9193d825f78d7a20d1e 6d6184a74212971506898cc31e44a30d73f520c8"
+    }
+   ]
+  },
+  "git-patches": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/patch",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/git-lab/patch",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q src",
+     "out": ""
+    },
+    {
+     "cmd": "cd src",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"base\" > app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Base\"",
+     "out": ""
+    },
+    {
+     "cmd": "cd ..",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q src dst",
+     "out": ""
+    },
+    {
+     "cmd": "cd src",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"greeting\" > greet.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add greet.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add greeting\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"farewell\" > bye.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add bye.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add farewell\"",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git format-patch -2 -o ../patches",
+     "out": "../patches/0001-Add-greeting.patch\n../patches/0002-Add-farewell.patch"
+    },
+    {
+     "cmd": "head -n 14 ../patches/0001-Add-greeting.patch",
+     "out": "From 75448ad540993ca6f1874e38ba9ba9fa980b096a Mon Sep 17 00:00:00 2001\nFrom: Srinivas <srinivas@example.com>\nDate: Mon, 26 Oct 2026 13:12:20 +0530\nSubject: [PATCH 1/2] Add greeting\n\n---\n greet.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 greet.txt\n\ndiff --git a/greet.txt b/greet.txt\nnew file mode 100644\nindex 0000000..36baa01\n--- /dev/null"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "cd ../dst",
+     "out": ""
+    },
+    {
+     "cmd": "git apply --check ../patches/0001-Add-greeting.patch && echo \"patch applies cleanly\"",
+     "out": "patch applies cleanly"
+    },
+    {
+     "cmd": "git am ../patches/*.patch",
+     "out": "Applying: Add greeting\nApplying: Add farewell"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "256ff19 Add farewell\n9f4f57c Add greeting\n1153d66 Base"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "cd ../src",
+     "out": ""
+    },
+    {
+     "cmd": "git bundle create ../repo.bundle --all",
+     "out": ""
+    },
+    {
+     "cmd": "git bundle verify ../repo.bundle",
+     "out": "../repo.bundle is okay\nThe bundle contains these 2 refs:\n55eb5587d5c8a8152f333834b9ac4db559394280 refs/heads/main\n55eb5587d5c8a8152f333834b9ac4db559394280 HEAD\nThe bundle records a complete history.\nThe bundle uses this hash algorithm: sha1"
+    },
+    {
+     "cmd": "git clone -q ../repo.bundle ../from-bundle",
+     "out": ""
+    },
+    {
+     "cmd": "git -C ../from-bundle log --oneline",
+     "out": "55eb558 Add farewell\n75448ad Add greeting\n1153d66 Base"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git archive --format=tar.gz -o ../snapshot.tar.gz HEAD",
+     "out": ""
+    },
+    {
+     "cmd": "tar -tzf ../snapshot.tar.gz",
+     "out": "app.txt\nbye.txt\ngreet.txt"
+    }
+   ]
+  },
+  "git-force-push-recovery": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/git-lab/fp",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q --bare -b main ~/git-lab/fp/origin.git",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q ~/git-lab/fp/origin.git ~/git-lab/fp/work",
+     "out": "warning: You appear to have cloned an empty repository."
+    },
+    {
+     "cmd": "cd ~/git-lab/fp/work",
+     "out": ""
+    },
+    {
+     "cmd": "for i in 1 2 3; do echo \"change $i\" >> app.txt; git add app.txt; git commit -qm \"Change $i\"; done",
+     "out": ""
+    },
+    {
+     "cmd": "git push -q -u origin main",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "b10f63b Change 3\n5c9e1e1 Change 2\n2be015e Change 1"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git reset -q --hard HEAD~1",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"replacement\" >> app.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Replacement change\"",
+     "out": ""
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/git-lab/fp/origin.git\n ! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs to '/home/you/git-lab/fp/origin.git'\nhint: Updates were rejected because the tip of your current branch is behind\nhint: its remote counterpart. If you want to integrate the remote changes,\nhint: use 'git pull' before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git push --force-with-lease origin main",
+     "out": "To /home/you/git-lab/fp/origin.git\n + b10f63b...4011579 main -> main (forced update)"
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "4011579 Replacement change\n5c9e1e1 Change 2\n2be015e Change 1"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git reflog origin/main | head -n 4",
+     "out": "4011579 refs/remotes/origin/main@{0}: update by push\nb10f63b refs/remotes/origin/main@{1}: update by push"
+    },
+    {
+     "cmd": "git rev-parse origin/main@{1}",
+     "out": "b10f63b995fb7fb5f4c7440179281bdac89d57de"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git branch rescue origin/main@{1}",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline rescue",
+     "out": "b10f63b Change 3\n5c9e1e1 Change 2\n2be015e Change 1"
+    },
+    {
+     "cmd": "git log --oneline main",
+     "out": "4011579 Replacement change\n5c9e1e1 Change 2\n2be015e Change 1"
+    }
+   ]
+  },
+  "hello-first-commit": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git init",
+     "out": "Initialized empty Git repository in /home/you/hello-git/.git/"
+    },
+    {
+     "cmd": "ls -a",
+     "out": ".\n..\n.git\nhello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\n\nNo commits yet\n\nChanges to be committed:\n  (use \"git rm --cached <file>...\" to unstage)\n\tnew file:   hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git commit -m \"Add hello.txt\"",
+     "out": "[main (root-commit) 069c509] Add hello.txt\n 1 file changed, 1 insertion(+)\n create mode 100644 hello.txt"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "069c509 (HEAD -> main) Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"Welcome to Git\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    },
+    {
+     "cmd": "git diff",
+     "out": "diff --git a/hello.txt b/hello.txt\nindex dff1d38..efb31e9 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1,2 @@\n Hello Srinivas\n+Welcome to Git"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -m \"Add welcome line\"",
+     "out": "[main 1552f3b] Add welcome line\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "* 1552f3b (HEAD -> main) Add welcome line\n* 069c509 Add hello.txt"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git show HEAD~1:hello.txt",
+     "out": "Hello Srinivas"
+    },
+    {
+     "cmd": "git show HEAD:hello.txt",
+     "out": "Hello Srinivas\nWelcome to Git"
+    }
+   ]
+  },
+  "hello-remote-push": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "652b700 (HEAD -> main) Add hello.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git init -q --bare -b main ~/remote/hello.git",
+     "out": ""
+    },
+    {
+     "cmd": "ls ~/remote/hello.git",
+     "out": "HEAD\nconfig\ndescription\nhooks\ninfo\nobjects\nrefs"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git remote add origin ~/remote/hello.git",
+     "out": ""
+    },
+    {
+     "cmd": "git remote -v",
+     "out": "origin\t/home/you/remote/hello.git (fetch)\norigin\t/home/you/remote/hello.git (push)"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git push -u origin main",
+     "out": "To /home/you/remote/hello.git\n * [new branch]      main -> main\nbranch 'main' set up to track 'origin/main'."
+    },
+    {
+     "cmd": "git branch -vv",
+     "out": "* main 652b700 [origin/main] Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"Welcome to Git\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Add welcome line\"",
+     "out": ""
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/remote/hello.git\n   652b700..9018c43  main -> main"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "9018c43 (HEAD -> main, origin/main) Add welcome line\n652b700 Add hello.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/hello-copy",
+     "out": ""
+    },
+    {
+     "cmd": "cat ~/hello-copy/hello.txt",
+     "out": "Hello Srinivas\nWelcome to Git"
+    },
+    {
+     "cmd": "git -C ~/hello-copy log --oneline",
+     "out": "9018c43 Add welcome line\n652b700 Add hello.txt"
+    }
+   ]
+  },
+  "hello-edit-diff-restore": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"Hello India\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    },
+    {
+     "cmd": "git diff",
+     "out": "diff --git a/hello.txt b/hello.txt\nindex dff1d38..043c1f8 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1,2 @@\n Hello Srinivas\n+Hello India"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git diff",
+     "out": ""
+    },
+    {
+     "cmd": "git diff --staged",
+     "out": "diff --git a/hello.txt b/hello.txt\nindex dff1d38..043c1f8 100644\n--- a/hello.txt\n+++ b/hello.txt\n@@ -1 +1,2 @@\n Hello Srinivas\n+Hello India"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git restore --staged hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nHello India"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git restore hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    },
+    {
+     "cmd": "git status",
+     "out": "On branch main\nnothing to commit, working tree clean"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "rm hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " D hello.txt"
+    },
+    {
+     "cmd": "git restore hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    }
+   ]
+  },
+  "hello-head-reset": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Line one\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Line two\" >> hello.txt && git commit -qam \"Line two\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Line three\" >> hello.txt && git commit -qam \"Line three\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "e160e24 (HEAD -> main) Line three\n9f75459 Line two\n9300ecd Line one"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git reset --soft HEAD~1",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "M  hello.txt"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "9f75459 (HEAD -> main) Line two\n9300ecd Line one"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git commit -qm \"Line three, again\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "e084910 (HEAD -> main) Line three, again\n9f75459 Line two\n9300ecd Line one"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git reset HEAD~1",
+     "out": "Unstaged changes after reset:\nM\thello.txt"
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nLine two\nLine three"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git commit -qam \"Line three, final\"",
+     "out": ""
+    },
+    {
+     "cmd": "git reset --hard HEAD~1",
+     "out": "HEAD is now at 9f75459 Line two"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nLine two"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "9f75459 (HEAD -> main) Line two\n9300ecd Line one"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git reflog | head -n 6",
+     "out": "9f75459 HEAD@{0}: reset: moving to HEAD~1\n7ca5661 HEAD@{1}: commit: Line three, final\n9f75459 HEAD@{2}: reset: moving to HEAD~1\ne084910 HEAD@{3}: commit: Line three, again\n9f75459 HEAD@{4}: reset: moving to HEAD~1\ne160e24 HEAD@{5}: commit: Line three"
+    },
+    {
+     "cmd": "git reset --hard HEAD@{1}",
+     "out": "HEAD is now at 7ca5661 Line three, final"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nLine two\nLine three"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git revert --no-edit HEAD",
+     "out": "[main f45d452] Revert \"Line three, final\"\n Date: Mon Oct 26 13:30:20 2026 +0530\n 1 file changed, 1 deletion(-)"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nLine two"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "f45d452 (HEAD -> main) Revert \"Line three, final\"\n7ca5661 Line three, final\n9f75459 Line two\n9300ecd Line one"
+    }
+   ]
+  },
+  "hello-branch-merge": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git branch",
+     "out": "* main"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c greeting",
+     "out": "Switched to a new branch 'greeting'"
+    },
+    {
+     "cmd": "git branch",
+     "out": "* greeting\n  main"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "652b700 (HEAD -> greeting, main) Add hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"Namaste\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qam \"Add Namaste\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* 0ee8742 (greeting) Add Namaste\n* 652b700 (HEAD -> main) Add hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git merge greeting",
+     "out": "Updating 652b700..0ee8742\nFast-forward\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nNamaste"
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "* 0ee8742 (HEAD -> main, greeting) Add Namaste\n* 652b700 Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git switch -c footer",
+     "out": "Switched to a new branch 'footer'"
+    },
+    {
+     "cmd": "echo \"Footer: Srinivas\" >> hello.txt && git commit -qam \"Add footer\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'"
+    },
+    {
+     "cmd": "echo \"Header\" > header.txt && git add header.txt && git commit -qm \"Add header file\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* f66b4bc (HEAD -> main) Add header file\n| * 1b35180 (footer) Add footer\n|/\n* 0ee8742 (greeting) Add Namaste\n* 652b700 Add hello.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git merge footer -m \"Merge footer into main\"",
+     "out": "Merge made by the 'ort' strategy.\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "ls",
+     "out": "header.txt\nhello.txt"
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "*   96466f9 (HEAD -> main) Merge footer into main\n|\\\n| * 1b35180 (footer) Add footer\n* | f66b4bc Add header file\n|/\n* 0ee8742 (greeting) Add Namaste\n* 652b700 Add hello.txt"
+    }
+   ],
+   "6": [
+    {
+     "cmd": "git branch -d greeting footer",
+     "out": "Deleted branch greeting (was 0ee8742).\nDeleted branch footer (was 1b35180)."
+    },
+    {
+     "cmd": "git branch",
+     "out": "* main"
+    }
+   ]
+  },
+  "hello-merge-conflict": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "652b700 Add hello.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -qc friendly",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas, welcome\" > hello.txt && git commit -qam \"Friendly greeting\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch -q main",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas, good morning\" > hello.txt && git commit -qam \"Morning greeting\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* 8cc3f59 (HEAD -> main) Morning greeting\n| * 9cbdd0b (friendly) Friendly greeting\n|/\n* 652b700 Add hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git merge friendly",
+     "out": "Auto-merging hello.txt\nCONFLICT (content): Merge conflict in hello.txt\nAutomatic merge failed; fix conflicts and then commit the result."
+    },
+    {
+     "cmd": "git status --short",
+     "out": "UU hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "cat hello.txt",
+     "out": "<<<<<<< HEAD\nHello Srinivas, good morning\n=======\nHello Srinivas, welcome\n>>>>>>> friendly"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"Hello Srinivas, welcome and good morning\" > hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas, welcome and good morning"
+    },
+    {
+     "cmd": "git add hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "M  hello.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git commit -qm \"Merge friendly: combine greetings\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "*   ef546d9 (HEAD -> main) Merge friendly: combine greetings\n|\\\n| * 9cbdd0b (friendly) Friendly greeting\n* | 8cc3f59 Morning greeting\n|/\n* 652b700 Add hello.txt"
+    }
+   ]
+  },
+  "hello-rebase": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline",
+     "out": "652b700 Add hello.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -qc feature",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Feature line\" >> hello.txt && git commit -qam \"Feature: add line\"",
+     "out": ""
+    },
+    {
+     "cmd": "git switch -q main",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Notes\" > notes.txt && git add notes.txt && git commit -qm \"Add notes\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* b58dff7 (HEAD -> main) Add notes\n| * d041cde (feature) Feature: add line\n|/\n* 652b700 Add hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git switch -q feature",
+     "out": ""
+    },
+    {
+     "cmd": "git rebase main",
+     "out": "Rebasing (1/1)\nSuccessfully rebased and updated refs/heads/feature."
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* 899914d (HEAD -> feature) Feature: add line\n* b58dff7 (main) Add notes\n* 652b700 Add hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git switch -q main",
+     "out": ""
+    },
+    {
+     "cmd": "git merge feature",
+     "out": "Updating b58dff7..899914d\nFast-forward\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "* 899914d (HEAD -> main, feature) Feature: add line\n* b58dff7 Add notes\n* 652b700 Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "echo \"wip one\" >> hello.txt && git commit -qam \"wip: draft\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"wip two\" >> hello.txt && git commit -qam \"wip: fix typo\"",
+     "out": ""
+    },
+    {
+     "cmd": "GIT_SEQUENCE_EDITOR=\"sed -i.bak -e '2s/^pick/fixup/'\" git rebase -i HEAD~2",
+     "out": "Rebasing (2/2)\nSuccessfully rebased and updated refs/heads/main."
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "2203494 (HEAD -> main) wip: draft\n899914d (feature) Feature: add line\nb58dff7 Add notes\n652b700 Add hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nFeature line\nwip one\nwip two"
+    }
+   ]
+  },
+  "hello-fetch-pull-team": {
+   "0": [
+    {
+     "cmd": "git init -q --bare -b main ~/remote/hello.git",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/hello-git",
+     "out": "warning: You appear to have cloned an empty repository."
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\" && git push -q -u origin main",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "069c509 (HEAD -> main, origin/main) Add hello.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/teammate",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/teammate",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"From the teammate\" >> hello.txt && git commit -qam \"Teammate line\" && git push -q",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "069c509 (HEAD -> main, origin/main) Add hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git fetch",
+     "out": "From /home/you/remote/hello\n   069c509..066d247  main       -> origin/main"
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "* 066d247 (origin/main, origin/HEAD) Teammate line\n* 069c509 (HEAD -> main) Add hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git pull",
+     "out": "Updating 069c509..066d247\nFast-forward\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nFrom the teammate"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "cd ~/teammate",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Second teammate line\" >> hello.txt && git commit -qam \"Teammate again\" && git push -q",
+     "out": ""
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Mine\" > mine.txt && git add mine.txt && git commit -qm \"Add mine.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/remote/hello.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs to '/home/you/remote/hello.git'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally. This is usually caused by another repository pushing to\nhint: the same ref. If you want to integrate the remote changes, use\nhint: 'git pull' before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git pull --rebase",
+     "out": "From /home/you/remote/hello\n   066d247..ce737ce  main       -> origin/main\nRebasing (1/1)\nSuccessfully rebased and updated refs/heads/main."
+    },
+    {
+     "cmd": "git push",
+     "out": "To /home/you/remote/hello.git\n   ce737ce..ed867f1  main -> main"
+    },
+    {
+     "cmd": "git log --oneline --graph --decorate",
+     "out": "* ed867f1 (HEAD -> main, origin/main, origin/HEAD) Add mine.txt\n* ce737ce Teammate again\n* 066d247 Teammate line\n* 069c509 Add hello.txt"
+    }
+   ]
+  },
+  "hello-stash-tags": {
+   "0": [
+    {
+     "cmd": "git init -q --bare -b main ~/remote/hello.git",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/hello-git",
+     "out": "warning: You appear to have cloned an empty repository."
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\" && git push -q -u origin main",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": ""
+    }
+   ],
+   "1": [
+    {
+     "cmd": "echo \"Unfinished idea\" >> hello.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": " M hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git stash",
+     "out": "Saved working directory and index state WIP on main: 069c509 Add hello.txt"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    },
+    {
+     "cmd": "git stash list",
+     "out": "stash@{0}: WIP on main: 069c509 Add hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git stash pop",
+     "out": "On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   hello.txt\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\nDropped refs/stash@{0} (5cab45a4fab53dbcea463893be3685838c26a88a)"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nUnfinished idea"
+    },
+    {
+     "cmd": "git stash list",
+     "out": ""
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git commit -qam \"Add idea line\"",
+     "out": ""
+    },
+    {
+     "cmd": "git tag -a v1.0 -m \"First release\"",
+     "out": ""
+    },
+    {
+     "cmd": "git tag",
+     "out": "v1.0"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "e80a057 (HEAD -> main, tag: v1.0) Add idea line\n069c509 (origin/main) Add hello.txt"
+    }
+   ],
+   "5": [
+    {
+     "cmd": "git push origin v1.0",
+     "out": "To /home/you/remote/hello.git\n * [new tag]         v1.0 -> v1.0"
+    },
+    {
+     "cmd": "git describe",
+     "out": "v1.0"
+    },
+    {
+     "cmd": "git ls-remote --tags origin",
+     "out": "9ed5ac4b4cd1d2af2fde8d03e256820b33205a54\trefs/tags/v1.0\ne80a0575b2ff9492f694e05af7b77dc9490484f6\trefs/tags/v1.0^{}"
+    }
+   ]
+  },
+  "hello-detached-head": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q && git config advice.detachedHead false",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Line one\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Line two\" >> hello.txt && git commit -qam \"Line two\"",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Line three\" >> hello.txt && git commit -qam \"Line three\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "9c96e93 (HEAD -> main) Line three\n460e98e Line two\nac787ce Line one"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch --detach HEAD~2",
+     "out": "HEAD is now at ac787ce Line one"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas"
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "ac787ce (HEAD) Line one"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "echo \"Side idea\" >> hello.txt && git commit -qam \"Side idea\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --all --graph --decorate",
+     "out": "* dc5a763 (HEAD) Side idea\n| * 9c96e93 (main) Line three\n| * 460e98e Line two\n|/\n* ac787ce Line one"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git switch main",
+     "out": "Warning: you are leaving 1 commit behind, not connected to\nany of your branches:\n\n  dc5a763 Side idea\n\nSwitched to branch 'main'"
+    },
+    {
+     "cmd": "cat hello.txt",
+     "out": "Hello Srinivas\nLine two\nLine three"
+    },
+    {
+     "cmd": "git reflog | head -n 5",
+     "out": "9c96e93 HEAD@{0}: checkout: moving from dc5a763a8e2fc28165e417f2cc7869e2aff1a280 to main\ndc5a763 HEAD@{1}: commit: Side idea\nac787ce HEAD@{2}: checkout: moving from main to HEAD~2\n9c96e93 HEAD@{3}: commit: Line three\n460e98e HEAD@{4}: commit: Line two"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git branch rescue HEAD@{1}",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --all --graph --decorate",
+     "out": "* dc5a763 (rescue) Side idea\n| * 9c96e93 (HEAD -> main) Line three\n| * 460e98e Line two\n|/\n* ac787ce Line one"
+    },
+    {
+     "cmd": "git show rescue:hello.txt",
+     "out": "Hello Srinivas\nSide idea"
+    }
+   ]
+  },
+  "hello-move-rename-delete": {
+   "0": [
+    {
+     "cmd": "mkdir -p ~/hello-git && cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "git init -q",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "ls",
+     "out": "hello.txt"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git mv hello.txt greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git status --short",
+     "out": "R  hello.txt -> greeting.txt"
+    },
+    {
+     "cmd": "ls",
+     "out": "greeting.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git commit -qm \"Rename hello.txt to greeting.txt\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --follow greeting.txt",
+     "out": "f74b6c0 Rename hello.txt to greeting.txt\n652b700 Add hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "mkdir docs",
+     "out": ""
+    },
+    {
+     "cmd": "git mv greeting.txt docs/greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "git commit -qm \"Move greeting into docs\"",
+     "out": ""
+    },
+    {
+     "cmd": "ls -R",
+     "out": "docs\n\n./docs:\ngreeting.txt"
+    },
+    {
+     "cmd": "git log --oneline --follow docs/greeting.txt",
+     "out": "055fb82 Move greeting into docs\nf74b6c0 Rename hello.txt to greeting.txt\n652b700 Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git rm docs/greeting.txt",
+     "out": "rm 'docs/greeting.txt'"
+    },
+    {
+     "cmd": "git commit -qm \"Remove greeting\"",
+     "out": ""
+    },
+    {
+     "cmd": "git ls-files",
+     "out": ""
+    },
+    {
+     "cmd": "git restore --source=HEAD~1 docs/greeting.txt",
+     "out": ""
+    },
+    {
+     "cmd": "cat docs/greeting.txt",
+     "out": "Hello Srinivas"
+    }
+   ]
+  },
+  "hello-pr-flow": {
+   "0": [
+    {
+     "cmd": "git init -q --bare -b main ~/remote/hello.git",
+     "out": ""
+    },
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/hello-git",
+     "out": "warning: You appear to have cloned an empty repository."
+    },
+    {
+     "cmd": "cd ~/hello-git",
+     "out": ""
+    },
+    {
+     "cmd": "echo \"Hello Srinivas\" > hello.txt && git add hello.txt && git commit -qm \"Add hello.txt\" && git push -q -u origin main",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -a",
+     "out": "* main\n  remotes/origin/main"
+    }
+   ],
+   "1": [
+    {
+     "cmd": "git switch -c feature/welcome",
+     "out": "Switched to a new branch 'feature/welcome'"
+    },
+    {
+     "cmd": "echo \"Welcome to Git\" >> hello.txt && git commit -qam \"Add welcome line\"",
+     "out": ""
+    },
+    {
+     "cmd": "git log --oneline --decorate",
+     "out": "217b00d (HEAD -> feature/welcome) Add welcome line\n069c509 (origin/main, main) Add hello.txt"
+    }
+   ],
+   "2": [
+    {
+     "cmd": "git push -u origin feature/welcome",
+     "out": "To /home/you/remote/hello.git\n * [new branch]      feature/welcome -> feature/welcome\nbranch 'feature/welcome' set up to track 'origin/feature/welcome'."
+    },
+    {
+     "cmd": "git branch -vv",
+     "out": "* feature/welcome 217b00d [origin/feature/welcome] Add welcome line\n  main            069c509 [origin/main] Add hello.txt"
+    }
+   ],
+   "3": [
+    {
+     "cmd": "git clone -q ~/remote/hello.git ~/reviewer",
+     "out": ""
+    },
+    {
+     "cmd": "git -C ~/reviewer merge --no-ff origin/feature/welcome -m \"Merge pull request #1 from feature/welcome\"",
+     "out": "Merge made by the 'ort' strategy.\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git -C ~/reviewer push -q origin main",
+     "out": ""
+    },
+    {
+     "cmd": "git fetch",
+     "out": "From /home/you/remote/hello\n   069c509..b56e307  main       -> origin/main"
+    },
+    {
+     "cmd": "git log --oneline --graph --all --decorate",
+     "out": "*   b56e307 (origin/main, origin/HEAD) Merge pull request #1 from feature/welcome\n|\\\n| * 217b00d (HEAD -> feature/welcome, origin/feature/welcome) Add welcome line\n|/\n* 069c509 (main) Add hello.txt"
+    }
+   ],
+   "4": [
+    {
+     "cmd": "git switch main",
+     "out": "Switched to branch 'main'\nYour branch is behind 'origin/main' by 2 commits, and can be fast-forwarded.\n  (use \"git pull\" to update your local branch)"
+    },
+    {
+     "cmd": "git pull",
+     "out": "Updating 069c509..b56e307\nFast-forward\n hello.txt | 1 +\n 1 file changed, 1 insertion(+)"
+    },
+    {
+     "cmd": "git branch -d feature/welcome",
+     "out": "Deleted branch feature/welcome (was 217b00d)."
+    },
+    {
+     "cmd": "git push origin --delete feature/welcome",
+     "out": "To /home/you/remote/hello.git\n - [deleted]         feature/welcome"
+    },
+    {
+     "cmd": "git fetch --prune",
+     "out": ""
+    },
+    {
+     "cmd": "git branch -a",
+     "out": "* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/main"
+    }
+   ]
+  }
+ },
+ "states": {
+  "hello-first-commit": {
+   "0": {
+    "branch": "",
+    "hash": "",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [],
+    "local": [],
+    "norepo": true,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "",
+    "status": [
+     "?? hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [],
+    "local": [],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "",
+    "status": [
+     "A  hello.txt"
+    ],
+    "staged": [
+     "A\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "5": {
+    "branch": "main",
+    "hash": "1552f3b",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 1552f3b (HEAD -> main) Add welcome line",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "6": {
+    "branch": "main",
+    "hash": "1552f3b",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 1552f3b (HEAD -> main) Add welcome line",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-remote-push": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [],
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "4": {
+    "branch": "main",
+    "hash": "9018c43",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9018c43 (HEAD -> main, origin/main) Add welcome line",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 9018c43 (HEAD -> main) Add welcome line",
+     "* 652b700 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "Welcome to Git"
+    ]
+   },
+   "5": {
+    "branch": "main",
+    "hash": "9018c43",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9018c43 (HEAD -> main, origin/main) Add welcome line",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 9018c43 (HEAD -> main) Add welcome line",
+     "* 652b700 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "Welcome to Git"
+    ]
+   }
+  },
+  "hello-edit-diff-restore": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Hello India"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [
+     "M  hello.txt"
+    ],
+    "staged": [
+     "M\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Hello India"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Hello India"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Hello India"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "5": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-head-reset": {
+   "0": {
+    "branch": "main",
+    "hash": "e160e24",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* e160e24 (HEAD -> main) Line three",
+     "* 9f75459 Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "9f75459",
+    "status": [
+     "M  hello.txt"
+    ],
+    "staged": [
+     "M\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9f75459 (HEAD -> main) Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "e084910",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* e084910 (HEAD -> main) Line three, again",
+     "* 9f75459 Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "9f75459",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9f75459 (HEAD -> main) Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "9f75459",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9f75459 (HEAD -> main) Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "5": {
+    "branch": "main",
+    "hash": "7ca5661",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* 7ca5661 (HEAD -> main) Line three, final",
+     "* 9f75459 Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "6": {
+    "branch": "main",
+    "hash": "f45d452",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two"
+      ]
+     ]
+    ],
+    "local": [
+     "* f45d452 (HEAD -> main) Revert \"Line three, final\"",
+     "* 7ca5661 Line three, final",
+     "* 9f75459 Line two",
+     "* 9300ecd Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-branch-merge": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "greeting",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> greeting, main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 0ee8742 (greeting) Add Namaste",
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "0ee8742",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste"
+      ]
+     ]
+    ],
+    "local": [
+     "* 0ee8742 (HEAD -> main, greeting) Add Namaste",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "f66b4bc",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste"
+      ]
+     ]
+    ],
+    "local": [
+     "* f66b4bc (HEAD -> main) Add header file",
+     "| * 1b35180 (footer) Add footer",
+     "|/",
+     "* 0ee8742 (greeting) Add Namaste",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "5": {
+    "branch": "main",
+    "hash": "96466f9",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste",
+       "Footer: Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste",
+       "Footer: Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "*   96466f9 (HEAD -> main) Merge footer into main",
+     "|\\",
+     "| * 1b35180 (footer) Add footer",
+     "* | f66b4bc Add header file",
+     "|/",
+     "* 0ee8742 (greeting) Add Namaste",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "6": {
+    "branch": "main",
+    "hash": "96466f9",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste",
+       "Footer: Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "header.txt",
+      [
+       "Header"
+      ]
+     ],
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Namaste",
+       "Footer: Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "*   96466f9 (HEAD -> main) Merge footer into main",
+     "|\\",
+     "| * 1b35180 Add footer",
+     "* | f66b4bc Add header file",
+     "|/",
+     "* 0ee8742 Add Namaste",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-merge-conflict": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "8cc3f59",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, good morning"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, good morning"
+      ]
+     ]
+    ],
+    "local": [
+     "* 8cc3f59 (HEAD -> main) Morning greeting",
+     "| * 9cbdd0b (friendly) Friendly greeting",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "8cc3f59",
+    "status": [
+     "UU hello.txt"
+    ],
+    "staged": [
+     "U\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "<<<<<<< HEAD",
+       "Hello Srinivas, good morning",
+       "=======",
+       "Hello Srinivas, welcome",
+       ">>>>>>> friendly"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      []
+     ]
+    ],
+    "local": [
+     "* 8cc3f59 (HEAD -> main) Morning greeting",
+     "| * 9cbdd0b (friendly) Friendly greeting",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "8cc3f59",
+    "status": [
+     "UU hello.txt"
+    ],
+    "staged": [
+     "U\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "<<<<<<< HEAD",
+       "Hello Srinivas, good morning",
+       "=======",
+       "Hello Srinivas, welcome",
+       ">>>>>>> friendly"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      []
+     ]
+    ],
+    "local": [
+     "* 8cc3f59 (HEAD -> main) Morning greeting",
+     "| * 9cbdd0b (friendly) Friendly greeting",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "8cc3f59",
+    "status": [
+     "M  hello.txt"
+    ],
+    "staged": [
+     "M\thello.txt"
+    ],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, welcome and good morning"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, welcome and good morning"
+      ]
+     ]
+    ],
+    "local": [
+     "* 8cc3f59 (HEAD -> main) Morning greeting",
+     "| * 9cbdd0b (friendly) Friendly greeting",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "5": {
+    "branch": "main",
+    "hash": "ef546d9",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, welcome and good morning"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas, welcome and good morning"
+      ]
+     ]
+    ],
+    "local": [
+     "*   ef546d9 (HEAD -> main) Merge friendly: combine greetings",
+     "|\\",
+     "| * 9cbdd0b (friendly) Friendly greeting",
+     "* | 8cc3f59 Morning greeting",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-rebase": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "b58dff7",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "local": [
+     "* b58dff7 (HEAD -> main) Add notes",
+     "| * d041cde (feature) Feature: add line",
+     "|/",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "feature",
+    "hash": "899914d",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "local": [
+     "* 899914d (HEAD -> feature) Feature: add line",
+     "* b58dff7 (main) Add notes",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "899914d",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "local": [
+     "* 899914d (HEAD -> main, feature) Feature: add line",
+     "* b58dff7 Add notes",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "2203494",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line",
+       "wip one",
+       "wip two"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Feature line",
+       "wip one",
+       "wip two"
+      ]
+     ],
+     [
+      "notes.txt",
+      [
+       "Notes"
+      ]
+     ]
+    ],
+    "local": [
+     "* 2203494 (HEAD -> main) wip: draft",
+     "* 899914d (feature) Feature: add line",
+     "* b58dff7 Add notes",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-fetch-pull-team": {
+   "0": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "1": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 066d247 (HEAD -> main) Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "From the teammate"
+    ]
+   },
+   "2": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 066d247 (origin/main, origin/HEAD) Teammate line",
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 066d247 (HEAD -> main) Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "From the teammate"
+    ]
+   },
+   "3": {
+    "branch": "main",
+    "hash": "066d247",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate"
+      ]
+     ]
+    ],
+    "local": [
+     "* 066d247 (HEAD -> main, origin/main, origin/HEAD) Teammate",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 066d247 (HEAD -> main) Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "From the teammate"
+    ]
+   },
+   "4": {
+    "branch": "main",
+    "hash": "4c7d4b2",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate"
+      ]
+     ],
+     [
+      "mine.txt",
+      [
+       "Mine"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate"
+      ]
+     ],
+     [
+      "mine.txt",
+      [
+       "Mine"
+      ]
+     ]
+    ],
+    "local": [
+     "* 4c7d4b2 (HEAD -> main) Add mine.txt",
+     "* 066d247 (origin/main, origin/HEAD) Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* ce737ce (HEAD -> main) Teammate again",
+     "* 066d247 Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "From the teammate",
+     "Second teammate line"
+    ]
+   },
+   "5": {
+    "branch": "main",
+    "hash": "ed867f1",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate",
+       "Second teammate line"
+      ]
+     ],
+     [
+      "mine.txt",
+      [
+       "Mine"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "From the teammate",
+       "Second teammate line"
+      ]
+     ],
+     [
+      "mine.txt",
+      [
+       "Mine"
+      ]
+     ]
+    ],
+    "local": [
+     "* ed867f1 (HEAD -> main, origin/main, origin/HEAD) Add mine.",
+     "* ce737ce Teammate again",
+     "* 066d247 Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* ed867f1 (HEAD -> main) Add mine.txt",
+     "* ce737ce Teammate again",
+     "* 066d247 Teammate line",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "From the teammate",
+     "Second teammate line"
+    ]
+   }
+  },
+  "hello-stash-tags": {
+   "0": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "1": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "2": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "3": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [
+     " M hello.txt"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "4": {
+    "branch": "main",
+    "hash": "e80a057",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "local": [
+     "* e80a057 (HEAD -> main, tag: v1.0) Add idea line",
+     "* 069c509 (origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "5": {
+    "branch": "main",
+    "hash": "e80a057",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Unfinished idea"
+      ]
+     ]
+    ],
+    "local": [
+     "* e80a057 (HEAD -> main, tag: v1.0) Add idea line",
+     "* 069c509 (origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* e80a057 (tag: v1.0) Add idea line",
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   }
+  },
+  "hello-detached-head": {
+   "0": {
+    "branch": "main",
+    "hash": "9c96e93",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9c96e93 (HEAD -> main) Line three",
+     "* 460e98e Line two",
+     "* ac787ce Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "(detached)",
+    "hash": "ac787ce",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9c96e93 (main) Line three",
+     "* 460e98e Line two",
+     "* ac787ce (HEAD) Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "(detached)",
+    "hash": "dc5a763",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Side idea"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Side idea"
+      ]
+     ]
+    ],
+    "local": [
+     "* dc5a763 (HEAD) Side idea",
+     "| * 9c96e93 (main) Line three",
+     "| * 460e98e Line two",
+     "|/",
+     "* ac787ce Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "9c96e93",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* 9c96e93 (HEAD -> main) Line three",
+     "* 460e98e Line two",
+     "* ac787ce Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "9c96e93",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Line two",
+       "Line three"
+      ]
+     ]
+    ],
+    "local": [
+     "* dc5a763 (rescue) Side idea",
+     "| * 9c96e93 (HEAD -> main) Line three",
+     "| * 460e98e Line two",
+     "|/",
+     "* ac787ce Line one"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-move-rename-delete": {
+   "0": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "1": {
+    "branch": "main",
+    "hash": "652b700",
+    "status": [
+     "R  hello.txt -> greeting.txt"
+    ],
+    "staged": [
+     "R100\thello.txt\tgreeting.txt"
+    ],
+    "working": [
+     [
+      "greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 652b700 (HEAD -> main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "2": {
+    "branch": "main",
+    "hash": "f74b6c0",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* f74b6c0 (HEAD -> main) Rename hello.txt to greeting.txt",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "3": {
+    "branch": "main",
+    "hash": "055fb82",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "docs/greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "docs/greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 055fb82 (HEAD -> main) Move greeting into docs",
+     "* f74b6c0 Rename hello.txt to greeting.txt",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   },
+   "4": {
+    "branch": "main",
+    "hash": "838fe0c",
+    "status": [
+     "?? docs/"
+    ],
+    "staged": [],
+    "working": [
+     [
+      "docs/greeting.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [],
+    "local": [
+     "* 838fe0c (HEAD -> main) Remove greeting",
+     "* 055fb82 Move greeting into docs",
+     "* f74b6c0 Rename hello.txt to greeting.txt",
+     "* 652b700 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": null,
+    "remoteFile": []
+   }
+  },
+  "hello-pr-flow": {
+   "0": {
+    "branch": "main",
+    "hash": "069c509",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas"
+      ]
+     ]
+    ],
+    "local": [
+     "* 069c509 (HEAD -> main, origin/main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "1": {
+    "branch": "feature/welcome",
+    "hash": "217b00d",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 217b00d (HEAD -> feature/welcome) Add welcome line",
+     "* 069c509 (origin/main, main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "2": {
+    "branch": "feature/welcome",
+    "hash": "217b00d",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "* 217b00d (HEAD -> feature/welcome, origin/feature/welcome)",
+     "* 069c509 (origin/main, main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "* 217b00d (feature/welcome) Add welcome line",
+     "* 069c509 (HEAD -> main) Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas"
+    ]
+   },
+   "3": {
+    "branch": "feature/welcome",
+    "hash": "217b00d",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "*   b56e307 (origin/main, origin/HEAD) Merge pull request #1",
+     "|\\",
+     "| * 217b00d (HEAD -> feature/welcome, origin/feature/welcome",
+     "|/",
+     "* 069c509 (main) Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "*   b56e307 (HEAD -> main) Merge pull request #1 from featur",
+     "|\\",
+     "| * 217b00d (feature/welcome) Add welcome line",
+     "|/",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "Welcome to Git"
+    ]
+   },
+   "4": {
+    "branch": "main",
+    "hash": "b56e307",
+    "status": [],
+    "staged": [],
+    "working": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "staging": [
+     [
+      "hello.txt",
+      [
+       "Hello Srinivas",
+       "Welcome to Git"
+      ]
+     ]
+    ],
+    "local": [
+     "*   b56e307 (HEAD -> main, origin/main, origin/HEAD) Merge p",
+     "|\\",
+     "| * 217b00d Add welcome line",
+     "|/",
+     "* 069c509 Add hello.txt"
+    ],
+    "norepo": false,
+    "remote": [
+     "*   b56e307 (HEAD -> main) Merge pull request #1 from featur",
+     "|\\",
+     "| * 217b00d Add welcome line",
+     "|/",
+     "* 069c509 Add hello.txt"
+    ],
+    "remoteFile": [
+     "Hello Srinivas",
+     "Welcome to Git"
+    ]
+   }
+  }
+ }
+}

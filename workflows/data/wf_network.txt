@@ -1,0 +1,672 @@
+@topic network | Networking | #4F46E5 | network | Ping, ping-pong, IP addressing, DNS, HTTP, TCP, routing, NAT, firewalls, TLS, VPC design and a troubleshooting method.
+
+= net-ping | Ping: echo request and reply | 1 | bolt | What ping really sends, how to read its output, how to ping in layers and what to do when it fails.
+> What ping does | bolt
+text: ping sends a small ICMP echo request to another machine. If that machine is up and allows it, it sends back an echo reply. The time between the two is the round-trip time (RTT). It tests two things at once: can I reach it, and how long does the round trip take.
+viz: You>Server:ICMP echo request ; Server>You:ICMP echo reply
+> Send four pings | play
+text: -c 4 sends four requests and then stops. Without -c, Linux and macOS ping forever until you press Ctrl+C.
+cmd: ping -c 4 8.8.8.8
+out: PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.\n64 bytes from 8.8.8.8: icmp_seq=1 ttl=117 time=12.4 ms\n64 bytes from 8.8.8.8: icmp_seq=2 ttl=117 time=11.9 ms\n64 bytes from 8.8.8.8: icmp_seq=3 ttl=117 time=12.1 ms\n64 bytes from 8.8.8.8: icmp_seq=4 ttl=117 time=12.0 ms\n\n--- 8.8.8.8 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3004ms\nrtt min/avg/max/mdev = 11.9/12.1/12.4/0.2 ms
+> Read the numbers | eye
+text: icmp_seq counts the requests. ttl is the remaining hop limit: each router subtracts one, which hints at distance. time is the round trip in milliseconds. The summary shows packet loss, which should be 0%, and the min, average and maximum RTT. Large differences between min and max (jitter) mean an unstable path.
+> Ping in layers | layers
+text: Work outward. Yourself first (is the network stack working), then your gateway (is the local link working), then an internet address (is routing working), then a name (is DNS working).
+cmd: ping -c 2 127.0.0.1
+cmd: ping -c 2 $(ip route | awk '/default/ {print $3; exit}')
+cmd: ping -c 2 1.1.1.1
+cmd: ping -c 2 example.com
+note: The ip route line is Linux. On macOS use: route -n get default | awk '/gateway/ {print $2}'.
+> Useful options | sliders
+text: -i sets the interval, -W sets how long to wait for a reply, and -s sets the payload size. On Linux, -M do forbids fragmentation, which finds the largest size that fits through the path (a quick MTU test).
+cmd: ping -c 3 -i 0.5 example.com
+cmd: ping -c 3 -W 2 192.0.2.1
+cmd: ping -c 3 -M do -s 1472 example.com
+note: 1472 bytes of payload plus 28 bytes of headers makes a 1500-byte packet, the usual Ethernet MTU.
+> When ping fails | warn
+text: No reply does not always mean the host is down. A firewall may drop ICMP, as many cloud security groups do by default. "Destination Host Unreachable" comes from a router on the way. "Request timeout" means silence. Test the real service instead of ICMP.
+cmd: nc -vz example.com 443
+cmd: curl -sS -o /dev/null -w "%{http_code}\\n" https://example.com
+
+= net-ping-pong | Ping-pong: request and response | 1 | swap | The simplest networking idea: one side sends, the other answers. See it with ICMP, then write your own ping and pong programs.
+> Ping-pong is a conversation | swap
+text: In table tennis you hit the ball and your opponent hits it back. Networks work the same way: a client sends a request (ping) and a server sends a response (pong). The time between your hit and the return is the round-trip time. HTTP, DNS and SSH all follow this request and response pattern.
+viz: Client>Server:ping (request) ; Server>Client:pong (response) ; Client>Server:ping (request) ; Server>Client:pong (response)
+> The same idea in ICMP | bolt
+text: The ping command is exactly this: an echo request out, an echo reply back. Run it and watch the time value, which is one full round trip.
+cmd: ping -c 3 127.0.0.1
+> Write the pong server | edit
+text: This small Python program listens on your own machine (127.0.0.1) on port 5000, waits for a connection and answers every message it receives with "pong". It handles three rounds, then stops.
+cmd: cat > pong_server.py <<'EOF'\nimport socket\ns = socket.socket()\ns.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\ns.bind(("127.0.0.1", 5000))\ns.listen(1)\nprint("server: waiting for a ping on 127.0.0.1:5000")\nconn, addr = s.accept()\nwith conn:\n    for _ in range(3):\n        data = conn.recv(16)\n        print("server: got", data.decode().strip())\n        conn.sendall(b"pong\\n")\nEOF
+> Write the ping client | edit
+text: The client connects, sends "ping", waits for the answer and prints it. It does this three times.
+cmd: cat > ping_client.py <<'EOF'\nimport socket\nc = socket.create_connection(("127.0.0.1", 5000))\nfor _ in range(3):\n    c.sendall(b"ping\\n")\n    print("client: sent ping, got", c.recv(16).decode().strip())\nc.close()\nEOF
+> Run both: two terminals | play
+text: Start the server in terminal A first, then run the client in terminal B. Each ping from the client triggers one pong from the server.
+cmd: python3 pong_server.py
+cmd: python3 ping_client.py
+out: [terminal A]\nserver: waiting for a ping on 127.0.0.1:5000\nserver: got ping\nserver: got ping\nserver: got ping\n\n[terminal B]\nclient: sent ping, got pong\nclient: sent ping, got pong\nclient: sent ping, got pong
+note: If the port is in use, change 5000 to another number in both files.
+> Measure the round trip | gauge
+text: Time each round trip with a high-resolution clock. On loopback it is tiny (well under a millisecond). Over the internet it is the time you saw with ping.
+cmd: cat > ping_timed.py <<'EOF'\nimport socket, time\nc = socket.create_connection(("127.0.0.1", 5000))\nfor i in range(3):\n    t0 = time.perf_counter()\n    c.sendall(b"ping\\n")\n    c.recv(16)\n    print(f"round {i + 1}: {(time.perf_counter() - t0) * 1000:.3f} ms")\nc.close()\nEOF
+cmd: python3 pong_server.py
+cmd: python3 ping_timed.py
+> From ping-pong to real protocols | globe
+text: HTTP is ping-pong with longer messages: a request line and headers out, a status line, headers and a body back. Start a tiny web server and watch one exchange with curl -v.
+cmd: python3 -m http.server 8000 --bind 127.0.0.1
+cmd: curl -sv http://127.0.0.1:8000/ -o /dev/null
+out: > GET / HTTP/1.1\n> Host: 127.0.0.1:8000\n> User-Agent: curl/8.x\n>\n< HTTP/1.0 200 OK\n< Content-type: text/html; charset=utf-8
+
+= net-osi-tcpip | Network layers: OSI and TCP/IP | 1 | layers | The layer model that explains where each tool, device and protocol works.
+> Why layers | layers
+text: Networking is split into layers so each does one job and can change without breaking the others. Your browser does not care whether the cable is copper or Wi-Fi.
+> The seven OSI layers | table
+text: 7 Application (HTTP, DNS, SSH). 6 Presentation (encoding, TLS). 5 Session (conversations). 4 Transport (TCP, UDP, ports). 3 Network (IP, routing). 2 Data link (Ethernet, MAC addresses). 1 Physical (cables, radio, signals). A common memory aid, from layer 7 down: All People Seem To Need Data Processing.
+> The four-layer TCP/IP model | layers
+text: The internet uses a simpler model: Application (OSI 5 to 7), Transport (4), Internet (3) and Link (1 and 2). You will see both names in documentation, so learn how they map.
+> Encapsulation: wrapping data on the way down | package
+text: Your data gets a header at each layer. The application data becomes a TCP segment (with ports), then an IP packet (with addresses), then an Ethernet frame (with MAC addresses). The receiver unwraps in reverse order.
+viz: App data>TCP segment:add ports ; TCP segment>IP packet:add IP addresses ; IP packet>Ethernet frame:add MAC addresses ; Ethernet frame>Wire:send bits
+> One tool per layer | search
+text: Link: ip link and ip neigh. Network: ip addr, ip route, ping. Transport: ss, nc. Application: curl and dig. When something fails, test one layer at a time from the bottom.
+cmd: ip -br link
+cmd: ip -br addr
+cmd: ss -tn | head -n 5
+cmd: curl -sI https://example.com | head -n 1
+> Which device works at which layer | network
+text: A switch forwards frames by MAC address (layer 2). A router forwards packets by IP address (layer 3). A firewall filters by IP and port (layers 3 and 4, or up to 7 for a next-generation firewall). A load balancer works at layer 4 (TCP) or layer 7 (HTTP).
+
+= net-ip-cidr | IP addresses and CIDR | 1 | hash | Read an address and a prefix, calculate masks and sizes, split a network and check membership. The numbers shown were produced with Python's ipaddress module.
+> An IPv4 address | hash
+text: An IPv4 address is 32 bits, written as four numbers from 0 to 255, like 192.168.1.10. Part of it identifies the network and the rest identifies the host on that network.
+> The prefix length (CIDR) | table
+text: 192.168.1.0/24 means the first 24 bits are the network and the last 8 bits are for hosts. A bigger number after the slash means a smaller network. The subnet mask is the same idea written as an address: /24 is 255.255.255.0.
+cmd: python3 -c "import ipaddress as i; n = i.ip_network('192.168.1.0/24'); print(n.netmask, n.num_addresses)"
+out: 255.255.255.0 256
+> Usable hosts | calendar
+text: The first address is the network address and the last is the broadcast address, so a /24 has 256 - 2 = 254 usable hosts. In a /26 there are 64 addresses and 62 usable.
+cmd: python3 -c "import ipaddress as i; n = i.ip_network('192.168.1.0/24'); print(n.num_addresses - 2)"
+out: 254
+note: AWS reserves five addresses in every subnet, not two, so a /24 gives 251 usable addresses there.
+> Split a network | branch
+text: Carve a /24 into four /26 networks. Each has 62 usable hosts.
+cmd: python3 -c "import ipaddress as i; [print(s, s.netmask, s.num_addresses - 2) for s in i.ip_network('192.168.1.0/24').subnets(new_prefix=26)]"
+out: 192.168.1.0/26 255.255.255.192 62\n192.168.1.64/26 255.255.255.192 62\n192.168.1.128/26 255.255.255.192 62\n192.168.1.192/26 255.255.255.192 62
+> Private ranges | lock
+text: Three blocks are reserved for private use and are not routed on the internet: 10.0.0.0/8 (16,777,216 addresses), 172.16.0.0/12 (1,048,576) and 192.168.0.0/16 (65,536). Home and cloud networks use them, with NAT for internet access.
+> Is an address inside a network? | search
+text: Checking membership by hand is error-prone. Let the library do it.
+cmd: python3 -c "import ipaddress as i; print(i.ip_address('192.168.1.130') in i.ip_network('192.168.1.128/26'))"
+out: True
+cmd: python3 -c "import ipaddress as i; print(i.ip_network('10.0.0.0/16').overlaps(i.ip_network('10.0.5.0/24')))"
+out: True
+
+= net-subnet-plan | Project: plan VPC subnets | 3 | table | Design a /16 network into public, application and database subnets across two availability zones, and prove there are no overlaps.
+> Requirements | target
+text: A web application across two availability zones (AZ a and b) with three tiers: public (load balancer), application and database. The database must have no route to the internet. Leave room to grow.
+> Choose the VPC range | cloud
+text: A /16 gives 65,536 addresses, plenty for several tiers. Pick a range that does not overlap with your office network or other VPCs you may connect later, since overlapping ranges cannot be routed together.
+cmd: python3 -c "import ipaddress as i; print(i.ip_network('10.0.0.0/16').num_addresses)"
+out: 65536
+> Carve the subnets | branch
+text: Use /24 subnets (256 addresses each) and leave gaps between tiers so each tier can add more later. Public 10.0.0.0/24 and 10.0.1.0/24. Application 10.0.10.0/24 and 10.0.11.0/24. Database 10.0.20.0/24 and 10.0.21.0/24.
+> Prove the plan with a script | check
+text: Check that every subnet is inside the VPC and none overlap. A paper plan always hides one mistake.
+cmd: python3 - <<'EOF'\nimport ipaddress as ip\nvpc = ip.ip_network('10.0.0.0/16')\nplan = {'public-a': '10.0.0.0/24', 'public-b': '10.0.1.0/24', 'app-a': '10.0.10.0/24', 'app-b': '10.0.11.0/24', 'db-a': '10.0.20.0/24', 'db-b': '10.0.21.0/24'}\nnets = {k: ip.ip_network(v) for k, v in plan.items()}\nprint('all inside the VPC:', all(n.subnet_of(vpc) for n in nets.values()))\nnames = list(nets)\nclash = [(a, b) for i, a in enumerate(names) for b in names[i + 1:] if nets[a].overlaps(nets[b])]\nprint('overlaps:', clash or 'none')\nfor k, n in nets.items():\n    print(k, n, n.num_addresses - 5, 'usable on AWS')\nEOF
+out: all inside the VPC: True\noverlaps: none\npublic-a 10.0.0.0/24 251 usable on AWS\npublic-b 10.0.1.0/24 251 usable on AWS\napp-a 10.0.10.0/24 251 usable on AWS\napp-b 10.0.11.0/24 251 usable on AWS\ndb-a 10.0.20.0/24 251 usable on AWS\ndb-b 10.0.21.0/24 251 usable on AWS
+> Decide the routing for each tier | map
+text: Public subnets route 0.0.0.0/0 to an internet gateway. Application subnets route 0.0.0.0/0 to a NAT gateway in a public subnet (outbound only). Database subnets have no default route at all.
+> Write the plan down | doc
+text: Keep the table in Git next to your infrastructure code so everyone uses the same ranges, and update it before creating a subnet.
+cmd: printf 'name,cidr,az,tier\npublic-a,10.0.0.0/24,a,public\npublic-b,10.0.1.0/24,b,public\napp-a,10.0.10.0/24,a,app\napp-b,10.0.11.0/24,b,app\ndb-a,10.0.20.0/24,a,db\ndb-b,10.0.21.0/24,b,db\n' > subnets.csv
+cmd: column -s, -t subnets.csv
+
+= net-dns | DNS: from name to address | 2 | book | Resolve names with dig, read record types and TTLs, follow the lookup chain and check which resolver you use.
+> What DNS does | book
+text: DNS is the internet's phone book. It turns a name like example.com into an IP address. Your machine asks a resolver, which asks other servers if it does not know the answer, and caches the result for the record's TTL.
+viz: Your PC>Resolver:what is example.com? ; Resolver>Root and TLD servers:ask down the chain ; Resolver>Your PC:203.0.113.10
+> Look up a name | search
+text: dig prints the question, the answer and the query time. +short prints only the answer.
+cmd: dig example.com A
+cmd: dig +short example.com A
+> Record types | table
+text: A holds an IPv4 address, AAAA an IPv6 address, CNAME an alias to another name, MX a mail server, TXT free text (SPF, verification) and NS the name servers for the zone.
+cmd: dig +short example.com AAAA
+cmd: dig +short example.com MX
+cmd: dig +short example.com TXT
+cmd: dig +short example.com NS
+> TTL and caching | clock
+text: Each answer carries a TTL, in seconds, that says how long it may be cached. Ask twice and the second answer shows a smaller TTL. This is why DNS changes can take a while to spread.
+cmd: dig example.com A +noall +answer
+out: example.com.  3600  IN  A  203.0.113.10
+> Ask a specific server | pin
+text: @server sends the query to that server instead of your default. Comparing answers from two servers is the quickest way to find a stale cache.
+cmd: dig @8.8.8.8 example.com A +short
+cmd: dig @1.1.1.1 example.com A +short
+> Follow the whole chain | pipeline
+text: +trace starts at the root servers and follows each delegation down to the answer.
+cmd: dig +trace example.com
+> Which resolver am I using? | gear
+text: On a systemd-resolved system, resolvectl shows the servers and domains per interface. Otherwise read /etc/resolv.conf.
+cmd: resolvectl status | head -n 15
+cmd: cat /etc/resolv.conf
+cmd: resolvectl query example.com
+
+= net-http | HTTP with curl | 2 | globe | Read a request and a response, headers, status codes and methods, and measure where the time goes.
+> A request and a response | swap
+text: A client sends a request line (method and path), headers and sometimes a body. The server answers with a status line, headers and a body.
+viz: Client>Server:GET /index.html ; Server>Client:200 OK + HTML
+> See the whole exchange | eye
+text: -v prints the request lines starting with > and the response lines starting with <. -s hides the progress bar and -o /dev/null hides the body.
+cmd: curl -sv https://example.com -o /dev/null
+> Headers only | doc
+text: -I sends a HEAD request, which asks for headers without the body. It is the quickest health check.
+cmd: curl -sI https://example.com
+> Status codes | table
+text: 2xx success (200 OK, 201 Created). 3xx redirect (301 moved, 302 found). 4xx client error (400 bad request, 401 unauthenticated, 403 forbidden, 404 not found, 429 too many requests). 5xx server error (500, 502 bad gateway, 503 unavailable, 504 gateway timeout).
+cmd: curl -s -o /dev/null -w "%{http_code}\\n" https://example.com
+cmd: curl -s -o /dev/null -w "%{http_code}\\n" https://example.com/does-not-exist
+> Methods and a body | upload
+text: GET reads, POST creates, PUT replaces, PATCH changes part, DELETE removes. -X sets the method, -H adds a header and -d sends a body.
+cmd: curl -s -X POST https://httpbin.org/post -H "Content-Type: application/json" -d '{"name":"alice"}'
+note: httpbin.org is a public test service. Do not send real data to it.
+> Where did the time go? | gauge
+text: curl can print timings. The gaps show DNS time, connection time, TLS time, time to first byte and the total.
+cmd: curl -s -o /dev/null -w "dns:%{time_namelookup} connect:%{time_connect} tls:%{time_appconnect} ttfb:%{time_starttransfer} total:%{time_total}\\n" https://example.com
+> Follow redirects and set a timeout | retry
+text: -L follows redirects. --max-time stops a hanging request, which every script needs.
+cmd: curl -sL --max-time 10 -o /dev/null -w "%{url_effective} %{http_code}\\n" http://example.com
+
+= net-tcp-ports | TCP, ports and listening sockets | 2 | plug | The three-way handshake, what a port is, and how to see and test what is listening.
+> What a port is | plug
+text: An IP address finds the machine and a port finds the program on it. Well-known ports include 22 SSH, 53 DNS, 80 HTTP, 443 HTTPS, 3306 MySQL and 5432 PostgreSQL.
+> The three-way handshake | swap
+text: TCP opens a connection with three messages. SYN: the client asks to connect. SYN-ACK: the server agrees. ACK: the client confirms. Only then does data flow.
+viz: Client>Server:SYN ; Server>Client:SYN-ACK ; Client>Server:ACK ; Client>Server:data
+> What is listening? | search
+text: -t TCP, -u UDP, -l listening, -p the process, -n numbers instead of names. The local address column matters: 127.0.0.1 is reachable only from this machine, 0.0.0.0 from anywhere.
+cmd: sudo ss -tulpn
+out: Netid State  Local Address:Port  Process\ntcp   LISTEN 0.0.0.0:22          users:(("sshd",pid=812,fd=3))\ntcp   LISTEN 127.0.0.1:5432      users:(("postgres",pid=990,fd=6))
+> Test a port from another machine | check
+text: nc -vz tries a connection and reports success or failure without sending data. This is better than ping when ICMP is blocked.
+cmd: nc -vz web1.example.com 443
+cmd: nc -vz -w 3 web1.example.com 8443
+> Connection states | clipboard
+text: ESTABLISHED is a live connection. TIME_WAIT is a recently closed one that lingers briefly. A very large number of CLOSE_WAIT sockets points to an application that does not close its connections. ss -s summarises them.
+cmd: ss -s
+cmd: ss -tan state established | head -n 5
+> Connection refused or timed out? | warn
+text: Refused means the machine answered and nothing listens on that port, or a firewall rejected it. Timed out means silence, usually a firewall dropping packets or no route. They point to different fixes.
+
+= net-traceroute | Traceroute and mtr: follow the path | 2 | pipeline | See each router on the way to a destination, read the output and find where latency or loss starts.
+> How traceroute works | pipeline
+text: Every packet has a TTL that each router lowers by one. A router that lowers it to zero drops the packet and reports back. traceroute sends packets with TTL 1, 2, 3 and so on, so each router in turn reveals itself.
+viz: You>Router 1:TTL=1 ; Router 1>You:time exceeded ; You>Router 2:TTL=2 ; Router 2>You:time exceeded
+> Run it | play
+text: -n skips name lookups, which makes it faster and the output cleaner.
+cmd: traceroute -n example.com
+out: 1  192.168.1.1  1.2 ms\n2  10.20.0.1  8.4 ms\n3  * * *\n4  203.0.113.1  15.9 ms
+> Read the output | eye
+text: Each line is one hop with three timing samples. Stars mean that router did not answer, which is common and usually harmless if later hops answer. Look for where latency jumps and stays high.
+> mtr: traceroute plus ping | chart
+text: mtr repeats the trace and keeps statistics, so loss and jitter per hop become visible. -r makes a report, -w uses wide names and -c sets the cycles.
+cmd: mtr -rwc 10 example.com
+> Other protocols | search
+text: Some networks drop the default UDP probes. Try ICMP (-I) or TCP to a real port (-T), which often passes firewalls.
+cmd: sudo traceroute -I -n example.com
+cmd: sudo traceroute -T -p 443 -n example.com
+
+= net-nat | NAT and private addresses | 2 | swap | How many private machines share one public address, and how port forwarding lets the outside reach in.
+> The problem NAT solves | lock
+text: There are not enough public IPv4 addresses for every device. Home and cloud networks use private addresses (10.x, 172.16-31.x, 192.168.x), which cannot be routed on the internet. NAT rewrites addresses at the border so private machines can still reach the internet.
+> Source NAT: going out | upload
+text: A private machine sends a packet. The router replaces its source address with the router's public address and remembers the mapping. The reply comes back to the router, which translates it back.
+viz: 10.0.1.5>NAT router:to 93.184.216.34 ; NAT router>Internet:from 203.0.113.7 (rewritten) ; Internet>NAT router:reply to 203.0.113.7 ; NAT router>10.0.1.5:reply (translated back)
+> See your public address | globe
+text: The address the internet sees is the router's, not your machine's.
+cmd: ip -4 addr show scope global
+cmd: curl -s https://checkip.amazonaws.com
+> Destination NAT: coming in | download
+text: Port forwarding sends traffic arriving at the public address and a chosen port to one private machine. Without a rule, outside traffic cannot start a connection to your private hosts, which is a useful side effect.
+> Look at NAT rules on a Linux router | search
+text: Masquerade is source NAT for addresses that change. IP forwarding must be on for the host to act as a router.
+cmd: sysctl net.ipv4.ip_forward
+cmd: sudo iptables -t nat -L -n -v
+cmd: sudo nft list table ip nat
+> NAT in the cloud | cloud
+text: An AWS NAT gateway lets private subnets reach the internet outbound only. An internet gateway gives public subnets two-way access for instances that have public addresses.
+
+= net-dhcp-arp | DHCP and ARP: how a host joins a LAN | 2 | plug | How a new machine gets an address and finds neighbours on its local network.
+> DHCP in four messages | gear
+text: A new machine broadcasts a Discover. A DHCP server answers with an Offer, the machine sends a Request for that offer and the server confirms with an Acknowledgement. Remember it as DORA: Discover, Offer, Request, Acknowledge.
+viz: New PC>DHCP server:Discover (broadcast) ; DHCP server>New PC:Offer 192.168.1.50 ; New PC>DHCP server:Request ; DHCP server>New PC:Acknowledge
+> What DHCP gave you | table
+text: A lease contains an address, a netmask, a default gateway, DNS servers and a lease time.
+cmd: ip -4 addr show
+cmd: ip route show default
+cmd: resolvectl dns
+> ARP: who has this address? | search
+text: To send a frame to 192.168.1.1 your machine needs its MAC address. It broadcasts an ARP request, "who has 192.168.1.1?", and the owner replies with its MAC address. Replies are cached.
+viz: Your PC>Everyone on the LAN:who has 192.168.1.1? ; Router>Your PC:192.168.1.1 is at aa:bb:cc:dd:ee:ff
+> Look at the neighbour table | table
+text: ip neigh shows the cache. REACHABLE means recently confirmed, STALE means old, FAILED means nobody answered.
+cmd: ip neigh
+cmd: arp -a
+> Renew a lease | retry
+text: Releasing and renewing gets a fresh address. Warning: on a remote machine this can drop your SSH session.
+cmd: sudo dhclient -r && sudo dhclient
+cmd: sudo networkctl renew eth0
+risk: 1
+note: Which tool applies depends on whether the system uses dhclient, systemd-networkd or NetworkManager.
+
+= net-routing | Routing tables and the default gateway | 2 | map | Read the routing table, find which route a packet takes and add a temporary route.
+> What a route is | map
+text: A route says "to reach network X, send packets via gateway Y on interface Z". The host picks the most specific matching route (the longest prefix). The default route, 0.0.0.0/0, matches everything else.
+> Show the table | table
+text: Typical output has a default route through the gateway and a connected route for your own subnet.
+cmd: ip route
+out: default via 192.168.1.1 dev eth0 proto dhcp\n192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.10
+> Which route would be used? | search
+text: ip route get asks the kernel to show the exact route and source address for a destination.
+cmd: ip route get 8.8.8.8
+cmd: ip route get 192.168.1.20
+> Add a temporary route | plus
+text: This sends traffic for 10.20.0.0/16 through another router. It disappears at reboot, which makes it safe for testing. A wrong route can cut off your own connection.
+cmd: sudo ip route add 10.20.0.0/16 via 192.168.1.254
+cmd: ip route get 10.20.1.5
+risk: 1
+> Remove it | trash
+text: Delete it again, or reboot.
+cmd: sudo ip route del 10.20.0.0/16
+risk: 1
+> Make routes permanent | save
+text: Add them to your network configuration, not to a startup script. On Ubuntu that is Netplan, on RHEL-family systems NetworkManager.
+cmd: sudo nmcli connection modify "Wired connection 1" +ipv4.routes "10.20.0.0/16 192.168.1.254"
+cmd: sudo nmcli connection up "Wired connection 1"
+
+= net-firewall-rules | Firewall concepts and rules | 3 | firewall | Default deny, stateful tracking, allow rules, and how UFW, iptables and cloud security groups express the same ideas.
+> What a firewall decides | firewall
+text: A firewall inspects each packet or connection and allows or blocks it by source, destination, port and protocol. The safest design is default deny: block everything, then allow only what you need.
+> Stateful and stateless | swap
+text: A stateful firewall remembers connections, so replies to allowed outbound traffic are let in automatically. A stateless one (an AWS network ACL) checks every packet alone, so you must allow both directions. A security group is stateful.
+> Rules are checked in order | listcheck
+text: With iptables and network ACLs the first matching rule wins, so order matters. Put specific rules before general ones and keep a clear default at the end.
+> UFW: the simple way | gear
+text: UFW (Uncomplicated Firewall) is a friendly layer over the kernel firewall. Allow SSH before enabling it or you may lock yourself out of a remote host.
+cmd: sudo ufw default deny incoming
+cmd: sudo ufw default allow outgoing
+cmd: sudo ufw allow OpenSSH
+cmd: sudo ufw allow 443/tcp
+cmd: sudo ufw enable
+cmd: sudo ufw status numbered
+risk: 1
+> Look at the real rules | search
+text: See what is loaded in the kernel. iptables lists chains and counters, nft shows the nftables ruleset.
+cmd: sudo iptables -L -n -v --line-numbers
+cmd: sudo nft list ruleset
+> Test from outside | check
+text: Verify from another machine that allowed ports answer and others do not.
+cmd: nc -vz -w 3 server 443
+cmd: nc -vz -w 3 server 3306
+> Cloud equivalents | cloud
+text: An AWS security group is a stateful allow-list attached to an instance. A network ACL is a stateless rule list on a subnet. A Kubernetes NetworkPolicy limits which Pods may talk to each other.
+
+= net-tls | TLS and certificates | 3 | lock | Inspect a server certificate, check its expiry and issuer and create a self-signed certificate for testing.
+> What TLS provides | lock
+text: TLS gives three things: privacy (traffic is encrypted), integrity (it cannot be altered unnoticed) and authentication (the certificate proves who the server is). HTTPS is HTTP over TLS.
+> The handshake in short | swap
+text: The client says hello and lists what it supports. The server answers with its certificate. The client checks the certificate chain and the name. Both sides agree on keys, then traffic is encrypted.
+viz: Client>Server:ClientHello ; Server>Client:ServerHello + certificate ; Client>Server:verify and key exchange ; Server>Client:finished, encrypted from here
+> Look at a certificate | search
+text: s_client connects and prints the chain. Piping into x509 prints just the useful fields: subject, issuer and validity dates.
+cmd: openssl s_client -connect example.com:443 -servername example.com </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+> Check how long is left | clock
+text: -checkend asks whether the certificate expires within the next N seconds and sets the exit code, which is ideal for monitoring.
+cmd: echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -checkend 2592000
+out: Certificate will not expire
+> Watch it in curl | eye
+text: curl -v shows the protocol version, the cipher and the certificate details during the handshake.
+cmd: curl -sv https://example.com -o /dev/null 2>&1 | grep -E 'TLS|subject|issuer|expire'
+> Create a self-signed certificate for testing | edit
+text: Self-signed certificates are for local tests only because no one trusts them by default. This creates a key and certificate valid for 30 days.
+cmd: openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 30 -subj "/CN=localhost"
+cmd: openssl x509 -in cert.pem -noout -subject -enddate
+> Common failures | warn
+text: "certificate has expired": renew it. "hostname mismatch": the name you used is not in the certificate. "unable to get local issuer certificate": the server did not send the intermediate certificate, or your trust store is out of date.
+
+= net-load-balancing | Load balancing with Nginx | 3 | lb | Spread requests over two backends, see round robin in action and understand health checks.
+> Why a load balancer | lb
+text: One server is a single point of failure and has a limit. A load balancer sits in front of several servers, spreads the requests and stops sending traffic to a server that fails.
+viz: Client>Load balancer:request ; Load balancer>Server A:request 1 ; Load balancer>Server B:request 2
+> Common algorithms | scale
+text: Round robin takes turns. Least connections picks the server with the fewest active requests. IP hash keeps a client on the same server (sticky). Weighted gives stronger servers more traffic.
+> Two backends | server
+text: Start two tiny web servers that identify themselves, on ports 8001 and 8002.
+cmd: mkdir -p /tmp/a /tmp/b && echo "backend A" > /tmp/a/index.html && echo "backend B" > /tmp/b/index.html
+cmd: (cd /tmp/a && python3 -m http.server 8001 --bind 127.0.0.1 &)
+cmd: (cd /tmp/b && python3 -m http.server 8002 --bind 127.0.0.1 &)
+> Configure Nginx | edit
+text: An upstream block lists the servers. proxy_pass sends requests to it. Nginx uses round robin by default.
+cmd: sudo tee /etc/nginx/conf.d/lb.conf > /dev/null <<'EOF'\nupstream app {\n    server 127.0.0.1:8001;\n    server 127.0.0.1:8002;\n}\nserver {\n    listen 8080;\n    location / {\n        proxy_pass http://app;\n    }\n}\nEOF
+cmd: sudo nginx -t && sudo systemctl reload nginx
+> Watch the requests alternate | play
+text: Send several requests and see them answered by A and B in turn.
+cmd: for i in 1 2 3 4; do curl -s http://127.0.0.1:8080/; done
+out: backend A\nbackend B\nbackend A\nbackend B
+> Remove a backend | warn
+text: Stop backend B and keep sending requests. Open source Nginx marks a server failed after real errors (max_fails) and then sends traffic only to the healthy one.
+cmd: pkill -f "http.server 8002"
+cmd: for i in 1 2 3 4; do curl -s http://127.0.0.1:8080/; done
+> Clean up | trash
+text: Stop the test servers and remove the configuration.
+cmd: pkill -f "http.server 800"
+cmd: sudo rm /etc/nginx/conf.d/lb.conf && sudo nginx -t && sudo systemctl reload nginx
+risk: 1
+
+= net-ssh-tunnels | SSH tunnels and jump hosts | 3 | tunnel | Reach a private service through a bastion with local, remote and dynamic forwarding and ProxyJump.
+> Why tunnel | tunnel
+text: A database or admin page that is private (no public address) can still be reached safely through SSH to a host that can see it, usually a bastion. The tunnel carries your traffic inside the encrypted SSH connection.
+> Local forward (-L) | download
+text: Listen on your machine and forward to a target as seen from the SSH server. Here local port 5433 reaches the private database on db.internal:5432 through the bastion.
+cmd: ssh -N -L 5433:db.internal:5432 user@bastion.example.com
+cmd: psql -h 127.0.0.1 -p 5433 -U app appdb
+viz: Your PC>Bastion:SSH tunnel (encrypted) ; Bastion>Private DB:5432
+> Remote forward (-R) | upload
+text: The reverse: listen on the server and forward back to your machine. Useful to show a local development server to a remote host. Be careful about who can reach the listening port.
+cmd: ssh -N -R 9000:localhost:3000 user@server.example.com
+> Dynamic forward (-D): a SOCKS proxy | globe
+text: -D opens a local SOCKS5 proxy that sends any connection through the SSH server. Point a browser or curl at it.
+cmd: ssh -N -D 1080 user@bastion.example.com
+cmd: curl --socks5-hostname 127.0.0.1:1080 https://checkip.amazonaws.com
+> Jump through a bastion with ProxyJump | server
+text: -J connects to the final host through a jump host in one command. The same works for scp and rsync.
+cmd: ssh -J user@bastion.example.com user@10.0.1.20
+cmd: scp -o ProxyJump=user@bastion.example.com file.txt user@10.0.1.20:/tmp/
+> Save it in ~/.ssh/config | save
+text: A config entry turns the long command into ssh app1. Keys never leave your machine with ProxyJump, unlike agent forwarding.
+cmd: cat >> ~/.ssh/config <<'EOF'\nHost bastion\n    HostName bastion.example.com\n    User user\n\nHost app1\n    HostName 10.0.1.20\n    User user\n    ProxyJump bastion\nEOF
+cmd: ssh app1 hostname
+> Security notes | shield
+text: Only forward to hosts you are allowed to reach. Keep forwarded ports bound to 127.0.0.1 (the default). Close tunnels when finished and review who can log in to the bastion.
+
+= net-packet-capture | Packet capture with tcpdump | 3 | eye | Capture a DNS lookup and an HTTP request on your own machine, filter, save to a file and read it back.
+> When and why | eye
+text: A capture shows the real packets, which settles arguments about what the network does. Only capture on systems you own or administer, because packets can contain passwords and personal data.
+risk: 1
+> Capture a few packets | play
+text: -i picks the interface (any for all), -nn skips name and port lookups and -c stops after a count. Needs root.
+cmd: sudo tcpdump -i any -nn -c 10
+> Filter with a primitive | filter
+text: Filters keep the output readable. port 53 shows DNS, host limits to one address and tcp or udp limits the protocol.
+cmd: sudo tcpdump -i any -nn port 53 -c 6
+cmd: sudo tcpdump -i any -nn host 1.1.1.1 and icmp -c 4
+> Generate traffic and watch | search
+text: In a second terminal trigger a lookup and watch the query and the response appear.
+cmd: dig example.com
+out: IP 192.168.1.10.51234 > 192.168.1.1.53: A? example.com.\nIP 192.168.1.1.53 > 192.168.1.10.51234: A 203.0.113.10
+> Save and read a capture | save
+text: -w writes a pcap file you can open in Wireshark. -r reads it back. Add -s 0 on old versions to keep full packets.
+cmd: sudo tcpdump -i any -nn port 443 -c 100 -w web.pcap
+cmd: tcpdump -nn -r web.pcap | head
+> Look at the TCP flags | table
+text: [S] is SYN, [S.] SYN-ACK, [.] ACK, [P.] push data, [F.] FIN and [R] reset. A reset right after a SYN means the port is closed.
+cmd: sudo tcpdump -i any -nn 'tcp[tcpflags] & tcp-syn != 0' -c 6
+
+= net-aws-vpc | Project: build a VPC with the AWS CLI | 4 | cloud | Create a VPC with public and private subnets, an internet gateway, a NAT gateway and route tables, then verify.
+> Plan | target
+text: One VPC (10.0.0.0/16), one public subnet (10.0.0.0/24) with a route to an internet gateway, and one private subnet (10.0.10.0/24) that reaches the internet through a NAT gateway. The same pattern repeats per availability zone for high availability. A NAT gateway costs money while it exists, so delete everything at the end.
+risk: 1
+> Create the VPC | cloud
+text: Capture each ID in a shell variable so the next commands can use it. Replace the region with yours.
+cmd: export AWS_REGION=ap-south-1
+cmd: VPC=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=demo-vpc}]' --query Vpc.VpcId --output text)
+cmd: aws ec2 modify-vpc-attribute --vpc-id $VPC --enable-dns-hostnames
+cmd: echo $VPC
+> Create the subnets | table
+text: One public and one private subnet in the same availability zone.
+cmd: PUB=$(aws ec2 create-subnet --vpc-id $VPC --cidr-block 10.0.0.0/24 --availability-zone ${AWS_REGION}a --query Subnet.SubnetId --output text)
+cmd: PRIV=$(aws ec2 create-subnet --vpc-id $VPC --cidr-block 10.0.10.0/24 --availability-zone ${AWS_REGION}a --query Subnet.SubnetId --output text)
+> Internet gateway and public route | gate
+text: Create the gateway, attach it, then give the public subnet a route to the internet through it.
+cmd: IGW=$(aws ec2 create-internet-gateway --query InternetGateway.InternetGatewayId --output text)
+cmd: aws ec2 attach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC
+cmd: RTB_PUB=$(aws ec2 create-route-table --vpc-id $VPC --query RouteTable.RouteTableId --output text)
+cmd: aws ec2 create-route --route-table-id $RTB_PUB --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW
+cmd: aws ec2 associate-route-table --route-table-id $RTB_PUB --subnet-id $PUB
+> NAT gateway and private route | nat
+text: The NAT gateway lives in the public subnet and uses an Elastic IP. The private route table sends internet traffic to it.
+cmd: EIP=$(aws ec2 allocate-address --domain vpc --query AllocationId --output text)
+cmd: NAT=$(aws ec2 create-nat-gateway --subnet-id $PUB --allocation-id $EIP --query NatGateway.NatGatewayId --output text)
+cmd: aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT
+cmd: RTB_PRIV=$(aws ec2 create-route-table --vpc-id $VPC --query RouteTable.RouteTableId --output text)
+cmd: aws ec2 create-route --route-table-id $RTB_PRIV --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT
+cmd: aws ec2 associate-route-table --route-table-id $RTB_PRIV --subnet-id $PRIV
+> Verify | check
+text: Print the route tables. The public one must have a route to igw-..., and the private one to nat-.... A subnet with no default route has no internet access at all.
+cmd: aws ec2 describe-route-tables --filters Name=vpc-id,Values=$VPC --query 'RouteTables[].{Id:RouteTableId,Routes:Routes[].[DestinationCidrBlock,GatewayId,NatGatewayId]}' --output json
+> Delete everything | trash
+text: Remove in reverse order. Skipping the NAT gateway and Elastic IP keeps charging you.
+cmd: aws ec2 delete-nat-gateway --nat-gateway-id $NAT
+cmd: aws ec2 wait nat-gateway-deleted --nat-gateway-ids $NAT 2>/dev/null; aws ec2 release-address --allocation-id $EIP
+cmd: aws ec2 detach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC && aws ec2 delete-internet-gateway --internet-gateway-id $IGW
+cmd: aws ec2 delete-subnet --subnet-id $PUB; aws ec2 delete-subnet --subnet-id $PRIV
+cmd: aws ec2 delete-route-table --route-table-id $RTB_PUB; aws ec2 delete-route-table --route-table-id $RTB_PRIV
+cmd: aws ec2 delete-vpc --vpc-id $VPC
+risk: 1
+note: Delete the route tables only after their subnet associations are gone. The delete-subnet commands remove the associations.
+
+= net-k8s-network | Kubernetes networking: Pod, Service, DNS, Ingress | 3 | helm | Pod IPs, ClusterIP Services, DNS names, Ingress and a default-deny NetworkPolicy.
+> The model | helm
+text: Every Pod gets its own IP address and can reach every other Pod without NAT. Pod IPs change when Pods are replaced, so a Service gives a stable address and name in front of a set of Pods.
+> Pods and their IPs | cube
+text: Create a small deployment and look at the Pod IPs.
+cmd: kubectl create deployment web --image=nginx:stable --replicas=2
+cmd: kubectl get pods -l app=web -o wide
+> Expose with a Service | link
+text: A ClusterIP Service gets a virtual IP and spreads connections across matching Pods. The selector connects them.
+cmd: kubectl expose deployment web --port=80
+cmd: kubectl get svc web
+cmd: kubectl get endpoints web
+> DNS inside the cluster | book
+text: CoreDNS gives every Service a name: web.default.svc.cluster.local, or just web inside the same namespace. Test it from a temporary Pod.
+cmd: kubectl run tmp --rm -it --image=busybox:1.36 --restart=Never -- nslookup web
+cmd: kubectl run tmp --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- http://web
+> Reach it from outside | globe
+text: A NodePort opens a port on every node, a LoadBalancer asks the cloud for a load balancer and an Ingress routes HTTP by host and path through one entry point (it needs an ingress controller installed).
+cmd: kubectl get svc,ingress -A
+> Limit traffic with a NetworkPolicy | firewall
+text: By default every Pod can talk to every other. A policy that selects all Pods and allows nothing is default deny. Policies only work if your network plugin (CNI) supports them.
+cmd: kubectl apply -f - <<'EOF'\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-ingress\nspec:\n  podSelector: {}\n  policyTypes:\n    - Ingress\nEOF
+cmd: kubectl run tmp --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- -T 3 http://web
+> Clean up | trash
+text: Remove the test objects.
+cmd: kubectl delete networkpolicy default-deny-ingress
+cmd: kubectl delete svc web && kubectl delete deployment web
+risk: 1
+
+= net-troubleshoot-method | A method for network troubleshooting | 2 | search | Work through the layers in order and find the failing one in minutes instead of guessing.
+> Define the problem | target
+text: Write down what fails, from where, to what, since when and what changed. "The site is slow from my laptop but fine from the server" already narrows it a lot.
+> Layer 1 and 2: the link | plug
+text: Is the interface up and does it see its neighbours?
+cmd: ip -br link
+cmd: ip neigh
+> Layer 3: address and gateway | map
+text: Does the machine have the right address, and can it reach its gateway?
+cmd: ip -br addr
+cmd: ip route show default
+cmd: ping -c 2 $(ip route | awk '/default/ {print $3; exit}')
+> Beyond the gateway: routing | globe
+text: Reach an internet address by number. If this works but names fail, jump to DNS.
+cmd: ping -c 2 1.1.1.1
+cmd: traceroute -n 1.1.1.1
+> DNS | book
+text: Resolve the name, then ask a different resolver and compare.
+cmd: dig +short example.com
+cmd: dig @1.1.1.1 +short example.com
+> Layer 4: the port | plug
+text: Can you open a TCP connection to the service?
+cmd: nc -vz -w 3 example.com 443
+> Layer 7: the application | code
+text: Make a real request and read the status and timing.
+cmd: curl -sS -o /dev/null -w "%{http_code} %{time_total}s\\n" https://example.com
+> Decide and record | clipboard
+text: The first layer that fails is where to look. Then check firewalls, security groups and recent changes at that layer. Write down what you found so the next person does not start from zero.
+
+= net-ssh-forwarding | SSH port forwarding: -L, -R and -D | 3 | tunnel | Reach a private service through an SSH host you are authorised to use, in all three directions.
+> What forwarding does | wf-tunnel
+text: An SSH connection can carry other traffic inside it. -L opens a local port that leads to a remote service. -R opens a port on the server that leads back to you. -D makes a local SOCKS proxy.
+cmd: ssh -V
+note: Use forwarding only to systems you own or are explicitly allowed to access, and follow your organisation's policy.
+> Local forward: reach a private database | database
+text: -L 5433:db.internal:5432 listens on your port 5433. Traffic goes through the bastion and on to db.internal port 5432. -N means "no command", -f sends it to the background.
+cmd: ssh -N -f -L 5433:db.internal:5432 ops@bastion.example.com
+cmd: ss -ltn | grep 5433
+cmd: psql -h 127.0.0.1 -p 5433 -U app appdb
+out: $ ss -ltn | grep 5433\nLISTEN 0 128 127.0.0.1:5433 0.0.0.0:*
+> Remote forward: expose a local app | upload
+text: -R 8080:localhost:3000 opens port 8080 on the server and sends it to port 3000 on your laptop. Handy for showing a demo; the server must allow it with GatewayPorts for outside access.
+cmd: ssh -N -R 8080:localhost:3000 ops@demo.example.com
+cmd: ssh ops@demo.example.com 'curl -s localhost:8080 | head -n 3'
+> Dynamic forward: a SOCKS proxy | globe
+text: -D 1080 turns the connection into a SOCKS5 proxy. Point a browser or curl at it and their traffic leaves from the SSH host.
+cmd: ssh -N -f -D 1080 ops@bastion.example.com
+cmd: curl --socks5-hostname 127.0.0.1:1080 -I https://intranet.example.com
+> Save it and stop it | save
+text: Put tunnels in ~/.ssh/config as LocalForward lines so the command is short. Find and stop background tunnels by their command line.
+cmd: printf 'Host db-tunnel\n  HostName bastion.example.com\n  User ops\n  LocalForward 5433 db.internal:5432\n  ExitOnForwardFailure yes\n  ServerAliveInterval 30\n' >> ~/.ssh/config
+cmd: ssh -N -f db-tunnel
+cmd: pkill -f "ssh -N -f db-tunnel"
+
+= net-nmap-basics | Discover hosts and ports with nmap | 2 | search | Scan your own lab network politely: find hosts, open ports and service versions, and save the results.
+> Only scan what you own | shield
+text: Scanning networks without permission can be illegal and triggers alarms. Use your own machines, a lab VM, or scanme.nmap.org, which the nmap project provides for testing.
+cmd: nmap --version
+note: Write down the scope and permission before scanning a company network.
+> Is the host up? | eye
+text: -sn is a ping scan: it checks which addresses answer and does not touch ports. Use it to list a small lab subnet.
+cmd: nmap -sn 192.168.56.0/24
+out: $ nmap -sn 192.168.56.0/24\nNmap scan report for 192.168.56.10\nHost is up (0.00031s latency).\nNmap scan report for 192.168.56.11\nNmap done: 256 IP addresses (2 hosts up) scanned in 2.4 seconds
+> Which ports are open? | plug
+text: By default nmap checks the 1000 most common TCP ports. -p picks ports, -p- checks all 65535. Open means a program accepts connections, closed means nothing listens, filtered means a firewall hides it.
+cmd: nmap 192.168.56.10
+cmd: nmap -p 22,80,443 192.168.56.10
+out: $ nmap 192.168.56.10\nPORT    STATE SERVICE\n22/tcp  open  ssh\n80/tcp  open  http
+> What runs there? | gear
+text: -sV asks the service for its version, so you can compare it with vulnerability advisories. -sC runs a small set of safe default scripts.
+cmd: nmap -sV -p 22,80 192.168.56.10
+out: $ nmap -sV -p 22,80 192.168.56.10\n22/tcp open ssh   OpenSSH 9.6 (protocol 2.0)\n80/tcp open http  nginx 1.24.0
+> Save the report and compare later | save
+text: -oN writes a readable file. Run the same scan after a change and diff the two files to see exactly which ports opened or closed.
+cmd: nmap -oN before.txt -p 1-1024 192.168.56.10
+cmd: nmap -oN after.txt -p 1-1024 192.168.56.10
+cmd: diff before.txt after.txt
+note: Slow it down with -T2 on fragile networks. Aggressive scans can disturb old devices.
+
+= net-wireguard | A WireGuard VPN between two machines | 3 | lock | Generate keys, write both configs, bring the tunnel up and check the handshake.
+> What WireGuard is | lock
+text: WireGuard makes an encrypted tunnel between peers using public keys. Each side has a private key it never shares and the other side's public key. The tunnel appears as a normal network interface.
+cmd: wg --version
+cmd: sudo apt install -y wireguard
+> Create a key pair on each machine | key
+text: wg genkey makes a private key and wg pubkey derives the public key. Restrict file permissions so only root can read the private key.
+cmd: umask 077
+cmd: wg genkey | tee privatekey | wg pubkey > publickey
+cmd: cat publickey
+out: $ cat publickey\nAbCdEf0123456789exampleExamplePublicKey+/=
+risk: 1
+note: Never paste a private key into chat, tickets or Git.
+> Write the two configurations | edit
+text: Server A listens on UDP 51820 and uses 10.8.0.1 inside the tunnel. Server B uses 10.8.0.2 and names A as its peer. AllowedIPs lists which addresses may use that peer.
+cmd: printf '[Interface]\nAddress = 10.8.0.1/24\nListenPort = 51820\nPrivateKey = <A-private-key>\n\n[Peer]\nPublicKey = <B-public-key>\nAllowedIPs = 10.8.0.2/32\n' | sudo tee /etc/wireguard/wg0.conf
+cmd: printf '[Interface]\nAddress = 10.8.0.2/24\nPrivateKey = <B-private-key>\n\n[Peer]\nPublicKey = <A-public-key>\nEndpoint = a.example.com:51820\nAllowedIPs = 10.8.0.1/32\nPersistentKeepalive = 25\n' | sudo tee /etc/wireguard/wg0.conf
+> Bring it up and test | play
+text: wg-quick up reads the file, creates the interface and adds routes. A recent handshake shows that both sides found each other.
+cmd: sudo wg-quick up wg0
+cmd: sudo wg show
+cmd: ping -c 2 10.8.0.1
+out: $ sudo wg show\ninterface: wg0\npeer: AbCd...=\n  endpoint: 203.0.113.7:51820\n  latest handshake: 12 seconds ago\n  transfer: 1.20 KiB received, 1.05 KiB sent
+> Start at boot and open the port | power
+text: Enable the systemd unit and allow UDP 51820 in the firewall of the listening side. To route all traffic through the tunnel set AllowedIPs = 0.0.0.0/0 on the client.
+cmd: sudo systemctl enable --now wg-quick@wg0
+cmd: sudo ufw allow 51820/udp
+cmd: sudo ip route get 10.8.0.1
+
+= net-iptables-nat | NAT and forwarding with iptables | 4 | firewall | Turn a Linux machine into a small router: enable forwarding, masquerade and port-forward.
+> Enable IP forwarding | swap
+text: By default Linux drops packets that are not for itself. Setting net.ipv4.ip_forward=1 lets it route between networks.
+cmd: sysctl net.ipv4.ip_forward
+cmd: sudo sysctl -w net.ipv4.ip_forward=1
+cmd: echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-router.conf
+out: $ sysctl net.ipv4.ip_forward\nnet.ipv4.ip_forward = 0
+> Masquerade private clients | wf-nat-swap
+text: Clients on eth1 (192.168.50.0/24) use private addresses. MASQUERADE rewrites their source to the address of eth0 so replies find the way back. It belongs in the nat table, POSTROUTING chain.
+cmd: sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o eth0 -j MASQUERADE
+cmd: sudo iptables -t nat -L POSTROUTING -n -v
+out: $ sudo iptables -t nat -L POSTROUTING -n -v\nChain POSTROUTING (policy ACCEPT)\n pkts bytes target     prot opt in out  source          destination\n    0     0 MASQUERADE all  --  *  eth0 192.168.50.0/24 0.0.0.0/0
+> Allow forwarding through the filter table | wf-firewall-wall
+text: Forwarded traffic is judged by the FORWARD chain. Allow new connections from the inside, and replies to established ones from outside.
+cmd: sudo iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+cmd: sudo iptables -A FORWARD -i eth0 -o eth1 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+cmd: sudo iptables -L FORWARD -n -v
+> Port forward to an internal server | pin
+text: DNAT rewrites the destination. Traffic arriving on port 8080 of the router goes to 192.168.50.20:80. conntrack remembers the mapping, so replies are rewritten back.
+cmd: sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT --to-destination 192.168.50.20:80
+cmd: sudo conntrack -L 2>/dev/null | head -n 3
+> Save the rules | save
+text: Rules live in memory and vanish at reboot. Save them with your distribution's tool and review before relying on them.
+cmd: sudo iptables-save | sudo tee /etc/iptables/rules.v4
+cmd: sudo iptables -S | head -n 8
+risk: 1
+note: Edit firewalls from a console or with a safety plan. A wrong rule on a remote machine can lock you out.
+
+= net-aws-peering-endpoints | AWS VPC peering and endpoints | 4 | cloud | Connect two VPCs privately and reach S3 without the internet, using the CLI.
+> Two VPCs that must talk | cloud
+text: Peering joins two VPCs so instances reach each other by private IP. Their CIDR ranges must not overlap, and peering is not transitive: A to B and B to C does not give A to C.
+cmd: aws ec2 describe-vpcs --query 'Vpcs[].[VpcId,CidrBlock]' --output text
+out: $ aws ec2 describe-vpcs --query 'Vpcs[].[VpcId,CidrBlock]' --output text\nvpc-0aa111  10.0.0.0/16\nvpc-0bb222  10.1.0.0/16
+> Request and accept the peering | wf-peering
+text: One VPC requests; the owner of the other accepts. In the same account you can do both from the CLI.
+cmd: PCX=$(aws ec2 create-vpc-peering-connection --vpc-id vpc-0aa111 --peer-vpc-id vpc-0bb222 --query VpcPeeringConnection.VpcPeeringConnectionId --output text)
+cmd: aws ec2 accept-vpc-peering-connection --vpc-peering-connection-id $PCX
+cmd: echo $PCX
+> Add routes on both sides | map
+text: A peering connection carries no traffic until each route table has a route to the other CIDR via the pcx id. Forgetting one side is the commonest mistake.
+cmd: aws ec2 create-route --route-table-id rtb-0aa --destination-cidr-block 10.1.0.0/16 --vpc-peering-connection-id $PCX
+cmd: aws ec2 create-route --route-table-id rtb-0bb --destination-cidr-block 10.0.0.0/16 --vpc-peering-connection-id $PCX
+> Allow it in the security groups | shield
+text: Routes alone do not open traffic. The security group on the target must allow the source CIDR or the peer's security group on the right port.
+cmd: aws ec2 authorize-security-group-ingress --group-id sg-0bb --protocol tcp --port 5432 --cidr 10.0.0.0/16
+> A gateway endpoint for S3 | wf-endpoint
+text: A gateway endpoint adds a route so S3 traffic stays on the AWS network, with no NAT gateway cost. Interface endpoints (for other services) use private IPs inside your subnets instead.
+cmd: aws ec2 create-vpc-endpoint --vpc-id vpc-0aa111 --service-name com.amazonaws.ap-south-1.s3 --route-table-ids rtb-0aa
+cmd: aws ec2 describe-vpc-endpoints --query 'VpcEndpoints[].[VpcEndpointId,ServiceName,State]' --output text
+note: Delete test peering connections and endpoints afterwards. For many VPCs consider Transit Gateway.
+
+= net-k8s-networkpolicy | Kubernetes NetworkPolicy: default deny | 4 | firewall | Lock down a namespace, then allow only the traffic each application needs.
+> Everything is open by default | globe
+text: In Kubernetes any pod can reach any other pod. NetworkPolicy changes that, but only if the cluster's network plugin enforces it (Calico, Cilium and others do).
+cmd: kubectl create namespace shop
+cmd: kubectl -n shop run web --image=nginx:1.27 --labels=app=web
+cmd: kubectl -n shop run db --image=nginx:1.27 --labels=app=db
+cmd: kubectl -n shop get pods -o wide
+> Prove the open state | eye
+text: From a temporary pod, call the web pod by its IP. It answers, because nothing restricts it yet.
+cmd: WEB=$(kubectl -n shop get pod web -o jsonpath='{.status.podIP}')
+cmd: kubectl -n shop run probe --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://$WEB
+> Deny all ingress | wf-firewall-wall
+text: An empty podSelector matches every pod in the namespace. With policyTypes Ingress and no rules, nothing is allowed in.
+cmd: printf 'apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny\n  namespace: shop\nspec:\n  podSelector: {}\n  policyTypes: [Ingress]\n' | kubectl apply -f -
+cmd: kubectl -n shop run probe --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://$WEB
+out: $ wget -qO- -T 3 http://10.244.1.7\nwget: download timed out
+> Allow only what is needed | check
+text: Add a second policy. Pods labelled app=web accept traffic from pods labelled role=frontend on port 80. Policies are additive: each one only adds permitted paths.
+cmd: printf 'apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-frontend\n  namespace: shop\nspec:\n  podSelector:\n    matchLabels: {app: web}\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels: {role: frontend}\n      ports:\n        - {protocol: TCP, port: 80}\n' | kubectl apply -f -
+cmd: kubectl -n shop get networkpolicy
+> Test both outcomes | listcheck
+text: A pod with the right label can connect, one without it cannot. Always test the denied case too, not only the allowed one.
+cmd: kubectl -n shop run ok --rm -it --restart=Never --labels=role=frontend --image=busybox:1.36 -- wget -qO- -T 3 http://$WEB
+cmd: kubectl -n shop run no --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://$WEB
+cmd: kubectl delete namespace shop
+note: Remember DNS. If you also deny egress, allow UDP and TCP 53 to kube-dns or names stop resolving.

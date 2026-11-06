@@ -1,0 +1,209 @@
+# Q&A per workflow: situations, pitfalls, next step. Format: "= id", then q:/a: pairs.
+
+= git-first-repo
+q: In which situation do we use this?
+a: Whenever a folder of work needs history: a script, a config set, lesson notes. Run git init once at the project root.
+q: When is it the wrong tool?
+a: For big binaries or secrets. Git stores every version forever, so keep passwords and large media out.
+q: What comes next?
+a: Learn the three areas (git-three-areas), then branching and remotes.
+
+= git-three-areas
+q: In which situation do we use this?
+a: When status output confuses you, or a commit holds the wrong files. Knowing folder, staging and commit tells you where a change is.
+q: What goes wrong without it?
+a: People commit half-finished edits because add copies the file as of that moment. Edit again after add and the new change is not staged.
+q: What comes next?
+a: git-status-diff to read changes, then git-undo-changes to move them between areas.
+
+= git-config-identity
+q: In which situation do we use this?
+a: On every new laptop, server or CI runner before the first commit. Commits carry your name and email permanently.
+q: What goes wrong if skipped?
+a: Commits get a wrong or generated identity, and later fixing it means rewriting history.
+q: What comes next?
+a: Set a global identity, then use includeIf or a per-repo setting for work and personal projects.
+
+= git-status-diff
+q: In which situation do we use this?
+a: Before every add and every commit, to see exactly what will be saved. Make git status a reflex.
+q: Why use diff and not just status?
+a: status lists which files changed; diff shows which lines. Use diff --staged to review what the next commit contains.
+q: What comes next?
+a: If the diff shows a mistake, use git-undo-changes before committing.
+
+= git-undo-changes
+q: In which situation do we use this?
+a: You edited the wrong file, staged too much, or want a file back as it was in the last commit.
+q: What is the risky part?
+a: git restore on a modified file discards your edits with no recovery, because they were never committed.
+q: What comes next?
+a: For committed mistakes, use git-cherry-pick-revert or git-reset-reflog.
+
+= git-gitignore
+q: In which situation do we use this?
+a: At the start of a project: build output, node_modules, logs, .env files and editor folders should never be committed.
+q: Why does a file stay tracked after I ignore it?
+a: .gitignore affects only untracked files. Remove an already tracked file from Git with git rm --cached.
+q: What comes next?
+a: Add a global ignore file for your own editor junk, and use git check-ignore to debug a rule.
+
+= git-branching
+q: In which situation do we use this?
+a: For any change you are not sure about: a feature, an experiment, a fix. main stays clean while you work.
+q: When should a branch be deleted?
+a: After it is merged. Short-lived branches keep history readable and avoid painful merges.
+q: What comes next?
+a: Bring the branch back with git-merge or git-rebase.
+
+= git-merge
+q: In which situation do we use this?
+a: A feature is finished and its history should be preserved in main. A merge commit records where the work joined.
+q: What is a fast-forward merge?
+a: When main has not moved, Git just moves the branch pointer and makes no merge commit. Use --no-ff to force one.
+q: What comes next?
+a: If both branches changed the same lines, follow git-merge-conflict.
+
+= git-merge-conflict
+q: In which situation do we use this?
+a: Two people changed the same lines, or one deleted a file the other edited. Git cannot choose, so you decide.
+q: What goes wrong?
+a: Committing with the <<<<<<< markers still in the file. Search for the markers before git add.
+q: What comes next?
+a: Run your tests, commit the resolution, and turn on rerere in git-aliases-tips to reuse resolutions.
+
+= git-rebase
+q: In which situation do we use this?
+a: Your feature branch is behind main and you want a straight history without merge commits.
+q: When must I not rebase?
+a: Never on commits other people already pulled. Rebase rewrites commit IDs, which breaks their copies.
+q: What comes next?
+a: git-rebase-interactive to squash and reword, or git-reset-reflog if it goes wrong.
+
+= git-remote-push
+q: In which situation do we use this?
+a: To share work or back it up: the first push of a new project, or publishing a branch for review.
+q: What does push -u do?
+a: It links your local branch to the remote one, so later git push and git pull need no arguments.
+q: What comes next?
+a: git-collaborate for the day-to-day loop with teammates.
+
+= git-collaborate
+q: In which situation do we use this?
+a: Several people push to one repository. The daily loop is fetch, review, pull, commit, push.
+q: Why was my push rejected?
+a: Someone pushed first, so your copy is behind. Pull (or pull --rebase), resolve any conflict, then push again.
+q: What comes next?
+a: Never force-push a shared branch. Use git push --force-with-lease only on your own branch.
+
+= git-stash
+q: In which situation do we use this?
+a: You are mid-change and must switch branches, pull, or fix something urgent. Stash parks the work safely.
+q: What does stash not save?
+a: Untracked files unless you add -u. Also check git stash list; stashes pile up and are easy to forget.
+q: What comes next?
+a: For a longer interruption use git-worktree instead of stashing.
+
+= git-tags-releases
+q: In which situation do we use this?
+a: When a version ships. A tag gives a permanent, readable name (v1.2.0) to one exact commit.
+q: Annotated or lightweight tag?
+a: Use annotated (-a) for releases: they store author, date and message. Lightweight tags are only bookmarks.
+q: What comes next?
+a: Push tags explicitly with git push origin v1.2.0; a normal push does not send them.
+
+= git-history-search
+q: In which situation do we use this?
+a: You must answer who changed this line, when a word appeared, or what happened last week.
+q: Which command for which question?
+a: blame for who touched a line, log -S for when text was added or removed, grep to search a past version.
+q: What comes next?
+a: For "which commit broke it", use git-bisect.
+
+= git-amend-cleanup
+q: In which situation do we use this?
+a: You just committed and noticed a typo, a forgotten file or a poor message. Amend fixes the last commit.
+q: When is amend unsafe?
+a: After you pushed. Amend changes the commit ID, so the remote and your teammates would diverge.
+q: What comes next?
+a: For several commits at once use git-rebase-interactive.
+
+= git-cherry-pick-revert
+q: In which situation do we use this?
+a: Cherry-pick copies one fix onto another branch, such as a hotfix to a release. Revert undoes a bad commit safely.
+q: Why revert instead of reset on shared branches?
+a: Revert adds a new commit that cancels the old one, so history stays intact for everyone who pulled.
+q: What comes next?
+a: Use git-reset-reflog for local-only mistakes.
+
+= git-reset-reflog
+q: In which situation do we use this?
+a: A local mistake: a wrong commit, a bad reset or a lost branch. reflog lists where HEAD has been.
+q: Soft, mixed or hard?
+a: soft keeps changes staged, mixed keeps them unstaged, hard throws them away. Check status before using --hard.
+q: What comes next?
+a: Entries expire after about 90 days by default, so recover soon.
+
+= git-feature-workflow
+q: In which situation do we use this?
+a: A team shipping through pull requests: branch, commit, push, review, merge, delete the branch.
+q: What makes it work?
+a: Small branches, clear messages, and updating from main often so merges stay easy.
+q: What comes next?
+a: Add automated checks with git-hooks and CI.
+
+= git-hooks
+q: In which situation do we use this?
+a: To stop mistakes before they reach the server: secrets in a commit, a missing message prefix, failing tests.
+q: Why are hooks not shared automatically?
+a: .git/hooks is not part of the repository. Share them through core.hooksPath or a tool such as pre-commit.
+q: What comes next?
+a: Mirror the same checks in CI, because hooks can be skipped with --no-verify.
+
+= git-bisect
+q: In which situation do we use this?
+a: Something worked last month and is broken now, and you do not know which of many commits did it.
+q: How much work is it?
+a: Binary search: 1,000 commits need about 10 checks. With bisect run a script does all of them.
+q: What comes next?
+a: Always run git bisect reset when you finish, or you stay on a detached HEAD.
+
+= git-worktree
+q: In which situation do we use this?
+a: An urgent fix arrives while you have unfinished work, or you must compare two branches side by side.
+q: Why not just clone twice?
+a: Worktrees share one .git database, so they use less disk and see each other's commits at once.
+q: What comes next?
+a: Remove the extra folder with git worktree remove when done.
+
+= git-rebase-interactive
+q: In which situation do we use this?
+a: Before opening a pull request, to turn "wip" and "fix typo" commits into a few meaningful ones.
+q: What is the safety net?
+a: git rebase --abort during the rebase, and the reflog afterwards.
+q: What comes next?
+a: Only rewrite commits that are still local or on your own branch.
+
+= git-submodules
+q: In which situation do we use this?
+a: A project depends on another repository at an exact version and you want that pinned inside your repo.
+q: What is the common surprise?
+a: A plain clone leaves submodule folders empty. Use clone --recurse-submodules or submodule update --init.
+q: What comes next?
+a: If it hurts, consider a package manager instead; submodules suit code you also change.
+
+= git-sparse-shallow
+q: In which situation do we use this?
+a: CI jobs that only build, or huge repositories where you need one folder or the latest commit.
+q: Shallow or sparse?
+a: Shallow limits history depth; sparse limits which folders are checked out. They can be combined.
+q: What comes next?
+a: Use --filter=blob:none for a partial clone, and Git LFS for large binary files.
+
+= git-aliases-tips
+q: In which situation do we use this?
+a: Once you type the same long command daily. Aliases and a few config settings save hours.
+q: Which settings are worth it?
+a: pull.rebase true, fetch.prune true and rerere.enabled true remove most daily friction.
+q: What comes next?
+a: Keep aliases in your global config so every repository gets them.

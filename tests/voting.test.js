@@ -732,3 +732,46 @@ describe('Live-room cast routing and deferred announcements (2026-11-05 round 2)
     assert.ok(toasts.some((t) => t.includes('2')), 'the announced count is the server tally');
   });
 });
+
+describe('Vote recency protection (2026-11-05 round 3)', () => {
+  test('a server cast bumps updatedAt, so a same-stamp scene sync cannot clobber it', () => {
+    const store = new CollabStore(null);
+    const { scene, page } = sceneWithSticky();
+    const { roomId } = store.createRoom(scene);
+    store.applyRoomOperation(roomId, 'teacher', { type: 'vote:session', active: true, secret: false });
+    const cast = store.applyRoomOperation(roomId, 'viewer', { type: 'vote:cast', clientId: 's', elementId: page.elements[0].id });
+    assert.equal(cast.ok, true, `vote:cast must succeed: ${JSON.stringify(cast)}`);
+    assert.equal(cast.broadcast.votes, 1);
+    const storedStamp = store.rooms.get(roomId).scene.pages[0].elements[0].updatedAt;
+    assert.ok(Number.isFinite(storedStamp), 'vote:cast stamps the target');
+
+    // A teacher scene sync carrying a genuinely stale pre-vote copy (an
+    // in-flight edit from before the cast) must not revert the count.
+    // Backdate explicitly: a same-ms wall clock makes equal stamps, and the
+    // >= merge tie legitimately gives equal stamps to the incoming copy.
+    const staleStamp = storedStamp - 1000;
+    store.applyRoomOperation(roomId, 'teacher', {
+      type: 'scene:sync', clientId: 't',
+      scene: {
+        title: scene.title, activePageId: scene.activePageId,
+        pages: [{ ...page, elements: [{ ...page.elements[0], votes: 0, updatedAt: staleStamp }] }],
+      },
+    });
+    assert.equal(
+      store.rooms.get(roomId).scene.pages[0].elements[0].votes,
+      1,
+      'the newer vote stamp must win the merge'
+    );
+  });
+
+  test('applyRemoteVote bumps the local stamp so the client union keeps the vote', () => {
+    const { scene, page } = sceneWithSticky();
+    const app = { scene, getPage: () => page, requestRender() {}, updateUI() {}, commitChange() {}, dialogs: { showToast() {} } };
+    const voting = initVotingUI(app);
+    const el = page.elements[0];
+    el.updatedAt = 1000;
+    voting.applyRemoteVote(page.id, el.id, 2);
+    assert.ok(el.updatedAt > 1000, 'the local copy is stamped newer than any pre-vote broadcast');
+    assert.equal(el.votes, 2);
+  });
+});

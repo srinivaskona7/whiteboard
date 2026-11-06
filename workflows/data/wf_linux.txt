@@ -1,0 +1,1266 @@
+# Workflow data. Format:
+# @topic id | Name | #color | glyph | tagline
+# = id | Title | level 1-4 | glyph | summary          (optional next line  hosts: A | B)
+# > Step title | glyph
+#   text: / cmd: (repeatable) / out: / note: / risk: 1 / viz: > | label / fx: op ; op
+# In cmd and out, \n is a new line and \\n is a literal backslash-n.
+@topic linux | Linux | #CA8A04 | terminal | Boot, files, services, networking, storage and hardening on a Linux host.
+
+= lnx-first-day | Module 1: Your first day: where am I, what is here, how do I get help | 1 | terminal | Learn the prompt, the folder tree, the manual pages and the five commands you will type every day.
+> Who and where am I? | user
+text: whoami prints your user name, hostname the machine name, pwd the folder you are in. The prompt ends in $ for a normal user and # for root.
+cmd: whoami
+cmd: hostname
+cmd: pwd
+cmd: echo $HOME $SHELL
+out: srinivas\nweb-01\n/home/srinivas\n/home/srinivas /bin/bash
+> The folder tree starts at / | folder
+text: Everything hangs off one root folder, /. Your files live in /home, settings in /etc, programs in /usr, logs and changing data in /var, devices in /dev and temporary files in /tmp.
+cmd: ls /
+cmd: ls /etc | head -n 5
+out: bin  boot  dev  etc  home  lib  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var\nadduser.conf\nalternatives\napparmor\napt\nbash.bashrc
+> Move around | map
+text: cd changes folder. cd with no argument goes home, cd .. goes up one level, cd - goes back to the last folder. . means here and ~ means home.
+cmd: cd /var/log
+cmd: pwd
+cmd: cd ..
+cmd: cd -
+cmd: cd ~
+out: /var/log\n/var\n/var/log
+> Look at what is in a folder | eye
+text: ls lists. -l gives details, -a shows hidden files (names starting with a dot), -h makes sizes readable, -t sorts by time.
+cmd: ls -lah ~
+cmd: ls -lt /var/log | head -n 4
+out: total 28K\ndrwxr-x--- 4 srinivas srinivas 4.0K Nov  4 10:00 .\ndrwxr-xr-x 3 root     root     4.0K Oct  1 09:00 ..\n-rw-r--r-- 1 srinivas srinivas  220 Oct  1 09:00 .bash_logout
+> Get help without the internet | book
+text: man opens the manual, --help prints a short summary, type tells you whether a word is a program, a shell built-in or an alias. In man press / to search and q to quit.
+cmd: man ls | head -n 8
+cmd: ls --help | head -n 4
+cmd: type cd ls
+cmd: apropos "copy files" | head -n 3
+out: cd is a shell builtin\nls is /usr/bin/ls
+> Shortcuts that save hours | bolt
+text: Tab completes names, the Up arrow repeats earlier commands, Ctrl+R searches history, Ctrl+C stops a command, Ctrl+L clears the screen and !! repeats the last command.
+cmd: history | tail -n 5
+cmd: sudo !!
+note: Type the first letters of a name and press Tab twice to see all the choices.
+
+= lnx-hello-files | Module 2: hello.txt: create, view, copy, move, rename, delete | 1 | doc | Follow one file, hello.txt, through the everyday file commands. Each command changes the folder, and ls shows how.
+> Make a folder and a file | edit
+text: mkdir creates a folder (-p makes parents too), echo prints text and > writes it into a file, creating it. The file now holds Hello Srinivas plus an end-of-line character.
+cmd: mkdir -p ~/lab/hello
+cmd: cd ~/lab/hello
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: ls -l
+out: total 4\n-rw-r--r-- 1 srinivas srinivas 15 Nov  4 10:05 hello.txt
+> Read it five ways | eye
+text: cat prints the whole file, head and tail the first or last lines, wc counts lines, words and bytes, less lets you scroll. The file is 15 bytes: 14 characters plus the newline.
+cmd: cat hello.txt
+cmd: head -n 1 hello.txt
+cmd: wc hello.txt
+cmd: cat -A hello.txt
+out: Hello Srinivas\nHello Srinivas\n 1  2 15 hello.txt\nHello Srinivas$
+note: cat -A shows the invisible end-of-line as a $ sign.
+> Add lines without erasing | plus
+text: > overwrites, >> appends. A very common mistake is using > when you meant >>.
+cmd: echo "Welcome to Linux" >> hello.txt
+cmd: cat -n hello.txt
+cmd: echo "oops" > hello.txt && cat hello.txt
+out: 1  Hello Srinivas\n2  Welcome to Linux\noops
+risk: 1
+> Copy it | copy
+text: cp makes a second file with the same content. -i asks before overwriting and -a copies a whole folder keeping all details.
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: cp hello.txt backup.txt
+cmd: cp -i hello.txt backup.txt
+cmd: ls
+out: backup.txt  hello.txt
+> Move and rename | swap
+text: mv both moves and renames: same folder means rename, a different folder means move. There is no separate rename command.
+cmd: mv backup.txt greeting.txt
+cmd: mkdir docs
+cmd: mv greeting.txt docs/
+cmd: ls -R
+out: .:\ndocs  hello.txt\n\n./docs:\ngreeting.txt
+> Delete safely | trash
+text: rm deletes with no recycle bin. -i asks first and -r removes folders. Read the command twice before pressing Enter, especially with *.
+cmd: rm -i docs/greeting.txt
+cmd: rmdir docs
+cmd: ls
+cmd: rm -rf ~/lab
+risk: 1
+note: Never run rm -rf with a variable that might be empty, such as rm -rf $DIR/.
+
+= lnx-hello-perms | Module 3: Who can read hello.txt? Permissions, owner and groups | 1 | lock | Read the ls -l permission string, change it with chmod in letters and numbers, change owner with chown and see what umask does.
+> Read the permission string | eye
+text: -rw-r--r-- has ten characters. The first is the type (- file, d folder). Then three sets of three: owner, group, others, each r (read), w (write), x (execute).
+cmd: mkdir -p ~/lab && cd ~/lab && echo "Hello Srinivas" > hello.txt
+cmd: ls -l hello.txt
+cmd: stat -c '%A %a %U:%G %n' hello.txt
+out: -rw-r--r-- 1 srinivas srinivas 15 Nov  4 10:10 hello.txt\n-rw-r--r-- 644 srinivas:srinivas hello.txt
+> Numbers: r=4 w=2 x=1 | hash
+text: Add the digits per set. rw- is 4+2=6, r-- is 4, so 644. rwx is 7. A secret file should be 600 and a script 755.
+cmd: chmod 600 hello.txt
+cmd: ls -l hello.txt
+cmd: chmod 644 hello.txt
+out: -rw------- 1 srinivas srinivas 15 Nov  4 10:10 hello.txt
+> Letters: add or remove one right | edit
+text: u is owner, g group, o others, a all. + adds, - removes, = sets exactly. This is easier when you want to change just one bit.
+cmd: chmod g+w hello.txt
+cmd: chmod o-r hello.txt
+cmd: chmod a+x hello.txt
+cmd: ls -l hello.txt
+out: -rwxrw---x 1 srinivas srinivas 15 Nov  4 10:10 hello.txt
+> Folders need x to enter | folder
+text: On a folder, r lets you list names, w lets you create and delete inside, x lets you enter it. Without x on the folder you cannot reach files in it even if the file is readable.
+cmd: mkdir private && chmod 700 private
+cmd: ls -ld private
+cmd: chmod 000 private && ls private
+cmd: chmod 700 private
+out: drwx------ 2 srinivas srinivas 4096 Nov  4 10:12 private\nls: cannot open directory 'private': Permission denied
+> Change owner and group | users
+text: chown changes who owns a file and needs root. chgrp changes only the group. Group sharing is the safe way to let a team use a folder.
+cmd: sudo chown root:root hello.txt
+cmd: ls -l hello.txt
+cmd: cat hello.txt
+cmd: sudo chown srinivas:srinivas hello.txt
+out: -rwxrw---x 1 root root 15 Nov  4 10:10 hello.txt\ncat: hello.txt: Permission denied
+> umask: the default for new files | sliders
+text: A new file starts as 666 and a new folder as 777; umask removes bits. umask 022 gives files 644 and folders 755.
+cmd: umask
+cmd: umask 077
+cmd: touch secret.txt && mkdir secretdir && ls -ld secret.txt secretdir
+cmd: umask 022
+out: 0022\n-rw------- 1 srinivas srinivas 0 Nov  4 10:14 secret.txt\ndrwx------ 2 srinivas srinivas 4096 Nov  4 10:14 secretdir
+> Special bits and sudo | shield
+text: A script can run only if it has x. The setuid bit (4xxx) runs a program as its owner, like passwd. Use sudo for one command as root instead of logging in as root.
+cmd: ls -l /usr/bin/passwd
+cmd: sudo -l
+cmd: id
+out: -rwsr-xr-x 1 root root 59976 Nov  4 2024 /usr/bin/passwd\nuid=1000(srinivas) gid=1000(srinivas) groups=1000(srinivas),27(sudo)
+
+= lnx-hello-search | Module 4: Find hello.txt and search inside files | 1 | search | Use find for names, grep for text, and sort, uniq and wc to count, all on a small folder of notes.
+> Make a few files to search | folder
+text: Three small files in two folders give us something to look for.
+cmd: mkdir -p ~/lab/notes/old && cd ~/lab/notes
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: printf 'hello world\nHELLO again\ngoodbye\n' > old/greet.txt
+cmd: printf 'error: disk full\nwarn: slow\nerror: timeout\n' > old/app.log
+cmd: find . -type f | sort
+out: ./hello.txt\n./old/app.log\n./old/greet.txt
+> find by name, type, size and age | search
+text: find walks folders. -name matches names (quote the pattern), -type f is files, -mtime -1 is changed in the last day, -size +1M is bigger than a megabyte.
+cmd: find . -name "*.txt"
+cmd: find . -name "hello*" -type f
+cmd: find . -mmin -60 -type f
+cmd: find / -size +100M -type f 2>/dev/null | head -n 3
+out: ./hello.txt\n./old/greet.txt\n./hello.txt\n./old/app.log\n./old/greet.txt\n./hello.txt
+> grep searches text inside files | search
+text: grep prints lines that match. -i ignores case, -n shows line numbers, -r searches folders, -v inverts, -c counts, -w matches whole words.
+cmd: grep -i hello old/greet.txt
+cmd: grep -rn "error" .
+cmd: grep -c error old/app.log
+cmd: grep -v error old/app.log
+out: hello world\nHELLO again\n./old/app.log:1:error: disk full\n./old/app.log:3:error: timeout\n2\nwarn: slow
+> Count and rank | chart
+text: Put commands together with the pipe. sort orders lines, uniq -c counts neighbours, so sort first. This lists which words start each line of the log and how often.
+cmd: cut -d: -f1 old/app.log | sort | uniq -c | sort -rn
+cmd: wc -l old/*.txt old/*.log
+out:       2 error\n      1 warn\n  3 old/greet.txt\n  3 old/app.log\n  6 total
+> Find and act: -exec and xargs | gear
+text: -exec runs a command on every match. xargs turns lines into arguments and is faster for many files. Test with echo before you delete anything.
+cmd: find . -name "*.log" -exec ls -l {} \;
+cmd: find . -name "*.txt" | xargs grep -l Srinivas
+cmd: find . -name "*.log" -print0 | xargs -0 echo would-delete
+out: -rw-r--r-- 1 srinivas srinivas 44 Nov  4 10:20 ./old/app.log\n./hello.txt\nwould-delete ./old/app.log
+
+= lnx-hello-redirect | Module 5: Streams, redirects and pipes with hello.txt | 2 | pipeline | Understand stdin, stdout and stderr, send each one where you want, and chain commands.
+> Three streams | pipeline
+text: Every program has standard input (0), standard output (1) and standard error (2). Normal results go to 1, error messages to 2. Both show on the screen unless you redirect them.
+cmd: cd ~/lab && echo "Hello Srinivas" > hello.txt
+cmd: cat hello.txt nofile.txt
+out: Hello Srinivas\ncat: nofile.txt: No such file or directory
+> Redirect output | edit
+text: > sends stdout to a file, >> appends, 2> sends only the errors, 2>&1 sends errors to the same place as stdout, &> sends both.
+cmd: cat hello.txt nofile.txt > out.txt 2> err.txt
+cmd: cat out.txt err.txt
+cmd: cat hello.txt nofile.txt &> both.txt
+cmd: cat nofile.txt 2> /dev/null; echo "silent, exit $?"
+out: Hello Srinivas\ncat: nofile.txt: No such file or directory\nsilent, exit 1
+> Feed input from a file | download
+text: < makes a file the standard input. A here-document (<<) writes several lines straight into a command.
+cmd: wc -l < hello.txt
+cmd: cat > multi.txt <<'EOF'\nline one\nline two\nline three\nEOF
+cmd: sort -r < multi.txt
+out: 1\nline two\nline three\nline one
+> Pipe one command into the next | link
+text: | connects stdout of the left command to stdin of the right one. Each tool does one small job. tee also saves what passes through.
+cmd: cat multi.txt | grep line | wc -l
+cmd: ls /etc | head -n 3 | tee first3.txt
+cmd: cat first3.txt | tr a-z A-Z
+out: 3\nadduser.conf\nalternatives\napparmor\nADDUSER.CONF\nALTERNATIVES\nAPPARMOR
+> Exit codes: success, failure and chaining | check
+text: Every command ends with a number: 0 means success. $? shows the last one. && runs the next command only on success, || only on failure, ; always.
+cmd: grep -q Srinivas hello.txt && echo found || echo missing
+cmd: grep -q nobody hello.txt && echo found || echo missing
+cmd: false; echo "exit code $?"
+out: found\nmissing\nexit code 1
+
+= lnx-hello-script | Module 6: Turn hello.txt into a script: variables, if, loops, functions | 2 | code | Write hello.sh, make it executable, read arguments, test conditions, loop over files and set a safe mode.
+> A first script | edit
+text: A script is a text file of commands. The first line, #!/usr/bin/env bash, says which interpreter runs it.
+cmd: cd ~/lab && printf '#!/usr/bin/env bash\necho "Hello Srinivas"\n' > hello.sh
+cmd: cat hello.sh
+cmd: ./hello.sh
+out: bash: ./hello.sh: Permission denied
+> Make it executable and run it | play
+text: chmod +x adds the execute right. ./ means run the file in the current folder. You can also run bash hello.sh without it.
+cmd: chmod +x hello.sh
+cmd: ./hello.sh
+cmd: bash hello.sh
+out: Hello Srinivas\nHello Srinivas
+> Variables and arguments | sliders
+text: NAME=value sets a variable with no spaces around =. $1 is the first argument, $# the count, "$@" all arguments. Always quote variables.
+cmd: cat > hello.sh <<'EOF'\n#!/usr/bin/env bash\nname="${1:-Srinivas}"\necho "Hello $name, you gave $# argument(s)"\nEOF
+cmd: ./hello.sh
+cmd: ./hello.sh India Asia
+out: Hello Srinivas, you gave 0 argument(s)\nHello India, you gave 2 argument(s)
+> Conditions | gate
+text: if [ test ]; then ... fi. Useful tests: -f file exists, -d folder, -z empty text, -eq number equals, == text equals. Use [[ ]] in bash.
+cmd: cat > check.sh <<'EOF'\n#!/usr/bin/env bash\nif [[ -f hello.txt ]]; then\n  echo "hello.txt exists, $(wc -c < hello.txt) bytes"\nelse\n  echo "hello.txt is missing"; exit 1\nfi\nEOF
+cmd: bash check.sh
+out: hello.txt exists, 15 bytes
+> Loops and functions | retry
+text: for repeats over a list, while repeats while a test is true, a function groups steps you reuse.
+cmd: cat > loop.sh <<'EOF'\n#!/usr/bin/env bash\ngreet() { echo "Hello $1"; }\nfor n in Srinivas India Linux; do greet "$n"; done\ni=1; while [[ $i -le 3 ]]; do echo "count $i"; i=$((i+1)); done\nEOF
+cmd: bash loop.sh
+out: Hello Srinivas\nHello India\nHello Linux\ncount 1\ncount 2\ncount 3
+> Safer scripts | shield
+text: set -euo pipefail stops on the first error, on unset variables and on failures inside pipes. Check scripts with shellcheck.
+cmd: printf '#!/usr/bin/env bash\nset -euo pipefail\ncd /nonexistent\necho "never printed"\n' > safe.sh
+cmd: bash safe.sh; echo "exit $?"
+cmd: shellcheck hello.sh
+out: safe.sh: line 3: cd: /nonexistent: No such file or directory\nexit 1
+
+= lnx-hello-remote | Module 7: Send hello.txt to another server: ssh keys, scp and rsync | 2 | upload | Make a key pair, install it on a server, log in without a password, copy hello.txt both ways and keep folders in sync.
+> Create a key pair | key
+text: A key pair has a private key (never share) and a public key (safe to give). ed25519 is short and strong. A passphrase protects the private key if the laptop is stolen.
+cmd: ssh-keygen -t ed25519 -C "srinivas@laptop" -f ~/.ssh/id_ed25519
+cmd: ls -l ~/.ssh
+out: -rw------- 1 srinivas srinivas  411 Nov  4 10:30 id_ed25519\n-rw-r--r-- 1 srinivas srinivas  100 Nov  4 10:30 id_ed25519.pub
+> Install the public key on the server | upload
+text: ssh-copy-id appends your public key to ~/.ssh/authorized_keys on the server. After this you do not need the account password.
+cmd: ssh-copy-id -i ~/.ssh/id_ed25519.pub srinivas@server.example.com
+cmd: ssh srinivas@server.example.com 'hostname; whoami'
+out: Number of key(s) added: 1\nweb-01\nsrinivas
+> Save the connection in ~/.ssh/config | doc
+text: A named host saves typing. After this ssh web works, and so do scp and rsync.
+cmd: cat >> ~/.ssh/config <<'EOF'\nHost web\n  HostName server.example.com\n  User srinivas\n  IdentityFile ~/.ssh/id_ed25519\n  ServerAliveInterval 30\nEOF
+cmd: chmod 600 ~/.ssh/config
+cmd: ssh web 'uptime'
+> Copy hello.txt with scp | copy
+text: scp copies over SSH. The remote path comes after a colon. Copy to the server, then copy something back.
+cmd: scp hello.txt web:/tmp/hello.txt
+cmd: ssh web 'cat /tmp/hello.txt'
+cmd: scp web:/etc/hostname ./remote-hostname.txt
+out: hello.txt                    100%   15     0.6KB/s   00:00\nHello Srinivas
+> Keep a folder in sync with rsync | retry
+text: rsync sends only what changed, so the second run is fast. Use -n for a dry run first. A trailing slash on the source means the contents.
+cmd: rsync -avn ~/lab/ web:/tmp/lab/
+cmd: rsync -av ~/lab/ web:/tmp/lab/
+cmd: rsync -av --delete ~/lab/ web:/tmp/lab/
+risk: 1
+> Harden the server's SSH | shield
+text: Once keys work, turn off password logins and root login on the server. Test the config first and keep a second session open.
+cmd: sudo sshd -t && echo "config ok"
+cmd: sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+cmd: sudo systemctl reload ssh
+out: config ok
+
+= lnx-nftables | Module 8: The modern firewall: nftables and ufw | 3 | firewall | Read the rules, write a small default-deny ruleset with nft, test it safely and make it persistent.
+> nftables replaces iptables | firewall
+text: nftables is the modern packet filter in the kernel. iptables commands on new systems are often a thin layer over it. One tool, nft, handles IPv4, IPv6 and bridges.
+cmd: nft --version
+cmd: sudo nft list ruleset | head -n 15
+out: nftables v1.0.9 (Old Doris #3)\ntable inet filter {\n  chain input {\n    type filter hook input priority filter; policy accept;\n  }\n}
+> The model: tables, chains, rules | layers
+text: A table holds chains, a chain holds rules. A base chain attaches to a hook (input, forward, output) and has a policy. Each rule matches packets and gives a verdict such as accept or drop.
+cmd: sudo nft add table inet lab
+cmd: sudo nft 'add chain inet lab input { type filter hook input priority 0; policy accept; }'
+cmd: sudo nft list table inet lab
+> Write a default-deny ruleset | lock
+text: Keep established connections, allow loopback, allow SSH from one network and web, then drop the rest. Put SSH first so you cannot lock yourself out.
+cmd: sudo nft add rule inet lab input ct state established,related accept
+cmd: sudo nft add rule inet lab input iif lo accept
+cmd: sudo nft add rule inet lab input ip saddr 192.168.1.0/24 tcp dport 22 accept
+cmd: sudo nft add rule inet lab input tcp dport { 80, 443 } accept
+cmd: sudo nft 'add chain inet lab input { policy drop; }'
+risk: 1
+> See counters and test | search
+text: Add counter to a rule to see how many packets matched. Test from another machine, and check the drop with a port you did not open.
+cmd: sudo nft add rule inet lab input counter
+cmd: sudo nft list chain inet lab input
+cmd: nc -zv server.example.com 80 22 8080
+out: Connection to server.example.com 80 port [tcp/http] succeeded!\nConnection to server.example.com 8080 port [tcp/*] timed out
+> Save and load at boot | save
+text: Export the running rules to /etc/nftables.conf and enable the service. flush ruleset at the top makes reloads repeatable.
+cmd: sudo nft list ruleset | sudo tee /etc/nftables.conf
+cmd: sudo nft -c -f /etc/nftables.conf && echo "syntax ok"
+cmd: sudo systemctl enable --now nftables
+> The easy way: ufw | shield
+text: ufw is a simple front end for Ubuntu. Allow SSH before enabling it. Do not mix hand-written nft rules and ufw on the same host.
+cmd: sudo ufw allow OpenSSH
+cmd: sudo ufw allow 80,443/tcp
+cmd: sudo ufw enable
+cmd: sudo ufw status numbered
+out: Status: active\n\n     To                         Action      From\n[ 1] OpenSSH                    ALLOW IN    Anywhere\n[ 2] 80,443/tcp                 ALLOW IN    Anywhere
+
+= lnx-modern-cli | Module 9: Modern command-line tools: jq, yq, rg, fd, bat, fzf | 2 | filter | Read JSON and YAML, search and find faster, view files nicely and pick things interactively.
+> Install the tools | download
+text: All of these are in the standard repositories. The Debian and Ubuntu packages sometimes use different program names (batcat, fdfind).
+cmd: sudo apt install -y jq ripgrep fd-find bat fzf
+cmd: jq --version && rg --version | head -n 1
+out: jq-1.7.1\nripgrep 14.1.0
+> jq: query JSON | database
+text: jq reads JSON and prints parts of it. . is the whole thing, .name a field, .[] every item, select filters, -r prints raw text.
+cmd: echo '{"name":"Srinivas","skills":["linux","git","aws"],"age":30}' > me.json
+cmd: jq . me.json
+cmd: jq -r '.name' me.json
+cmd: jq '.skills[]' me.json
+cmd: jq '.skills | length' me.json
+out: "Srinivas"\n"linux"\n"git"\n"aws"\n3
+> jq on real command output | gear
+text: Many tools can print JSON. Combine them to get a clean answer, like only the running container names or only some AWS fields.
+cmd: aws ec2 describe-instances --output json | jq -r '.Reservations[].Instances[] | [.InstanceId,.State.Name] | @tsv'
+cmd: kubectl get pods -o json | jq -r '.items[] | select(.status.phase!="Running") | .metadata.name'
+> yq: query and edit YAML | doc
+text: yq does for YAML what jq does for JSON, and can edit in place. Handy for Kubernetes manifests and Ansible files.
+cmd: printf 'name: hello\nreplicas: 2\nimage: nginx:1.27\n' > app.yaml
+cmd: yq '.replicas' app.yaml
+cmd: yq -i '.replicas = 5' app.yaml
+cmd: cat app.yaml
+out: 2\nname: hello\nreplicas: 5\nimage: nginx:1.27
+> ripgrep and fd: faster search | search
+text: rg searches file contents and skips .git and ignored files by default. fd finds files by name with simple syntax and colour.
+cmd: rg "Srinivas" ~/lab
+cmd: rg -n --glob '*.sh' "echo" ~/lab
+cmd: fd '\.txt$' ~/lab
+cmd: fd -e log -x wc -l {}
+out: /home/srinivas/lab/hello.txt:1:Hello Srinivas
+> bat, tree and fzf | eye
+text: bat shows a file with line numbers and colour. tree draws folders. fzf gives you a fuzzy picker; press Ctrl+R in the shell for fuzzy history.
+cmd: bat hello.txt
+cmd: tree -L 2 ~/lab
+cmd: ls | fzf
+cmd: history | fzf --tac | head -n 1
+out: ───────┬──────────────────────────────\n       │ File: hello.txt\n───────┼──────────────────────────────\n   1   │ Hello Srinivas\n───────┴──────────────────────────────
+note: On Ubuntu the programs are batcat and fdfind. Add aliases for bat and fd.
+
+= lnx-boot | Linux boot process, end to end | 2 | power | Seven steps from power button to login prompt: firmware, boot loader, kernel, initramfs, systemd and services.
+> Firmware: BIOS or UEFI | chip
+text: Power on starts the firmware. It runs the power-on self-test (POST), initialises basic hardware and picks a boot device. UEFI loads a boot loader from the EFI System Partition (ESP) using entries stored in NVRAM. Legacy BIOS loads the boot sector (MBR) of the first bootable disk.
+cmd: [ -d /sys/firmware/efi ] && echo "UEFI boot" || echo "Legacy BIOS boot"
+cmd: sudo efibootmgr -v
+cmd: findmnt /boot/efi
+out: $ [ -d /sys/firmware/efi ] && echo "UEFI boot" || echo "Legacy BIOS boot"\nUEFI boot\n$ findmnt /boot/efi\nTARGET    SOURCE         FSTYPE OPTIONS\n/boot/efi /dev/nvme0n1p1 vfat   rw,relatime
+note: efibootmgr works only on UEFI systems. Boot order and Secure Boot are changed in the firmware setup screen.
+> Boot loader: GRUB | menu
+text: The firmware starts the boot loader, usually GRUB 2 (often through shim for Secure Boot). GRUB reads its configuration, shows the menu, loads the chosen kernel and the initramfs into memory and passes the kernel command line.
+cmd: cat /proc/cmdline
+cmd: ls -lh /boot
+cmd: sudo grep -E '^\s*(menuentry|linux|initrd)' /boot/grub/grub.cfg | head -n 6
+out: $ cat /proc/cmdline\nBOOT_IMAGE=/boot/vmlinuz-6.8.0-45-generic root=UUID=3f2a-example ro quiet splash
+note: Change settings in /etc/default/grub, then run update-grub (Debian, Ubuntu) or grub2-mkconfig -o /boot/grub2/grub.cfg (RHEL 9). Do not edit grub.cfg by hand.
+> Kernel initialisation | chip
+text: GRUB runs the kernel. It decompresses itself, sets up memory management and the scheduler, detects hardware, starts built-in drivers and mounts the initramfs as a temporary root filesystem. Everything it reports goes to the kernel ring buffer.
+cmd: uname -r
+cmd: sudo dmesg | head -n 12
+cmd: journalctl -k -b --no-pager | head -n 12
+out: $ uname -r\n6.8.0-45-generic\n$ sudo dmesg | head -n 2\n[    0.000000] Linux version 6.8.0-45-generic ...\n[    0.000000] Command line: BOOT_IMAGE=/boot/vmlinuz-6.8.0-45-generic ...
+> initramfs: the temporary root | package
+text: The initramfs is a small compressed archive with just enough drivers and tools to find the real root filesystem: storage drivers, LVM or RAID assembly and disk decryption (LUKS). Once the real root is mounted, control switches to it and the init program starts.
+cmd: lsinitramfs /boot/initrd.img-$(uname -r) | head -n 15
+cmd: sudo lsinitrd /boot/initramfs-$(uname -r).img | head -n 15
+cmd: sudo update-initramfs -u
+note: The first command is for Debian and Ubuntu, the second for RHEL-family (dracut, rebuild with sudo dracut -f). Rebuild after changing storage, encryption or drivers.
+> systemd takes over as PID 1 | gear
+text: The kernel starts /sbin/init, which on most distributions is systemd. As PID 1 it reads unit files, builds a dependency graph and activates the default target, starting units in parallel.
+cmd: ps -p 1 -o pid,comm
+cmd: systemctl get-default
+cmd: systemctl list-dependencies default.target | head -n 15
+out: $ ps -p 1 -o pid,comm\n    PID COMMAND\n      1 systemd\n$ systemctl get-default\ngraphical.target
+> User-space services and login | login
+text: The default target pulls in services such as networking, logging, sshd, cron and a display manager. When the target is reached, getty or the display manager presents the login prompt.
+cmd: systemctl list-units --type=service --state=running | head -n 12
+cmd: systemd-analyze
+cmd: systemd-analyze blame | head -n 5
+out: $ systemd-analyze\nStartup finished in 2.9s (firmware) + 4.1s (loader) + 3.2s (kernel) + 9.8s (userspace) = 20.0s\ngraphical.target reached after 9.7s in userspace
+note: The timings above are an example. Your numbers will differ.
+> Where boot fails: a troubleshooting map | search
+text: Firmware: "No bootable device" means check boot order, the disk and the ESP.\nGRUB: a grub rescue prompt means the config or kernel is missing, so reinstall GRUB.\nKernel: "unable to mount root fs" means a wrong root= or a missing driver in the initramfs.\ninitramfs: dropping to an (initramfs) shell means the root device was not found, so check the UUID, LVM and LUKS.\nsystemd: emergency mode usually means a failed mount in /etc/fstab.\nServices: the system boots but a service is missing, so run systemctl --failed.
+cmd: systemctl --failed
+cmd: journalctl -xb -p err --no-pager | tail -n 20
+
+= lnx-boot-inspect | Inspect your last boot | 1 | search | Find out when the system booted and read what the kernel and systemd reported.
+> When did it boot? | clock
+text: Start with the facts: how long the machine has been up, when it started, and whether there were earlier reboots.
+cmd: uptime -p
+cmd: uptime -s
+cmd: last reboot | head -n 3
+out: $ uptime -p\nup 3 days, 4 hours, 12 minutes\n$ uptime -s\n2026-11-01 07:30:12
+> Kernel warnings and errors | bug
+text: The kernel ring buffer holds hardware and driver messages from this boot. Filter for warnings and errors first.
+cmd: sudo dmesg --level=err,warn | head -n 20
+cmd: journalctl -k -b -p warning --no-pager | head -n 20
+> List boots and read an earlier one | doc
+text: With a persistent journal you can read logs from previous boots, which is how you investigate a crash after the reboot.
+cmd: journalctl --list-boots
+cmd: journalctl -b -1 -p err --no-pager | tail -n 20
+cmd: sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald
+note: The last command makes the journal persistent on systems where it is stored only in memory.
+> Time the boot | gauge
+text: systemd-analyze shows how long each phase took and which units were slowest.
+cmd: systemd-analyze
+cmd: systemd-analyze blame | head -n 8
+cmd: systemd-analyze critical-chain
+
+= lnx-boot-slow | Fix a slow boot | 2 | gauge | Measure, find the slowest units, follow the critical chain and trim what you do not need.
+> Measure first | gauge
+text: Record a baseline so you can prove an improvement later.
+cmd: systemd-analyze time
+> Find the slowest units | search
+text: blame lists units by the time they took to start. A long time does not always mean the boot waited for it.
+cmd: systemd-analyze blame | head -n 10
+> Follow the critical chain | pipeline
+text: critical-chain shows what the boot actually waited for. Focus on units on this chain.
+cmd: systemd-analyze critical-chain
+note: The @ value is when a unit started and the + value is how long it took.
+> Disable a unit you do not need | power
+text: List enabled units, then disable one that is not needed on this machine. Check what depends on it first.
+cmd: systemctl list-unit-files --state=enabled | head -n 20
+cmd: systemctl list-dependencies --reverse <service>
+cmd: sudo systemctl disable --now <service>
+risk: 1
+note: Disable only units you understand. Re-enable with systemctl enable if something breaks.
+> Visualise and compare | chart
+text: Generate a timeline of the boot as an SVG and compare the total with your baseline after the next reboot.
+cmd: systemd-analyze plot > boot.svg
+cmd: systemd-analyze
+
+= lnx-boot-rescue | Rescue a system that will not boot | 3 | wrench | Administrator recovery for a machine you own: GRUB, rescue target, remount and repair.
+> Reach the GRUB menu | menu
+text: Restart the machine. Hold Shift (BIOS) or press Esc (UEFI) while it starts to show the GRUB menu. Highlight the normal entry and press e to edit it. Keys vary by distribution.
+> Boot to the rescue target | wrench
+text: On the line that starts with linux, add systemd.unit=rescue.target at the end, then press Ctrl+X. Use emergency.target if rescue also fails. The change is temporary and is not saved.
+risk: 1
+note: Rescue and emergency modes may ask for the root password, depending on the distribution.
+> Make the root filesystem writable | edit
+text: In emergency mode the root filesystem is usually mounted read-only. Remount it read-write before fixing files.
+cmd: mount -o remount,rw /
+risk: 1
+> Find the cause | search
+text: Read the errors from this boot and check that every line in fstab can be mounted. A missing disk in fstab is a very common cause.
+cmd: journalctl -xb -p err --no-pager | tail -n 30
+cmd: findmnt --verify
+cmd: cat /etc/fstab
+> Fix and reboot | rocket
+text: Correct or comment out the bad entry, or add the nofail option for non-essential disks. Reload systemd and reboot.
+cmd: systemctl daemon-reload
+cmd: systemctl reboot
+risk: 1
+
+= lnx-files-text | Files and text: navigate, create, read | 1 | folder | Start from Hello World: make a folder, create a .txt file and learn what the redirection symbols do.
+> Where am I? | pin
+text: Every shell session has a current directory. pwd prints it, ls lists it and cd changes it.
+cmd: pwd
+cmd: ls -la
+cmd: cd ~
+out: $ pwd\n/home/alice\n$ ls -la\ntotal 24\ndrwxr-x--- 3 alice alice 4096 Nov  4 10:00 .\n-rw-r--r-- 1 alice alice  220 Nov  4 10:00 .bashrc
+> Make a working folder | folder
+text: mkdir -p creates a folder and any parents that are missing, without an error if it already exists.
+cmd: mkdir -p ~/lab/notes
+cmd: cd ~/lab/notes
+cmd: pwd
+> Create hello.txt | edit
+text: echo prints text. The symbol > sends that output into a file instead of the screen, creating the file if it does not exist.
+cmd: echo "Hello World" > hello.txt
+cmd: ls -l hello.txt
+out: $ ls -l hello.txt\n-rw-r--r-- 1 alice alice 12 Nov  4 10:05 hello.txt
+> Read the file and its syntax | eye
+text: A .txt file is plain text: characters grouped in lines, each ended by a newline character. cat prints the file, cat -A shows the hidden end of line as $, and wc -l counts lines.
+cmd: cat hello.txt
+cmd: cat -A hello.txt
+cmd: wc -l hello.txt
+out: $ cat -A hello.txt\nHello World$\n$ wc -l hello.txt\n1 hello.txt
+> Append or overwrite | plus
+text: > replaces the whole file. >> adds to the end. This is the most common way to lose a file by accident, so check which one you typed.
+cmd: echo "Second line" >> hello.txt
+cmd: cat hello.txt
+cmd: echo "Overwritten" > hello.txt
+cmd: cat hello.txt
+note: set -o noclobber stops > from overwriting existing files in the current shell.
+> Copy, move and delete safely | copy
+text: cp copies, mv moves or renames, rm deletes. The -i flag asks before acting.
+cmd: cp hello.txt backup.txt
+cmd: mv backup.txt archive.txt
+cmd: rm -i archive.txt
+
+= lnx-permissions | File permissions workshop | 1 | lock | Read ls -l, change permissions with chmod, set owners, understand umask and share a folder with a group.
+> Read ls -l | table
+text: The first character is the type (- file, d directory). The next nine are three triplets of read, write and execute for the owner, the group and everyone else.
+cmd: ls -l hello.txt
+out: -rw-r--r-- 1 alice alice 12 Nov  4 10:00 hello.txt\n^^^^ type and permissions, then links, owner, group, size, date, name
+> Add execute with symbolic mode | play
+text: A script is not runnable until it has the execute bit. chmod u+x adds execute for the owner only.
+cmd: echo 'echo hi' > run.sh
+cmd: ./run.sh
+cmd: chmod u+x run.sh
+cmd: ./run.sh
+out: $ ./run.sh\nbash: ./run.sh: Permission denied\n$ chmod u+x run.sh\n$ ./run.sh\nhi
+> Numeric mode | hash
+text: Read is 4, write is 2, execute is 1. Add them per triplet: 7 is rwx, 6 is rw-, 5 is r-x, 4 is r--. So 640 is rw-r-----, and 755 is rwxr-xr-x.
+cmd: chmod 640 hello.txt
+cmd: chmod 755 run.sh
+cmd: stat -c '%a %A %U:%G %n' hello.txt run.sh
+out: 640 -rw-r----- alice:alice hello.txt\n755 -rwxr-xr-x alice:alice run.sh
+> Change owner and group | users
+text: chown changes the owner and group. Only root can give a file to another user. The user and group must already exist.
+cmd: sudo chown alice:devs hello.txt
+cmd: ls -l hello.txt
+> Default permissions with umask | sliders
+text: New files start at 666 and new directories at 777, then the umask bits are removed. A umask of 027 gives files 640 and directories 750.
+cmd: umask
+cmd: umask 027
+cmd: touch new.txt && ls -l new.txt
+> Share a folder with setgid | users
+text: The setgid bit on a directory makes new files inherit the directory's group, which is what you want for a team folder.
+cmd: sudo mkdir /srv/shared
+cmd: sudo chgrp devs /srv/shared
+cmd: sudo chmod 2775 /srv/shared
+cmd: ls -ld /srv/shared
+out: drwxrwsr-x 2 root devs 4096 Nov  4 10:20 /srv/shared
+
+= lnx-users-groups | Users and groups | 2 | users | Create users and groups, grant sudo carefully, then lock and remove an account.
+> Who am I? | user
+text: id shows your user ID, primary group and every group you belong to.
+cmd: whoami
+cmd: id
+cmd: groups
+> Create a user | user
+text: On Debian and Ubuntu adduser is interactive and friendly. On RHEL-family systems use useradd, then set a password.
+cmd: sudo adduser alice
+cmd: sudo useradd -m -s /bin/bash alice && sudo passwd alice
+note: Use one of the two commands, depending on your distribution.
+> Create a group and add a member | users
+text: Always use -aG together. Without -a, usermod replaces all of the user's supplementary groups.
+cmd: sudo groupadd devs
+cmd: sudo usermod -aG devs alice
+cmd: id alice
+> Give sudo rights | key
+text: Membership of the sudo group (Debian, Ubuntu) or wheel group (RHEL) grants sudo. Always validate sudoers syntax.
+cmd: sudo usermod -aG sudo alice
+cmd: sudo usermod -aG wheel alice
+cmd: sudo visudo -c
+note: Use sudo on Debian-family and wheel on RHEL-family systems.
+> Lock and remove an account | trash
+text: Lock the password first so you can recover if needed. userdel -r also deletes the home directory.
+cmd: sudo passwd -l alice
+cmd: sudo userdel -r alice
+risk: 1
+
+= lnx-find-search | Find files and search inside them | 1 | search | find by name, size and age, grep for text and combine them with xargs.
+> Find by name | search
+text: find walks a directory tree. Quote patterns so the shell does not expand them.
+cmd: find ~/lab -name "*.txt"
+cmd: find /var/log -type f -name "*.log" -mtime -1 2>/dev/null
+> Find by size and time | clock
+text: Filter by size (+100M is larger than 100 MB) or by modification time (-mmin minutes, -mtime days).
+cmd: find / -xdev -type f -size +100M 2>/dev/null | head
+cmd: find . -type f -mmin -30
+> Search inside files with grep | search
+text: -r searches recursively, -n shows line numbers and -i ignores case. --include limits the files searched.
+cmd: grep -rn "Hello" ~/lab
+cmd: grep -ri --include="*.conf" "listen" /etc/nginx 2>/dev/null
+> Combine find, xargs and locate | pipeline
+text: Use -print0 with xargs -0 so file names with spaces are safe. locate is faster but uses a database that updatedb refreshes.
+cmd: find . -name "*.log" -print0 | xargs -0 grep -l "ERROR"
+cmd: sudo updatedb && locate hosts
+
+= lnx-packages | Software packages: apt and dnf | 1 | package | Refresh, search, install, inspect and remove software on Debian-family and RHEL-family systems.
+> Refresh the package index | retry
+text: Package managers keep a local index of what the repositories offer. Refresh it before installing.
+cmd: sudo apt update
+cmd: sudo dnf makecache
+> Search and inspect | search
+text: Look at a package before installing it.
+cmd: apt search nginx | head
+cmd: apt show nginx
+cmd: dnf info nginx
+> Install and upgrade | download
+text: -y answers yes to the prompt. Upgrade regularly for security fixes.
+cmd: sudo apt install -y nginx
+cmd: sudo dnf install -y nginx
+cmd: sudo apt upgrade -y
+cmd: sudo dnf upgrade -y
+> Which package owns a file | link
+text: Map files back to packages and list what a package installed.
+cmd: dpkg -S /usr/sbin/nginx
+cmd: dpkg -L nginx | head
+cmd: rpm -qf /usr/sbin/nginx
+cmd: rpm -ql nginx | head
+> Remove software | trash
+text: remove keeps configuration files. autoremove deletes dependencies nobody needs any more.
+cmd: sudo apt remove nginx && sudo apt autoremove
+cmd: sudo dnf remove nginx
+
+= lnx-systemd-services | Manage services with systemctl | 1 | gear | Check, start, stop, enable at boot, read logs and find failed units.
+> Check a service | eye
+text: status shows state, recent log lines and the main process. is-active and is-enabled are scriptable.
+cmd: systemctl status nginx --no-pager
+cmd: systemctl is-active nginx
+cmd: systemctl is-enabled nginx
+> Start, stop, restart, reload | play
+text: reload asks the service to re-read its configuration without dropping connections, if it supports that. restart stops and starts it.
+cmd: sudo systemctl start nginx
+cmd: sudo systemctl stop nginx
+cmd: sudo systemctl restart nginx
+cmd: sudo systemctl reload nginx
+> Enable at boot | toggleon
+text: Start now and on every boot with enable --now. disable removes the boot link but does not stop a running service.
+cmd: sudo systemctl enable --now nginx
+cmd: sudo systemctl disable nginx
+> Read the logs | doc
+text: journalctl -u shows the logs of one unit. -f follows new lines.
+cmd: journalctl -u nginx --since "1 hour ago" --no-pager
+cmd: journalctl -u nginx -f
+> Find failed units | warn
+text: List everything that failed since boot, read why, fix it, then clear the failed state.
+cmd: systemctl --failed
+cmd: sudo systemctl reset-failed
+
+= lnx-custom-service | Project: run your own script as a service | 3 | rocket | Write a script, wrap it in a systemd unit, start it, watch it restart after a crash and clean up.
+> Write the script | edit
+text: A tiny script that logs a line every ten seconds. Under systemd, anything it prints goes to the journal.
+cmd: sudo tee /usr/local/bin/hello.sh > /dev/null <<'EOF'\n#!/usr/bin/env bash\nwhile true; do\n  echo "hello from systemd at $(date)"\n  sleep 10\ndone\nEOF
+cmd: sudo chmod 755 /usr/local/bin/hello.sh
+> Write the unit file | doc
+text: [Unit] describes it and its ordering, [Service] says what to run and when to restart, and [Install] says which target enables it at boot.
+cmd: sudo tee /etc/systemd/system/hello.service > /dev/null <<'EOF'\n[Unit]\nDescription=Hello demo service\nAfter=network.target\n\n[Service]\nExecStart=/usr/local/bin/hello.sh\nRestart=on-failure\nDynamicUser=yes\n\n[Install]\nWantedBy=multi-user.target\nEOF
+> Load and start it | play
+text: systemd must re-read unit files after you create or change one.
+cmd: sudo systemctl daemon-reload
+cmd: sudo systemctl enable --now hello.service
+cmd: systemctl status hello.service --no-pager
+> Read logs and test a crash | bug
+text: Kill the process with SIGKILL. Restart=on-failure treats that as a failure and starts it again.
+cmd: journalctl -u hello.service -n 5 --no-pager
+cmd: sudo systemctl kill -s KILL hello.service
+cmd: systemctl status hello.service --no-pager
+> Clean up | trash
+text: Stop and disable the service, remove the files and reload systemd.
+cmd: sudo systemctl disable --now hello.service
+cmd: sudo rm /etc/systemd/system/hello.service /usr/local/bin/hello.sh
+cmd: sudo systemctl daemon-reload
+risk: 1
+
+= lnx-processes | Processes, signals and priority | 2 | gauge | List processes, watch resource use, stop them politely, run jobs in the background and change priority.
+> List processes | table
+text: ps takes a snapshot. pgrep finds process IDs by name.
+cmd: ps aux --sort=-%mem | head -n 6
+cmd: ps -ef | grep [n]ginx
+cmd: pgrep -a nginx
+> Watch live usage | gauge
+text: top updates continuously. Batch mode prints one frame, which is handy in scripts and tickets.
+cmd: top -b -n 1 | head -n 15
+cmd: htop
+> Stop a process properly | stop
+text: kill sends SIGTERM (15) by default, which lets the program clean up. SIGKILL (9) cannot be caught, so use it only as a last resort.
+cmd: sleep 300 &
+cmd: kill -15 %1
+cmd: kill -9 <pid>
+risk: 1
+> Foreground and background jobs | layers
+text: Append & to start a job in the background. Ctrl+Z suspends the foreground job, bg resumes it in the background and fg brings it forward.
+cmd: sleep 300
+cmd: jobs
+cmd: bg %1
+cmd: fg %1
+> Change priority | up
+text: Niceness runs from -20 (highest priority) to 19 (lowest). Only root can lower the number.
+cmd: nice -n 10 sleep 60 &
+cmd: renice -n 5 -p <pid>
+cmd: ps -o pid,ni,comm -p <pid>
+
+= lnx-cron-timers | Schedule jobs with cron and systemd timers | 2 | clock | Read cron syntax, add a job, check its logs, then build the same schedule as a systemd timer.
+> Read the cron syntax | calendar
+text: Five fields then the command: minute, hour, day of month, month, day of week. */5 * * * * means every five minutes. Cron runs with a minimal environment, so use full paths.
+cmd: crontab -l
+> Add a job | plus
+text: Append a line to your crontab without opening an editor.
+cmd: (crontab -l 2>/dev/null; echo "*/5 * * * * date >> $HOME/cron-test.log") | crontab -
+cmd: tail -n 3 ~/cron-test.log
+> Check that cron ran it | doc
+text: The cron daemon logs each run. The unit is cron on Debian and crond on RHEL.
+cmd: journalctl -u cron --since "30 min ago" --no-pager
+cmd: journalctl -u crond --since "30 min ago" --no-pager
+> The same job as a systemd timer | clock
+text: A timer unit triggers a service unit of the same name. Persistent=true runs a missed job after the machine was off.
+cmd: sudo tee /etc/systemd/system/report.service > /dev/null <<'EOF'\n[Service]\nType=oneshot\nExecStart=/usr/bin/date\nEOF
+cmd: sudo tee /etc/systemd/system/report.timer > /dev/null <<'EOF'\n[Timer]\nOnCalendar=*-*-* 02:00:00\nPersistent=true\n\n[Install]\nWantedBy=timers.target\nEOF
+cmd: sudo systemctl daemon-reload && sudo systemctl enable --now report.timer
+cmd: systemctl list-timers --all | head
+> Remove the test jobs | trash
+text: Remove the cron line and disable the timer.
+cmd: crontab -l | grep -v cron-test | crontab -
+cmd: sudo systemctl disable --now report.timer
+
+= lnx-disks-mount | Project: add a new disk | 3 | database | Identify the disk, partition, format, mount and make the mount permanent.
+> Identify the disk | search
+text: List block devices and confirm which one is the new, empty disk. Double-check the name before touching anything: it is often sdb or nvme1n1.
+cmd: lsblk -f
+cmd: sudo fdisk -l /dev/sdb
+> Create a partition table | edit
+text: This writes a new GPT label and one partition covering the disk. Anything already on the disk becomes unreachable.
+cmd: sudo parted /dev/sdb --script mklabel gpt mkpart data ext4 0% 100%
+risk: 1
+> Format the partition | gear
+text: Create an ext4 filesystem with a label. This erases the partition.
+cmd: sudo mkfs.ext4 -L data /dev/sdb1
+risk: 1
+> Mount it | plug
+text: A mount point is just an empty directory. After mounting, the disk's space appears under it.
+cmd: sudo mkdir -p /mnt/data
+cmd: sudo mount /dev/sdb1 /mnt/data
+cmd: df -h /mnt/data
+> Make it permanent | save
+text: Use the UUID so the mount survives device renames. nofail stops a missing disk from blocking boot. Test with findmnt --verify and mount -a before rebooting.
+cmd: sudo blkid /dev/sdb1
+cmd: echo 'UUID=<uuid> /mnt/data ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab
+cmd: sudo findmnt --verify
+cmd: sudo mount -a
+risk: 1
+
+= lnx-lvm-grow | Grow a volume with LVM | 3 | layers | Inspect physical volumes, volume groups and logical volumes, then extend a volume online.
+> Inspect the layers | search
+text: Physical volumes (PV) are disks, volume groups (VG) pool them and logical volumes (LV) are what you mount.
+cmd: sudo pvs
+cmd: sudo vgs
+cmd: sudo lvs
+cmd: df -h /data
+> Add a disk to the group | plus
+text: If the group has no free space, turn a new disk into a PV and add it. Skip this step if free space already exists.
+cmd: sudo pvcreate /dev/sdc
+cmd: sudo vgextend vg0 /dev/sdc
+risk: 1
+> Extend the volume and filesystem | up
+text: lvextend -r grows the filesystem together with the logical volume, in one step and online for ext4 and XFS.
+cmd: sudo lvextend -r -L +5G /dev/vg0/data
+> Verify | check
+text: Confirm the new size at both the LVM and filesystem levels.
+cmd: df -h /data
+cmd: sudo lvs
+> Snapshot before risky changes | snap
+text: A snapshot lets you roll back a change. It needs free space in the volume group. Remove it when you are done.
+cmd: sudo lvcreate -s -n data_snap -L 2G /dev/vg0/data
+cmd: sudo lvremove /dev/vg0/data_snap
+risk: 1
+
+= lnx-net-troubleshoot | Troubleshoot Linux networking | 2 | network | Work from the interface outward: address, route, gateway, internet, DNS and ports.
+> Check the interface and address | plug
+text: Is the interface up and does it have an address?
+cmd: ip -br addr
+cmd: ip -br link
+out: $ ip -br addr\nlo      UNKNOWN 127.0.0.1/8\neth0    UP      192.168.1.10/24
+> Check the route and gateway | map
+text: The default route says where traffic to the internet goes. Ping that gateway.
+cmd: ip route
+cmd: ping -c 2 $(ip route | awk '/default/ {print $3; exit}')
+> Internet by IP, then by name | globe
+text: If the IP works but the name does not, the problem is DNS, not connectivity.
+cmd: ping -c 2 1.1.1.1
+cmd: ping -c 2 example.com
+> Check DNS | search
+text: See which resolver you use and query it directly.
+cmd: resolvectl status | head -n 15
+cmd: dig +short example.com
+note: resolvectl exists on systemd-resolved systems. Otherwise read /etc/resolv.conf.
+> Check listening ports and web access | plug
+text: Which services listen locally, and does an HTTPS request succeed?
+cmd: sudo ss -tulpn | head
+cmd: curl -sS -o /dev/null -w "%{http_code}\\n" https://example.com
+
+= lnx-harden-ssh-firewall | Harden SSH and the firewall | 3 | shield | Key login, safer sshd settings, a default-deny firewall and brute-force protection.
+> Set up key login | key
+text: Generate a key pair on your workstation and install the public key on the server before you disable passwords.
+cmd: ssh-keygen -t ed25519 -C "you@example.com"
+cmd: ssh-copy-id user@server
+cmd: ssh user@server
+> Harden sshd | lock
+text: Put your changes in a drop-in file, test the syntax with sshd -t, then reload. Keep your current session open until you have tested a new one.
+cmd: sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+cmd: sudo tee /etc/ssh/sshd_config.d/10-hardening.conf > /dev/null <<'EOF'\nPermitRootLogin no\nPasswordAuthentication no\nEOF
+cmd: sudo sshd -t && sudo systemctl reload ssh
+risk: 1
+note: The service is called ssh on Debian and Ubuntu and sshd on RHEL-family. Drop-in files need the default Include line in sshd_config.
+> Default-deny firewall with UFW | firewall
+text: Allow SSH first, then enable the firewall. Enabling it without that rule can lock you out of a remote machine.
+cmd: sudo ufw default deny incoming
+cmd: sudo ufw default allow outgoing
+cmd: sudo ufw allow OpenSSH
+cmd: sudo ufw allow 443/tcp
+cmd: sudo ufw enable
+cmd: sudo ufw status verbose
+risk: 1
+> Block brute-force attempts | shield
+text: fail2ban watches logs and bans addresses with repeated failures.
+cmd: sudo apt install -y fail2ban
+cmd: sudo tee /etc/fail2ban/jail.local > /dev/null <<'EOF'\n[sshd]\nenabled = true\nmaxretry = 5\nbantime = 1h\nEOF
+cmd: sudo systemctl enable --now fail2ban
+cmd: sudo fail2ban-client status sshd
+> Verify the result | check
+text: Confirm the effective sshd settings and the firewall rules. Then test a login from a second terminal.
+cmd: sudo sshd -T | grep -E 'permitrootlogin|passwordauthentication'
+cmd: sudo ss -tulpn
+cmd: sudo ufw status numbered
+
+= lnx-logs | Read and manage logs | 2 | doc | journalctl, the classic files in /var/log, login history and log rotation.
+> journalctl basics | doc
+text: The journal collects logs from the kernel, services and login sessions in one place.
+cmd: journalctl -n 20 --no-pager
+cmd: journalctl -p err -b --no-pager | tail -n 20
+> Filter by unit and time | clock
+text: Combine -u with --since and --until to answer when and what.
+cmd: journalctl -u ssh --since today --no-pager
+cmd: journalctl --since "2 hours ago" --until "1 hour ago" --no-pager
+> Follow logs live | eye
+text: -f follows new entries, the same idea as tail -f for classic files.
+cmd: journalctl -f
+cmd: sudo tail -f /var/log/syslog
+note: On RHEL-family systems the general log is /var/log/messages.
+> Classic files and login history | folder
+text: Authentication logs are in auth.log on Debian-family and secure on RHEL-family. last shows logins and lastb shows failed ones.
+cmd: ls /var/log
+cmd: sudo tail -n 20 /var/log/auth.log
+cmd: last -n 5
+cmd: sudo lastb | head
+> Rotation and disk use | retry
+text: logrotate keeps log files from growing forever. Test its configuration in debug mode, which changes nothing. Trim the journal only when you need space.
+cmd: sudo logrotate -d /etc/logrotate.conf
+cmd: journalctl --disk-usage
+cmd: sudo journalctl --vacuum-time=7d
+risk: 1
+
+= lnx-backup-restore | Back up and restore, and prove it works | 2 | copy | tar archive, checksum, rsync mirror, a real restore test and a schedule.
+> Create an archive | package
+text: tar -czf creates a compressed archive. -C changes into a directory first, so the paths inside stay relative.
+cmd: tar -czf ~/backup-$(date +%F).tar.gz -C ~ lab
+cmd: ls -lh ~/backup-*.tar.gz
+> Verify the archive | check
+text: List the contents and store a checksum so you can detect corruption later.
+cmd: tar -tzf ~/backup-$(date +%F).tar.gz | head
+cmd: sha256sum ~/backup-$(date +%F).tar.gz > ~/backup.sha256
+cmd: sha256sum -c ~/backup.sha256
+> Mirror with rsync | swap
+text: Always do a dry run first. A trailing slash on the source means copy the contents. --delete removes files in the destination that no longer exist in the source.
+cmd: rsync -avh --dry-run ~/lab/ /mnt/backup/lab/
+cmd: rsync -avh ~/lab/ /mnt/backup/lab/
+risk: 1
+> Test a restore | flask
+text: A backup you have never restored is only a hope. Restore into a temporary folder and compare.
+cmd: mkdir -p /tmp/restore-test && tar -xzf ~/backup-$(date +%F).tar.gz -C /tmp/restore-test
+cmd: diff -r ~/lab /tmp/restore-test/lab && echo "restore OK"
+> Schedule it | clock
+text: Run it nightly from cron. In a crontab the percent sign is special and must be escaped.
+cmd: (crontab -l 2>/dev/null; echo '0 2 * * * tar -czf $HOME/backup-$(date +\%F).tar.gz -C $HOME lab') | crontab -
+
+= lnx-health-script | Project: a health-check script | 2 | heart | Write a bash script that checks disk, memory and a service, returns a proper exit code and runs from cron.
+> Decide what to check | target
+text: Pick a few signals you can measure with standard tools and a threshold for each. Here: root disk under 90 percent, memory under 90 percent and the SSH service running.
+cmd: df -h /
+cmd: free -m
+cmd: systemctl is-active ssh
+> Write the script | edit
+text: set -euo pipefail makes the script stop on errors and unset variables. The script prints one line per failure and exits non-zero if anything failed.
+cmd: cat > ~/health.sh <<'EOF'\n#!/usr/bin/env bash\nset -euo pipefail\ndisk_pct=$(df --output=pcent / | tail -n 1 | tr -dc '0-9')\nmem_pct=$(free | awk '/Mem:/ {printf "%d", $3/$2*100}')\nfail=0\n[ "$disk_pct" -lt 90 ] || { echo "FAIL disk ${disk_pct}%"; fail=1; }\n[ "$mem_pct" -lt 90 ] || { echo "FAIL memory ${mem_pct}%"; fail=1; }\nsystemctl is-active --quiet sshd || systemctl is-active --quiet ssh || { echo "FAIL ssh service"; fail=1; }\n[ "$fail" -eq 0 ] && echo "OK disk=${disk_pct}% mem=${mem_pct}%"\nexit "$fail"\nEOF
+> Run it and read the exit code | play
+text: Exit code 0 means healthy and anything else means a problem. Other tools, including cron wrappers and monitoring, rely on that.
+cmd: chmod +x ~/health.sh
+cmd: ~/health.sh; echo "exit code: $?"
+out: OK disk=42% mem=57%\nexit code: 0
+> Schedule it | clock
+text: Run it every ten minutes and keep a log.
+cmd: (crontab -l 2>/dev/null; echo '*/10 * * * * $HOME/health.sh >> $HOME/health.log 2>&1') | crontab -
+> Report failures to the journal | bell
+text: logger writes to the system journal with a tag you can search for later.
+cmd: ~/health.sh || logger -t health -p user.err "health check failed"
+cmd: journalctl -t health -n 3 --no-pager
+
+= lnx-text-pipeline | Text pipelines: grep, awk, sed, sort and uniq | 2 | filter | Answer real questions about a log file by chaining small tools with the pipe.
+> Make a sample access log | doc
+text: Five lines are enough to practise. Each line holds an IP address, a status code and a path.
+cmd: printf '10.0.0.5 200 /home\n10.0.0.9 404 /missing\n10.0.0.5 200 /about\n10.0.0.7 500 /api\n10.0.0.9 404 /old\n' > access.log
+cmd: cat access.log
+out: $ cat access.log\n10.0.0.5 200 /home\n10.0.0.9 404 /missing\n10.0.0.5 200 /about\n10.0.0.7 500 /api\n10.0.0.9 404 /old
+> The pipe connects commands | wf-pipe
+text: The pipe | sends the output of the left command into the input of the right one. Each tool does one small job; the chain does the big one.
+cmd: grep " 404 " access.log
+cmd: grep -c " 404 " access.log
+out: $ grep " 404 " access.log\n10.0.0.9 404 /missing\n10.0.0.9 404 /old\n$ grep -c " 404 " access.log\n2
+> awk and cut: pick columns | table
+text: awk splits each line into fields: $1 is the first word, $2 the second. cut does the same with a fixed delimiter. Both print only the columns you ask for.
+cmd: awk '{print $1}' access.log
+cmd: cut -d' ' -f3 access.log
+out: $ awk '{print $1}' access.log\n10.0.0.5\n10.0.0.9\n10.0.0.5\n10.0.0.7\n10.0.0.9
+> sort and uniq: count and rank | chart
+text: uniq only collapses neighbouring duplicates, so sort first. uniq -c prefixes each line with its count and sort -rn ranks the biggest first. This is the classic "top talkers" pipeline.
+cmd: awk '{print $1}' access.log | sort | uniq -c | sort -rn
+out: $ awk '{print $1}' access.log | sort | uniq -c | sort -rn\n      2 10.0.0.9\n      2 10.0.0.5\n      1 10.0.0.7
+> sed: search and replace | edit
+text: sed edits a stream. s/old/new/ replaces the first match on each line, and the g flag replaces all of them. Without -i the file is left untouched.
+cmd: sed 's#/api#/v2/api#' access.log
+cmd: sed -n '2,3p' access.log
+note: On macOS use sed -i '' for in-place edits; on Linux use sed -i.
+> Count with awk and combine tools | gauge
+text: awk can keep totals. This sums how many requests returned each status code. xargs turns lines into arguments for another command.
+cmd: awk '{c[$2]++} END {for (s in c) print s, c[s]}' access.log | sort
+cmd: grep " 500 " access.log | tee errors.log | wc -l
+out: $ awk '{c[$2]++} END {for (s in c) print s, c[s]}' access.log | sort\n200 2\n404 2\n500 1
+
+= lnx-links | Symbolic and hard links explained | 1 | link | See the difference between a shortcut and a second name for the same data, using inode numbers.
+> Create a file | doc
+text: Every file is stored under an inode number, and names point at inodes. ls -i shows that number.
+cmd: mkdir -p ~/link-lab && cd ~/link-lab
+cmd: echo "original" > a.txt
+cmd: ls -li a.txt
+out: $ ls -li a.txt\n1049113 -rw-r--r-- 1 you you 9 Nov  4 10:00 a.txt
+> Make a hard link | wf-hardlink
+text: A hard link is a second name for the same inode. Both names are equal: neither is the original, and the link count rises to 2.
+cmd: ln a.txt hard.txt
+cmd: ls -li a.txt hard.txt
+out: $ ls -li a.txt hard.txt\n1049113 -rw-r--r-- 2 you you 9 Nov  4 10:00 a.txt\n1049113 -rw-r--r-- 2 you you 9 Nov  4 10:00 hard.txt
+> Make a symbolic link | wf-symlink
+text: A symbolic link is a tiny file that stores a path. It has its own inode and ls shows an arrow to its target.
+cmd: ln -s a.txt soft.txt
+cmd: ls -li soft.txt
+cmd: readlink soft.txt
+out: $ ls -li soft.txt\n1049130 lrwxrwxrwx 1 you you 5 Nov  4 10:01 soft.txt -> a.txt
+> Edit through each link | edit
+text: Writing through either kind of link changes the same data, because they all lead to one inode.
+cmd: echo "changed" >> hard.txt
+cmd: cat soft.txt
+out: $ cat soft.txt\noriginal\nchanged
+> Delete the original and see what breaks | trash
+text: Remove a.txt. The hard link still holds the data because the inode has another name. The symbolic link now points at nothing and is called dangling.
+cmd: rm a.txt
+cmd: cat hard.txt
+cmd: cat soft.txt
+cmd: ls -l soft.txt
+out: $ cat soft.txt\ncat: soft.txt: No such file or directory
+risk: 1
+note: Hard links cannot cross filesystems or point at folders. Symbolic links can do both. Use ln -sf to replace an existing link.
+
+= lnx-tmux-jobs | Background jobs, nohup and tmux sessions | 2 | terminal | Keep long tasks running, bring them back, and survive a closed terminal.
+> Run a command in the background | play
+text: A trailing & starts the command and gives the prompt back. The shell prints a job number and the process ID.
+cmd: sleep 300 &
+cmd: jobs
+out: $ sleep 300 &\n[1] 4821\n$ jobs\n[1]+  Running                 sleep 300 &
+> Move jobs between foreground and background | swap
+text: fg brings job 1 to the foreground. Press Ctrl+Z to suspend it, then bg lets it continue in the background.
+cmd: fg %1
+cmd: bg %1
+cmd: jobs
+note: Ctrl+C stops a foreground job; kill %1 stops a background one.
+> nohup: survive closing the terminal | shield
+text: Closing a terminal sends SIGHUP to its jobs, which kills them. nohup ignores that signal and writes output to nohup.out.
+cmd: nohup ./long-task.sh > task.log 2>&1 &
+cmd: tail -f task.log
+> tmux: sessions you can leave and return to | wf-tmux
+text: tmux keeps a session alive on the machine even if your SSH connection drops. new -s names it, Ctrl+B then D detaches, and attach returns.
+cmd: tmux new -s build
+cmd: tmux ls
+cmd: tmux attach -t build
+out: $ tmux ls\nbuild: 1 windows (created Wed Nov  4 10:20:00 2026)
+> tmux keys that matter | listcheck
+text: Every command starts with the prefix Ctrl+B. Then press: c new window, n next window, % split left/right, " split top/bottom, arrow keys move between panes, d detach, [ scroll mode.
+cmd: tmux kill-session -t build
+cmd: watch -n 2 'df -h /'
+note: watch reruns a command every N seconds, handy for disk and memory checks.
+
+= lnx-diagnose-process | Why is it slow? lsof, strace and vmstat | 3 | bug | Find which process holds a file or port, what system calls it makes, and whether memory or I/O is the bottleneck.
+> See overall load | gauge
+text: uptime shows the load averages for 1, 5 and 15 minutes. As a rule of thumb, a load above the number of CPU cores means work is waiting. nproc gives the core count.
+cmd: uptime
+cmd: nproc
+cmd: vmstat 1 5
+out: $ uptime\n 10:31:02 up 4 days,  2:11,  1 user,  load average: 0.52, 0.48, 0.40\n$ nproc\n4
+> Read vmstat | chart
+text: Watch four columns. r is processes waiting for CPU, si/so is swapping to and from disk (should be 0), wa is CPU time spent waiting for I/O, and id is idle CPU.
+cmd: vmstat 1 3
+out: procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n 0  0      0 812340  90112 1520000    0    0     4     9  210  380  3  1 96  0  0
+> lsof: who has this file or port open? | search
+text: lsof lists open files, and on Linux a port or a deleted-but-still-open file counts as one. -i :80 finds whatever is using port 80; +L1 shows deleted files that still eat disk space.
+cmd: sudo lsof -i :80
+cmd: sudo lsof -p 1234 | head -n 20
+cmd: sudo lsof +L1
+out: $ sudo lsof -i :80\nCOMMAND  PID  USER  FD  TYPE DEVICE NODE NAME\nnginx    912  root  6u  IPv4  21345 TCP *:http (LISTEN)
+> strace: watch system calls | eye
+text: strace prints every request a program makes to the kernel, such as open, read and connect. When a program fails with a vague error, the last failed call usually names the file or permission.
+cmd: strace -f -e trace=openat,connect -o trace.txt ls /nonexistent
+cmd: grep -i enoent trace.txt | head -n 3
+out: $ grep -i enoent trace.txt | head -n 3\nopenat(AT_FDCWD, "/nonexistent", O_RDONLY) = -1 ENOENT (No such file or directory)
+note: strace slows the program a lot. Use it for diagnosis, not on busy production services for long.
+> Check shared libraries and per-process memory | cube
+text: ldd shows which libraries a binary needs, and a missing one is a frequent cause of "cannot open shared object file". ps sorted by memory finds the biggest consumers.
+cmd: ldd /usr/bin/curl | head -n 5
+cmd: ps -eo pid,comm,%mem,%cpu --sort=-%mem | head -n 5
+out: $ ps -eo pid,comm,%mem,%cpu --sort=-%mem | head -n 5\n  PID COMMAND         %MEM %CPU\n 1530 java            12.4  8.1\n  912 nginx            0.6  0.1
+
+= lnx-selinux-basics | SELinux basics: modes, contexts and booleans | 3 | shield | Understand why SELinux denies an action, read the denial, and fix the label instead of turning it off.
+> Check the mode | eye
+text: SELinux is mandatory access control on top of normal permissions. Enforcing blocks and logs; permissive only logs; disabled is off. getenforce shows the current mode and sestatus shows more.
+cmd: getenforce
+cmd: sestatus
+out: $ getenforce\nEnforcing
+note: SELinux is standard on RHEL, Fedora and Rocky. Ubuntu uses AppArmor instead (aa-status).
+> Look at labels | wf-label
+text: Every file and process has a context: user:role:type:level. The type is what policy rules mostly use. -Z adds contexts to ls and ps.
+cmd: ls -Z /var/www/html
+cmd: ps -eZ | grep httpd | head -n 2
+out: $ ls -Z /var/www/html\nunconfined_u:object_r:httpd_sys_content_t:s0 index.html
+> Reproduce a denial | ban
+text: Web content must carry the type httpd_sys_content_t. A file moved in from a home folder keeps its old label, so Apache is refused even though normal permissions look fine.
+cmd: sudo cp ~/page.html /var/www/html/
+cmd: curl -I http://localhost/page.html
+cmd: ls -Z /var/www/html/page.html
+out: $ curl -I http://localhost/page.html\nHTTP/1.1 403 Forbidden
+> Read the denial | doc
+text: Denials go to the audit log. ausearch filters it and sealert (if installed) explains the cause and a suggested fix in plain language.
+cmd: sudo ausearch -m avc -ts recent
+cmd: sudo journalctl -t setroubleshoot --since "10 min ago"
+> Fix the label, not the mode | wrench
+text: restorecon resets a file to the label that policy defines for its path. For a custom folder, register the rule once with semanage fcontext and then restorecon -R. Booleans such as httpd_can_network_connect toggle common behaviours.
+cmd: sudo restorecon -v /var/www/html/page.html
+cmd: sudo semanage fcontext -a -t httpd_sys_content_t "/srv/site(/.*)?"
+cmd: sudo restorecon -Rv /srv/site
+cmd: getsebool httpd_can_network_connect
+cmd: sudo setsebool -P httpd_can_network_connect on
+risk: 1
+note: setenforce 0 only switches to permissive until reboot. Use it to test whether SELinux is the cause, then fix the label and set it back with setenforce 1.
+
+= lnx-swap-fstab | Swap space and permanent mounts with fstab | 2 | database | Add a swap file, mount a disk automatically at boot, and test the file before you reboot.
+> Check memory and swap | gauge
+text: free shows RAM and swap. swapon --show lists active swap devices. If swap is heavily used while RAM is full, the machine is short of memory.
+cmd: free -h
+cmd: swapon --show
+out: $ free -h\n               total        used        free      shared  buff/cache   available\nMem:           7.7Gi       2.1Gi       3.4Gi       0.1Gi       2.2Gi       5.3Gi\nSwap:             0B          0B          0B
+> Create a swap file | wf-swap-space
+text: A swap file is an ordinary file the kernel treats as extra memory on disk. It must have no gaps (so no sparse files) and be readable only by root.
+cmd: sudo fallocate -l 1G /swapfile
+cmd: sudo chmod 600 /swapfile
+cmd: sudo mkswap /swapfile
+cmd: sudo swapon /swapfile
+cmd: swapon --show
+out: $ swapon --show\nNAME      TYPE SIZE USED PRIO\n/swapfile file   1G   0B   -2
+> Make swap permanent | save
+text: Swap enabled by swapon disappears at reboot. The fstab file lists everything to mount at boot, one line per entry with six fields.
+cmd: echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+cmd: cat /etc/fstab
+note: Always back up first: sudo cp /etc/fstab /etc/fstab.bak
+risk: 1
+> Understand the fstab fields | wf-mount
+text: In order: device (a UUID is safest), mount point, filesystem type, options, dump flag (0) and fsck pass (0 skip, 1 root, 2 others). nofail stops a missing disk from blocking boot.
+cmd: blkid /dev/sdb1
+cmd: echo 'UUID=1234-ABCD /data ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab
+out: $ blkid /dev/sdb1\n/dev/sdb1: UUID="1234-ABCD" TYPE="ext4"
+risk: 1
+> Test before you reboot | check
+text: A mistake in fstab can stop the system booting. mount -a mounts everything listed and reports errors now, while you can still fix them. findmnt --verify checks the syntax.
+cmd: sudo mount -a
+cmd: findmnt --verify
+cmd: findmnt /data
+cmd: sudo sysctl vm.swappiness
+out: $ sudo sysctl vm.swappiness\nvm.swappiness = 60
+note: Lower swappiness (for example 10) makes the kernel prefer RAM. Persist it in /etc/sysctl.d/99-swap.conf.
+
+= lnx-csv-report | Build a report from CSV with awk, sort and column | 2 | table | Turn raw rows into totals, averages and a tidy table using only standard tools.
+> Create a small CSV | doc
+text: Comma separated values are one record per line. This sample lists orders with a region and an amount.
+cmd: printf 'region,item,amount\nnorth,disk,120\nsouth,cpu,300\nnorth,ram,80\neast,disk,150\nsouth,ram,95\n' > orders.csv
+cmd: cat orders.csv
+out: $ cat orders.csv\nregion,item,amount\nnorth,disk,120\nsouth,cpu,300\nnorth,ram,80\neast,disk,150\nsouth,ram,95
+> Skip the header, pick columns | filter
+text: awk -F, sets the field separator. NR>1 skips line 1, the header. $1 and $3 are the first and third fields.
+cmd: awk -F, 'NR>1 {print $1, $3}' orders.csv
+out: $ awk -F, 'NR>1 {print $1, $3}' orders.csv\nnorth 120\nsouth 300\nnorth 80\neast 150\nsouth 95
+> Total per region | chart
+text: awk arrays sum by key. The END block runs after the last line. Sort the result to make it stable.
+cmd: awk -F, 'NR>1 {sum[$1]+=$3} END {for (r in sum) print r, sum[r]}' orders.csv | sort
+out: $ awk -F, 'NR>1 {sum[$1]+=$3} END {for (r in sum) print r, sum[r]}' orders.csv | sort\neast 150\nnorth 200\nsouth 395
+> Average and the biggest order | gauge
+text: Keep a running total and count, and track a maximum. printf formats the numbers.
+cmd: awk -F, 'NR>1 {t+=$3; n++; if ($3>m) {m=$3; who=$2}} END {printf "orders=%d average=%.1f biggest=%s (%d)\n", n, t/n, who, m}' orders.csv
+out: $ awk -F, 'NR>1 {t+=$3; n++; if ($3>m) {m=$3; who=$2}} END {printf "orders=%d average=%.1f biggest=%s (%d)\n", n, t/n, who, m}' orders.csv\norders=5 average=149.0 biggest=cpu (300)
+> Make it readable with column | menu
+text: column -t aligns text into a table. Pipe the report through it before you paste it in a ticket.
+cmd: awk -F, 'NR>1 {sum[$1]+=$3} END {for (r in sum) print r, sum[r]}' orders.csv | sort -k2 -nr | column -t
+out: $ ... | column -t\nsouth  395\nnorth  200\neast   150
+note: For quoted fields that contain commas use a real CSV tool such as csvkit or Python's csv module, not awk.
+
+= lnx-namespaces-cgroups | Containers underneath: namespaces and cgroups | 4 | cube | See that a container is a process with its own view (namespaces) and limits (cgroups).
+> Look at the namespaces of a process | eye
+text: Each process belongs to namespaces that control what it can see: PID, network, mount, user and more. lsns lists them and /proc shows the links.
+cmd: lsns | head -n 8
+cmd: ls -l /proc/$$/ns
+out: $ ls -l /proc/$$/ns\nlrwxrwxrwx 1 you you 0 Nov  4 10:00 net -> 'net:[4026531840]'\nlrwxrwxrwx 1 you you 0 Nov  4 10:00 pid -> 'pid:[4026531836]'
+> A new PID namespace | wf-namespace
+text: unshare starts a program in new namespaces. With a private PID namespace the shell sees itself as process 1 and sees none of the host's processes.
+cmd: sudo unshare --pid --fork --mount-proc bash
+cmd: ps -ef
+cmd: exit
+out: $ ps -ef\nUID  PID PPID C STIME TTY TIME CMD\nroot   1    0 0 10:05 pts/0 00:00:00 bash\nroot   8    1 0 10:05 pts/0 00:00:00 ps -ef
+risk: 1
+note: Run this only on a machine you administer, such as a test VM.
+> A private network | network
+text: ip netns creates a named network namespace with its own interfaces and routing table. Initially it has only a loopback that is down.
+cmd: sudo ip netns add demo
+cmd: sudo ip netns exec demo ip -br addr
+cmd: sudo ip netns delete demo
+out: $ sudo ip netns exec demo ip -br addr\nlo               DOWN           127.0.0.1/8
+> Limit resources with cgroups | wf-cgroup
+text: Control groups limit CPU, memory and I/O. systemd-run starts a command in a temporary scope with limits, here 200 MB of memory and 20% of one CPU.
+cmd: systemd-run --user --scope -p MemoryMax=200M -p CPUQuota=20% sleep 60 &
+cmd: systemd-cgls --user | head -n 12
+out: $ systemd-run --user --scope -p MemoryMax=200M -p CPUQuota=20% sleep 60 &\nRunning scope as unit: run-r2f3a.scope
+> Read the limit from cgroup files | doc
+text: cgroup v2 exposes every setting as a file under /sys/fs/cgroup. Docker and Kubernetes write the same files for each container.
+cmd: stat -fc %T /sys/fs/cgroup
+cmd: cat /sys/fs/cgroup/user.slice/memory.max
+out: $ stat -fc %T /sys/fs/cgroup\ncgroup2fs
+note: A container runtime combines these primitives plus a root filesystem image. There is no virtual machine involved.
+
+= lnx-audit-gpg | Audit file changes and encrypt a file | 3 | lock | Record who touches a sensitive file with auditd, then protect a file with gpg and check its checksum.
+> Check that auditd is running | eye
+text: The audit daemon records security events from the kernel. auditctl -s shows its status.
+cmd: sudo systemctl status auditd --no-pager | head -n 4
+cmd: sudo auditctl -s
+out: $ sudo auditctl -s\nenabled 1\nfailure 1\npid 812
+> Watch a file | search
+text: -w sets a watch on a path, -p wa logs writes and attribute changes, and -k adds a key for searching later.
+cmd: sudo auditctl -w /etc/hosts -p wa -k hosts_change
+cmd: echo "# test" | sudo tee -a /etc/hosts
+cmd: sudo ausearch -k hosts_change -i | tail -n 6
+out: $ sudo ausearch -k hosts_change -i | tail -n 6\ntype=SYSCALL ... comm=tee exe=/usr/bin/tee key=hosts_change
+risk: 1
+> Make the rule permanent | save
+text: Rules added with auditctl vanish at reboot. Put them in a file under /etc/audit/rules.d and load them.
+cmd: echo '-w /etc/hosts -p wa -k hosts_change' | sudo tee /etc/audit/rules.d/hosts.rules
+cmd: sudo augenrules --load
+cmd: sudo auditctl -l
+out: $ sudo auditctl -l\n-w /etc/hosts -p wa -k hosts_change
+> Encrypt a file with gpg | lock
+text: gpg --symmetric encrypts with a passphrase using AES256. The result has the extension .gpg. Keep the passphrase in a password manager.
+cmd: echo "api token 12345" > secret.txt
+cmd: gpg --symmetric --cipher-algo AES256 secret.txt
+cmd: shred -u secret.txt
+cmd: ls -l secret.txt.gpg
+out: $ ls -l secret.txt.gpg\n-rw-r--r-- 1 you you 98 Nov  4 10:30 secret.txt.gpg
+> Decrypt and verify integrity | check
+text: Decrypt to standard output to read it without writing the plain text again. sha256sum gives a checksum you can compare to detect any change of a file.
+cmd: gpg --decrypt secret.txt.gpg
+cmd: sha256sum secret.txt.gpg > secret.sha256
+cmd: sha256sum -c secret.sha256
+out: $ sha256sum -c secret.sha256\nsecret.txt.gpg: OK
+note: A checksum proves the file is unchanged, not who made it. Use signatures for that.
+
+= lnx-rsync-tar | Copy and archive safely with rsync and tar | 2 | copy | Preview a sync with a dry run, mirror a folder, and create, inspect and restore a tar archive.
+> Prepare two folders | folder
+text: A source with a few files and an empty destination.
+cmd: mkdir -p ~/rs/src/docs ~/rs/dst && cd ~/rs
+cmd: echo one > src/a.txt && echo two > src/docs/b.txt
+cmd: find src -type f
+out: $ find src -type f\nsrc/a.txt\nsrc/docs/b.txt
+> Always preview first | eye
+text: -a keeps permissions, times and folders; -v lists files. --dry-run (-n) shows what would happen without doing it. A trailing slash on the source means "the contents of".
+cmd: rsync -avn src/ dst/
+out: $ rsync -avn src/ dst/\nsending incremental file list\n./\na.txt\ndocs/\ndocs/b.txt\n\n(DRY RUN)
+> Sync, change, and sync again | retry
+text: The second run copies only what changed, which is why rsync is fast for backups.
+cmd: rsync -av src/ dst/
+cmd: echo three >> src/a.txt
+cmd: rsync -av src/ dst/
+out: $ rsync -av src/ dst/\nsending incremental file list\na.txt
+> Mirror with --delete | trash
+text: --delete removes files from the destination that no longer exist in the source, making it an exact mirror. Check with a dry run first.
+cmd: rm src/docs/b.txt
+cmd: rsync -avn --delete src/ dst/
+cmd: rsync -av --delete src/ dst/
+risk: 1
+note: A wrong source or a missing trailing slash with --delete can remove the wrong data.
+> tar: archive, list, restore | package
+text: c creates, t lists, x extracts, z compresses with gzip, f names the file. Use -C to extract into a chosen folder and --exclude to skip files.
+cmd: tar -czf backup.tar.gz --exclude='*.tmp' src
+cmd: tar -tzf backup.tar.gz
+cmd: mkdir restore && tar -xzf backup.tar.gz -C restore
+cmd: diff -r src restore/src && echo "restore matches"
+out: $ diff -r src restore/src && echo "restore matches"\nrestore matches
+note: To copy to another machine use rsync -av -e ssh src/ user@host:/backup/ with a key-based login.
+
+= lnx-time-chrony | Keep the clock right: timedatectl and chrony | 2 | clock | Check and fix time, time zone and host name, and see whether time synchronisation is healthy.
+> Read the clock settings | clock
+text: timedatectl shows local time, UTC, the time zone and whether NTP synchronisation is active. Wrong time breaks TLS, logs and Kerberos.
+cmd: timedatectl
+out: $ timedatectl\n               Local time: Wed 2026-11-04 13:20:00 IST\n           Universal time: Wed 2026-11-04 07:50:00 UTC\n                Time zone: Asia/Kolkata (IST, +0530)\nSystem clock synchronized: yes\n              NTP service: active
+> Set the time zone | globe
+text: Servers are often kept in UTC so logs from different places line up. List the zones, then set one.
+cmd: timedatectl list-timezones | grep -i kolkata
+cmd: sudo timedatectl set-timezone UTC
+cmd: date
+> See how chrony is doing | gauge
+text: chronyc tracking shows the offset from the reference clock. System time is the current error. Anything under a few milliseconds is healthy.
+cmd: chronyc tracking
+cmd: chronyc sources -v
+out: $ chronyc tracking\nReference ID    : A9FEA97B (169.254.169.123)\nStratum         : 4\nSystem time     : 0.000012 seconds fast of NTP time\nLeap status     : Normal
+> Step a large error | wrench
+text: chrony slews the clock gently. If it is minutes off, makestep jumps it once. Do not step time on a database server while it is running.
+cmd: sudo chronyc makestep
+cmd: sudo systemctl restart chronyd
+cmd: chronyc tracking | grep "System time"
+risk: 1
+> Set the host name | tag
+text: hostnamectl sets a static name that survives reboots. Use lower-case letters, digits and hyphens.
+cmd: hostnamectl
+cmd: sudo hostnamectl set-hostname app-01
+cmd: hostname
+note: In a cloud VM the provider's tool (cloud-init) may reset the name. Set preserve_hostname there.
+
+= lnx-kernel-sysctl | Kernel modules, sysctl and limits | 3 | chip | Load a module, tune a kernel setting temporarily and permanently, and raise a file limit.
+> List loaded modules | chip
+text: Modules are drivers loaded into the running kernel. lsmod lists them and modinfo describes one.
+cmd: lsmod | head -n 6
+cmd: modinfo br_netfilter | head -n 5
+out: $ lsmod | head -n 6\nModule                  Size  Used by\nbr_netfilter           32768  0\nbridge                311296  1 br_netfilter
+> Load and unload one | swap
+text: modprobe loads a module with its dependencies; -r removes it. To load one at every boot, list it in /etc/modules-load.d/.
+cmd: sudo modprobe br_netfilter
+cmd: lsmod | grep br_netfilter
+cmd: echo br_netfilter | sudo tee /etc/modules-load.d/k8s.conf
+> Read kernel settings | search
+text: sysctl reads and writes values under /proc/sys. The same value can be read as a file.
+cmd: sysctl net.ipv4.ip_forward
+cmd: cat /proc/sys/net/ipv4/ip_forward
+cmd: sysctl -a 2>/dev/null | grep -c .
+out: $ sysctl net.ipv4.ip_forward\nnet.ipv4.ip_forward = 0
+> Change a setting now and forever | sliders
+text: sysctl -w changes it until the next reboot. To make it permanent write a file in /etc/sysctl.d and reload all of them with sysctl --system.
+cmd: sudo sysctl -w net.ipv4.ip_forward=1
+cmd: echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-forward.conf
+cmd: sudo sysctl --system | tail -n 3
+risk: 1
+> Raise the open file limit | up
+text: ulimit -n is the limit of open files for the current shell. Servers with many connections need more. For services set LimitNOFILE in the systemd unit; for logins use /etc/security/limits.d.
+cmd: ulimit -n
+cmd: printf '[Service]\nLimitNOFILE=65536\n' | sudo tee /etc/systemd/system/myapp.service.d/limits.conf
+cmd: sudo systemctl daemon-reload
+out: $ ulimit -n\n1024
+note: Change one setting at a time and note the old value so you can revert.

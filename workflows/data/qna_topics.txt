@@ -1,0 +1,329 @@
+# Q&A for the Docker, Jenkins, AWS, Terraform and new Linux workflows.
+
+= dkr-first-container
+q: In which situation do we use this?
+a: You need to run software without installing it on the host, or give every teammate the same environment.
+q: Is a container a small virtual machine?
+a: No. It shares the host kernel and is only an isolated process with its own filesystem view and limits.
+q: What comes next?
+a: Module 2 pulls real images and publishes ports.
+
+= dkr-images-run
+q: In which situation do we use this?
+a: Running a ready-made service such as nginx or PostgreSQL for development, tests or a quick demo.
+q: Why avoid the latest tag?
+a: It moves. Pin a version such as nginx:1.27 so today's test and tomorrow's deploy use the same image.
+q: What comes next?
+a: Module 3 builds your own image.
+
+= dkr-dockerfile
+q: In which situation do we use this?
+a: Your application must run the same on a laptop, in CI and in production.
+q: Why does instruction order matter?
+a: Each instruction is a cached layer. Put rarely changing steps first and your code last so rebuilds are fast.
+q: What comes next?
+a: Module 4 adds storage and networking.
+
+= dkr-volumes-networks
+q: In which situation do we use this?
+a: A database must keep its data, or several containers must talk to each other.
+q: Volume or bind mount?
+a: Use a volume for data Docker should manage, and a bind mount to share your own source folder into a container.
+q: What comes next?
+a: Module 5 describes the whole group in one Compose file.
+
+= dkr-compose
+q: In which situation do we use this?
+a: An application has more than one container, such as web, API and database, and you want one command to start them all.
+q: How do containers find each other?
+a: By service name. Compose puts them on a private network with built-in DNS.
+q: What comes next?
+a: Module 6 ships the image to a registry.
+
+= dkr-registry-push
+q: In which situation do we use this?
+a: A server, a teammate or a pipeline needs the exact image you built.
+q: Tag or digest?
+a: A tag can be moved to another image. A digest (sha256) never changes, so pin by digest for production.
+q: What comes next?
+a: Module 7 makes images smaller and safer.
+
+= dkr-multistage-secure
+q: In which situation do we use this?
+a: The image holds compilers and build tools that production does not need, or a security review asks for a smaller attack surface.
+q: Which settings help most?
+a: A non-root user, a read-only filesystem, dropped capabilities and a vulnerability scan in CI.
+q: What comes next?
+a: Module 8 covers debugging and disk clean-up.
+
+= dkr-debug-cleanup
+q: In which situation do we use this?
+a: A container exits at once, restarts in a loop, uses too much memory, or the disk is full of old images.
+q: What does exit code 137 mean?
+a: The process was killed, most often because it ran out of memory. Check OOMKilled in docker inspect.
+q: What comes next?
+a: Use these images in Jenkins or Kubernetes.
+
+= jen-install-tour
+q: In which situation do we use this?
+a: A team wants automatic builds and tests on every change instead of running them by hand.
+q: What is the controller and what is an agent?
+a: The controller schedules jobs and shows the UI. Agents run the actual builds.
+q: What comes next?
+a: Module 2 creates and runs a first job.
+
+= jen-freestyle-job
+q: In which situation do we use this?
+a: A quick one-off task or a learning exercise where a shell command is enough.
+q: Why not stay with freestyle jobs?
+a: The configuration lives only in Jenkins. A Jenkinsfile in Git can be reviewed, versioned and reused.
+q: What comes next?
+a: Module 3 writes a pipeline as code.
+
+= jen-pipeline-jenkinsfile
+q: In which situation do we use this?
+a: Your build has stages such as build, test, package and deploy, and you want each stage visible.
+q: Declarative or scripted?
+a: Declarative is simpler and enforces structure. Use scripted Groovy only for logic it cannot express.
+q: What comes next?
+a: Module 4 reads the Jenkinsfile from Git and triggers builds on push.
+
+= jen-scm-webhook
+q: In which situation do we use this?
+a: Every branch and pull request should be built and tested automatically.
+q: Webhook or polling?
+a: A webhook starts a build at once. Polling is the fallback when the host cannot reach Jenkins.
+q: What comes next?
+a: Module 5 handles secrets and agents.
+
+= jen-credentials-agents
+q: In which situation do we use this?
+a: A pipeline needs a password, token or key, or builds are heavy and should not run on the controller.
+q: How do I keep a secret out of the log?
+a: Use withCredentials with single-quoted shell strings. Jenkins masks the value.
+q: What comes next?
+a: Module 6 builds and deploys an image.
+
+= jen-docker-deploy
+q: In which situation do we use this?
+a: A merge to main should test, build an image, push it and deploy, with approval for production.
+q: Why tag the image with the commit?
+a: Every deployed version can be traced to the exact code and rolled back by tag.
+q: What comes next?
+a: Module 7 rebuilds Jenkins itself from code.
+
+= jen-config-as-code
+q: In which situation do we use this?
+a: Jenkins must be rebuilt quickly, or several instances must be identical.
+q: What goes in the repository?
+a: The plugin list, the JCasC YAML and the Dockerfile. Secrets come from the environment or a secret store.
+q: What comes next?
+a: Back up JENKINS_HOME and test a restore.
+
+= aws-cli-sso
+q: In which situation do we use this?
+a: You manage AWS from a terminal or scripts. Sign in first and confirm which account you are in.
+q: SSO or access keys?
+a: Prefer SSO. Its credentials expire on their own, while long-lived keys can leak.
+q: What comes next?
+a: Module 2 sets up least-privilege access.
+
+= aws-iam-roles-policies
+q: In which situation do we use this?
+a: A server, function or person needs exactly the access it requires, and nothing more.
+q: Why a role and not an access key on the server?
+a: A role gives temporary credentials automatically, with nothing on disk to steal.
+q: What comes next?
+a: Module 3 stores data in S3 using this access model.
+
+= aws-s3-storage
+q: In which situation do we use this?
+a: Storing files, backups, logs, static sites or Terraform state.
+q: What should always be turned on?
+a: Block Public Access, default encryption and, for important data, versioning.
+q: What comes next?
+a: Module 4 launches a server that can read this bucket.
+
+= aws-ec2-launch
+q: In which situation do we use this?
+a: You need a virtual server of your own: a web host, a build machine, a test box.
+q: How should SSH be restricted?
+a: Allow port 22 only from your own address, and prefer Systems Manager Session Manager for real work.
+q: What comes next?
+a: Module 5 puts several servers behind a load balancer.
+
+= aws-alb-asg
+q: In which situation do we use this?
+a: One server is a single point of failure, or traffic changes during the day.
+q: What does the health check do?
+a: The load balancer stops sending requests to unhealthy servers, and the Auto Scaling group replaces them.
+q: What comes next?
+a: Module 6 adds a database.
+
+= aws-rds-secrets
+q: In which situation do we use this?
+a: The application needs a relational database without managing backups, patches and failover.
+q: Why is the database not public?
+a: Only the application should reach it. Use private subnets and a security group that allows the app's group.
+q: What comes next?
+a: Module 7 gives the site a name and HTTPS.
+
+= aws-route53-acm
+q: In which situation do we use this?
+a: Users should reach the app at a friendly name over HTTPS.
+q: Alias or CNAME?
+a: An alias works at the zone root and is free for AWS targets. A CNAME cannot sit at the root.
+q: What comes next?
+a: Module 8 watches logs, alarms and cost.
+
+= aws-monitor-cost
+q: In which situation do we use this?
+a: Before going live: you want to know when something breaks and when spending climbs.
+q: What is the first cost protection?
+a: A budget with an e-mail alert, tags on every resource, and deleting what you do not use.
+q: What comes next?
+a: Module 9 runs code without servers.
+
+= aws-lambda-hello
+q: In which situation do we use this?
+a: Small event-driven jobs or APIs where you do not want to manage a server.
+q: Why is a public function URL risky?
+a: Anyone can call it. Use AWS_IAM authentication for anything that is not a public demo.
+q: What comes next?
+a: Describe all of this as code in the Terraform topic.
+
+= tf-first-config
+q: In which situation do we use this?
+a: Infrastructure should be written down, reviewed and repeatable instead of clicked together.
+q: What do init, plan and apply do?
+a: init prepares providers, plan previews the changes, apply makes them real.
+q: What comes next?
+a: Module 2 makes the configuration flexible.
+
+= tf-variables-functions
+q: In which situation do we use this?
+a: The same code must serve dev and prod with different sizes, names and ranges.
+q: count or for_each?
+a: Prefer for_each. Removing one item from a count list renumbers the rest and can replace resources.
+q: What comes next?
+a: Module 3 explains the state file.
+
+= tf-state-lifecycle
+q: In which situation do we use this?
+a: You must understand what Terraform believes exists, or why a plan shows an unexpected change.
+q: Why is the state file sensitive?
+a: It can hold secrets and is the only link between your code and real resources.
+q: What comes next?
+a: Module 4 builds a real network.
+
+= tf-aws-vpc
+q: In which situation do we use this?
+a: Every project that needs its own network with public and private tiers across two zones.
+q: Why is NAT behind a variable?
+a: A NAT gateway bills every hour. Turn it on only when private servers truly need internet access.
+q: What comes next?
+a: Module 5 deploys an application into this VPC.
+
+= tf-app-deploy
+q: In which situation do we use this?
+a: You want a server, its firewall and its start-up script created together and removed together.
+q: Why does a user_data change replace the server?
+a: It only runs at first boot, so Terraform rebuilds the instance. The plan shows forces replacement.
+q: What comes next?
+a: Module 6 turns the network into a reusable module.
+
+= tf-modules-envs
+q: In which situation do we use this?
+a: The same design is needed in several environments.
+q: Why separate folders and state per environment?
+a: A mistake in dev cannot touch prod, and each plan stays small and easy to review.
+q: What comes next?
+a: Module 7 moves the state to a safe shared place.
+
+= tf-remote-state
+q: In which situation do we use this?
+a: More than one person or pipeline runs Terraform on the same infrastructure.
+q: What does locking prevent?
+a: Two applies writing the state at once, which can corrupt it.
+q: What comes next?
+a: Module 8 covers safe change practices.
+
+= tf-safe-changes
+q: In which situation do we use this?
+a: Adopting existing resources, renaming code, protecting data, or running Terraform in a pipeline.
+q: How do I avoid a surprise destroy?
+a: Read every destroy and replace line in the plan, use prevent_destroy on critical resources, and apply only a reviewed saved plan.
+q: What comes next?
+a: Combine Terraform with Jenkins from the CI/CD topic.
+
+= lnx-first-day
+q: In which situation do we use this?
+a: Your first time on a Linux shell, or when you need to orient yourself on an unfamiliar server.
+q: What are the five commands to learn first?
+a: pwd, ls, cd, cat and man. With these you can find your way and read anything.
+q: What comes next?
+a: Module 2 follows one file through the everyday file commands.
+
+= lnx-hello-files
+q: In which situation do we use this?
+a: Daily work: creating, copying, moving and deleting files.
+q: What is the danger in rm?
+a: There is no recycle bin. Use ls with the same pattern first and add -i when unsure.
+q: What comes next?
+a: Module 3 explains who may use these files.
+
+= lnx-hello-perms
+q: In which situation do we use this?
+a: You see Permission denied, a script will not run, or a web server cannot read its files.
+q: What does 644 mean?
+a: The owner can read and write; the group and others can only read.
+q: What comes next?
+a: Module 4 finds files and text.
+
+= lnx-hello-search
+q: In which situation do we use this?
+a: A file is lost, a log is huge, or you need to know where a word appears.
+q: find or grep?
+a: find searches names and file properties. grep searches the text inside files.
+q: What comes next?
+a: Module 5 joins commands with pipes and redirects.
+
+= lnx-hello-redirect
+q: In which situation do we use this?
+a: You want to save output, hide errors, or feed one command's result into the next.
+q: What is the difference between > and >>?
+a: > replaces the file, >> adds to the end. Mixing them up erases data.
+q: What comes next?
+a: Module 6 saves your commands in a script.
+
+= lnx-hello-script
+q: In which situation do we use this?
+a: A set of commands is run more than once, by you or by cron.
+q: Why use set -euo pipefail?
+a: The script stops at the first error instead of carrying on and doing damage.
+q: What comes next?
+a: Module 7 moves files between machines.
+
+= lnx-hello-remote
+q: In which situation do we use this?
+a: You manage a remote server or copy files to it.
+q: Why use keys instead of passwords?
+a: Keys cannot be guessed, and once they work you can switch password logins off.
+q: What comes next?
+a: Module 8 protects the server with a firewall.
+
+= lnx-nftables
+q: In which situation do we use this?
+a: A server is exposed to a network and only some ports should be reachable.
+q: What is the safest order?
+a: Allow your own SSH first, test from a second session, then set the default policy to drop.
+q: What comes next?
+a: Module 9 covers tools that make daily work faster.
+
+= lnx-modern-cli
+q: In which situation do we use this?
+a: You read JSON or YAML output, search large trees, or want quicker daily work.
+q: Why jq?
+a: Cloud tools print JSON. jq pulls out exactly the fields you need.
+q: What comes next?
+a: Go deeper in the boot, services and storage modules.

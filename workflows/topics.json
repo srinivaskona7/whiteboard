@@ -1,0 +1,7 @@
+{
+  "order": ["hello", "git", "linux", "docker", "k8s", "jenkins", "aws", "terraform", "ansible", "network"],
+  "icons": {
+    "hello": "git-repo", "git": "git-repo", "linux": "linux-kernel", "docker": "docker-engine", "k8s": "k8s-cluster",
+    "jenkins": "cicd-jenkins", "aws": "aws-vpc", "terraform": "iac-terraform", "ansible": "cfg-ansible", "network": "net-router"
+  }
+}

@@ -218,6 +218,11 @@ export function initVotingUI(app) {
     // server until the reveal; nothing to apply locally.
     if (votes === null || votes === undefined) return;
     el.votes = Math.max(0, Number(votes) || 0);
+    // A vote must outrank any in-flight scene broadcast carrying the same or
+    // older updatedAt — otherwise the recency union on the client would let
+    // a stale teacher sync clobber the count (mirrors the server's bump in
+    // its vote:cast handler).
+    el.updatedAt = Math.max(el.updatedAt || 0, Date.now());
     // A remote dot is board state like a local one. Without a history record
     // the vote lives only in memory: a teacher undoing their own last stroke
     // would restore a pre-vote snapshot and broadcast the erasure of the

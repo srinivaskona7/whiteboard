@@ -1,0 +1,420 @@
+@topic hello | Hello Srinivas: the Git journey | #E11D48 | commit | Follow one file, hello.txt, through every Git idea in order: working folder, staging area, local commit, remote server (GitHub, GitLab or Bitbucket), branches, merges and recovery. After each step the four coloured boxes show where your file is and where HEAD points. All of it runs on your own computer.
+
+= hello-first-commit | Module 1: hello.txt from folder to first commit | 1 | commit | Create hello.txt with "Hello Srinivas", then watch it move from your working folder to the staging area to a local commit.
+> Create hello.txt in a new folder | edit
+text: Git works on ordinary folders. Make one and put a file in it. The echo command writes text into a file and > creates it. Git does not know this file yet.
+cmd: mkdir -p ~/hello-git
+cmd: cd ~/hello-git
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: cat hello.txt
+> git init: turn the folder into a repository | gear
+text: git init creates a hidden .git folder. That folder is the repository: every commit, branch and setting lives there. HEAD is a pointer inside it that says which commit you are on, and there is none yet.
+cmd: git init
+cmd: ls -a
+> git add: copy hello.txt into the staging area | plus
+text: The staging area (also called the index) is a waiting room for the next commit. add copies the current content of hello.txt into it. Your working file is unchanged.
+cmd: git add hello.txt
+cmd: git status
+> git commit: save a snapshot in the local repository | save
+text: commit turns everything in the staging area into a permanent snapshot with a message. HEAD now points at this first commit. The hash is its unique ID.
+cmd: git commit -m "Add hello.txt"
+cmd: git log --oneline --decorate
+> Edit the file: folder and repository now differ | edit
+text: Add a second line. The working folder now holds newer content than the staging area and the last commit. status shows "modified", and diff shows the added line with a + sign.
+cmd: echo "Welcome to Git" >> hello.txt
+cmd: git status --short
+cmd: git diff
+> Stage and commit the second version | commit
+text: Run add then commit again. A second commit is created with the first as its parent, and HEAD moves forward to it. The branch name main moves with HEAD.
+cmd: git add hello.txt
+cmd: git commit -m "Add welcome line"
+cmd: git log --oneline --graph --decorate
+> Read an old version of the file | doc
+text: Every commit keeps a full snapshot. show prints a file as it was at any commit: HEAD~1 means "one commit before HEAD".
+cmd: git show HEAD~1:hello.txt
+cmd: git show HEAD:hello.txt
+
+= hello-remote-push | Module 2: Send hello.txt to GitHub, GitLab or Bitbucket | 1 | upload | Add a remote, push your commits to it, change the file again, push again, and clone it onto another computer.
+> Start: hello.txt is committed locally | folder
+text: This is where module 1 ended. One commit, only on your computer. The remote box is empty because no server is connected yet.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: git add hello.txt
+cmd: git commit -qm "Add hello.txt"
+cmd: git log --oneline --decorate
+> Create an empty remote repository | cloud
+text: On GitHub, GitLab or Bitbucket you click New repository and get an address. Here a bare repository in a local folder plays that role, so you can run everything offline. A bare repository holds history but has no working files.
+cmd: git init -q --bare -b main ~/remote/hello.git
+cmd: ls ~/remote/hello.git
+note: A real address looks like https://github.com/you/hello-git.git or git@gitlab.com:you/hello-git.git.
+> git remote add: tell Git where the server is | link
+text: A remote is a named address. By convention the main one is called origin. This only saves the address; nothing is sent yet.
+cmd: git remote add origin ~/remote/hello.git
+cmd: git remote -v
+> git push -u: send your commits to the server | upload
+text: push copies your commits to the remote branch. -u remembers the pairing so later you can type just git push. Look at the Remote box: it now has your commit.
+cmd: git push -u origin main
+cmd: git branch -vv
+> Change the file, commit and push again | retry
+text: The normal daily loop: edit, add, commit, push. Only the new commit travels; the server already has the old one.
+cmd: echo "Welcome to Git" >> hello.txt
+cmd: git commit -qam "Add welcome line"
+cmd: git push
+cmd: git log --oneline --decorate
+> git clone: get the project on another computer | download
+text: clone copies the whole repository with all its history and sets origin automatically. This is how a teammate, or you on a new laptop, starts. The new folder is a complete, independent copy.
+cmd: git clone -q ~/remote/hello.git ~/hello-copy
+cmd: cat ~/hello-copy/hello.txt
+cmd: git -C ~/hello-copy log --oneline
+
+= hello-edit-diff-restore | Module 3: Changes, diff, unstage and restore | 1 | diff | Move changes between the folder and the staging area with diff, restore --staged and restore.
+> Start with a committed hello.txt | folder
+text: One clean commit. All four boxes agree, which is what a clean status means.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: git add hello.txt
+cmd: git commit -qm "Add hello.txt"
+cmd: git status
+> Edit the file: only the working folder changes | edit
+text: Only the first box changes. status marks the file as modified, not staged. diff compares the working file with the staging area.
+cmd: echo "Hello India" >> hello.txt
+cmd: git status --short
+cmd: git diff
+> git add: the change moves to the staging area | plus
+text: Now working folder and staging area agree, so plain diff shows nothing. diff --staged compares the staging area with the last commit, which is what the next commit would contain.
+cmd: git add hello.txt
+cmd: git diff
+cmd: git diff --staged
+> git restore --staged: take it back out of staging | undo
+text: This unstages the file. The edit is not lost: it is still in the working folder. Only the staging box goes back to matching the commit.
+cmd: git restore --staged hello.txt
+cmd: git status --short
+cmd: cat hello.txt
+> git restore: throw the edit away | trash
+text: restore without options replaces the working file with the version from the staging area (here the same as the last commit). The extra line disappears for good, because it was never committed.
+cmd: git restore hello.txt
+cmd: cat hello.txt
+cmd: git status
+risk: 1
+note: Uncommitted edits cannot be recovered after restore. Check git diff first.
+> Deleted by mistake? Bring it back | wrench
+text: A deleted tracked file is just another change. restore brings it back from the repository.
+cmd: rm hello.txt
+cmd: git status --short
+cmd: git restore hello.txt
+cmd: cat hello.txt
+
+= hello-head-reset | Module 4: Watch HEAD move: reset --soft, --mixed, --hard and revert | 2 | undo | Make three commits, then move HEAD backwards in three different ways and see exactly which box each one changes.
+> Three commits, HEAD on the newest | commit
+text: Each line is a commit. HEAD points at the newest one through the branch name main. Remember the content: three lines.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Line one"
+cmd: echo "Line two" >> hello.txt && git commit -qam "Line two"
+cmd: echo "Line three" >> hello.txt && git commit -qam "Line three"
+cmd: git log --oneline --decorate
+> reset --soft HEAD~1: move HEAD only | undo
+text: --soft moves HEAD back one commit and touches nothing else. The undone change is waiting in the staging area, ready to commit again. Working folder and staging keep line three.
+cmd: git reset --soft HEAD~1
+cmd: git status --short
+cmd: git log --oneline --decorate
+> Commit it again | save
+text: Because the change was still staged, a new commit recreates it. The hash differs from before: same content, new commit.
+cmd: git commit -qm "Line three, again"
+cmd: git log --oneline --decorate
+> reset --mixed HEAD~1: move HEAD and clear staging | undo
+text: --mixed is the default. It moves HEAD and empties the staging area but keeps your file as it is. The change is still in the working folder, now unstaged.
+cmd: git reset HEAD~1
+cmd: git status --short
+cmd: cat hello.txt
+> reset --hard HEAD~1: move HEAD and erase the change | trash
+text: --hard moves HEAD and also overwrites the staging area and the working file. Line three is gone from the folder. Compare the four boxes: all of them now match commit two.
+cmd: git commit -qam "Line three, final"
+cmd: git reset --hard HEAD~1
+cmd: cat hello.txt
+cmd: git log --oneline --decorate
+risk: 1
+> reflog: find the lost commit and return | search
+text: Git remembers every place HEAD has been in the reflog, even after a hard reset. HEAD@{1} is where HEAD was one move ago. Resetting to it brings line three back.
+cmd: git reflog | head -n 6
+cmd: git reset --hard HEAD@{1}
+cmd: cat hello.txt
+> revert: undo a commit without rewriting history | merge
+text: revert adds a new commit that does the opposite of an old one. History only grows, so it is the safe way to undo something you already pushed.
+cmd: git revert --no-edit HEAD
+cmd: cat hello.txt
+cmd: git log --oneline --decorate
+
+= hello-branch-merge | Module 5: Branches and merging hello.txt | 2 | branch | Create a branch, commit on it, then merge it back with a fast-forward and with a merge commit.
+> Start with one commit | folder
+text: One commit on main. A branch is only a movable label on a commit, which is why creating one is instant.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt"
+cmd: git branch
+> git switch -c: create and move to a branch | branch
+text: The new branch greeting points at the same commit as main. HEAD now points at greeting, so the next commit moves greeting, not main.
+cmd: git switch -c greeting
+cmd: git branch
+cmd: git log --oneline --decorate
+> Commit on the branch; main stays behind | commit
+text: Add a line and commit. greeting moved forward; main did not. Switch back to main and the file loses the new line, because your working folder follows the branch you are on.
+cmd: echo "Namaste" >> hello.txt
+cmd: git commit -qam "Add Namaste"
+cmd: git switch main
+cmd: cat hello.txt
+cmd: git log --oneline --graph --all --decorate
+> Fast-forward merge | merge
+text: main has no new commits of its own, so Git simply moves the main label forward to greeting. No merge commit is needed, and history stays a straight line.
+cmd: git merge greeting
+cmd: cat hello.txt
+cmd: git log --oneline --graph --decorate
+> Both branches move: history diverges | branch
+text: Now footer adds a line to hello.txt while main adds a different file. Two lines of work started from the same commit. A fast-forward is no longer possible.
+cmd: git switch -c footer
+cmd: echo "Footer: Srinivas" >> hello.txt && git commit -qam "Add footer"
+cmd: git switch main
+cmd: echo "Header" > header.txt && git add header.txt && git commit -qm "Add header file"
+cmd: git log --oneline --graph --all --decorate
+> Merge commit: join the two lines of work | merge
+text: Because both sides have new commits, Git creates a merge commit with two parents. The changes touch different files, so Git combines them without asking you anything.
+cmd: git merge footer -m "Merge footer into main"
+cmd: ls
+cmd: git log --oneline --graph --decorate
+> Delete the finished branches | trash
+text: A branch is just a label, so deleting it after the merge loses no commits. -d refuses if the branch is not merged, which protects you.
+cmd: git branch -d greeting footer
+cmd: git branch
+
+= hello-merge-conflict | Module 6: A merge conflict on the same line | 2 | merge | Two branches change the same line of hello.txt. Git stops, you read the markers, decide, and finish the merge.
+> Start with one commit | folder
+text: hello.txt has a single line. Both branches will edit exactly that line.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt"
+cmd: git log --oneline
+> Two branches edit the same line | edit
+text: friendly says "welcome" and main says "good morning" on line one. Neither commit is wrong, but Git cannot know which to keep.
+cmd: git switch -qc friendly
+cmd: echo "Hello Srinivas, welcome" > hello.txt && git commit -qam "Friendly greeting"
+cmd: git switch -q main
+cmd: echo "Hello Srinivas, good morning" > hello.txt && git commit -qam "Morning greeting"
+cmd: git log --oneline --graph --all --decorate
+> git merge: Git stops with a conflict | warn
+text: The merge could not finish. The file is unmerged, and status marks it UU (both modified). HEAD has not moved yet: you are in the middle of a merge.
+cmd: git merge friendly
+cmd: git status --short
+> Read the conflict markers | eye
+text: Git wrote both versions into the file. Above the ======= line is your side (HEAD), below it is the other branch. The markers are not valid content, so they must go before you commit.
+cmd: cat hello.txt
+> Resolve: write the content you want | edit
+text: Edit the file to the final text and remove every marker line. Here we combine both greetings. Then add it, which tells Git the conflict is solved.
+cmd: echo "Hello Srinivas, welcome and good morning" > hello.txt
+cmd: cat hello.txt
+cmd: git add hello.txt
+cmd: git status --short
+> Finish the merge with a commit | save
+text: The merge commit has two parents and records your resolution. HEAD moves forward and the conflict is over. To give up instead, run git merge --abort before committing.
+cmd: git commit -qm "Merge friendly: combine greetings"
+cmd: git log --oneline --graph --decorate
+
+= hello-rebase | Module 7: Rebase and squash: a straight history | 3 | merge | Replay your branch on top of the newest main, merge it as a straight line, and squash small commits into one.
+> Start with one commit | folder
+text: One commit on main. We will make main and a feature branch each move on.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt"
+cmd: git log --oneline
+> Main and the feature both move | branch
+text: The feature branch changes hello.txt, main adds notes.txt. The branches have diverged, so merging would create a merge commit.
+cmd: git switch -qc feature
+cmd: echo "Feature line" >> hello.txt && git commit -qam "Feature: add line"
+cmd: git switch -q main
+cmd: echo "Notes" > notes.txt && git add notes.txt && git commit -qm "Add notes"
+cmd: git log --oneline --graph --all --decorate
+> git rebase main: replay the feature on top | merge
+text: Rebase lifts your feature commit off, moves the branch to the tip of main, and applies the commit again. The content is the same but it is a new commit with a new hash.
+cmd: git switch -q feature
+cmd: git rebase main
+cmd: git log --oneline --graph --all --decorate
+risk: 1
+note: Never rebase commits that other people have already pulled; the new hashes would confuse their copies.
+> Merge it: now a fast-forward | merge
+text: The feature already sits directly on top of main, so merging just moves main forward. The history is one straight line, with no merge commit.
+cmd: git switch -q main
+cmd: git merge feature
+cmd: git log --oneline --graph --decorate
+> Squash small commits into one | layers
+text: Make two work-in-progress commits, then fold the second into the first. fixup keeps the first commit's message and drops the second. GIT_SEQUENCE_EDITOR edits the todo list automatically here; normally you edit it in your editor.
+cmd: echo "wip one" >> hello.txt && git commit -qam "wip: draft"
+cmd: echo "wip two" >> hello.txt && git commit -qam "wip: fix typo"
+cmd: GIT_SEQUENCE_EDITOR="sed -i.bak -e '2s/^pick/fixup/'" git rebase -i HEAD~2
+cmd: git log --oneline --decorate
+cmd: cat hello.txt
+
+= hello-fetch-pull-team | Module 8: Working with a teammate: fetch, pull and rejected pushes | 2 | users | A teammate pushes to the server. See your remote box change, then use fetch, pull and pull --rebase.
+> Start: you and the server are in sync | cloud
+text: The server has your first commit and your local copy matches it. This is the clean starting point.
+cmd: git init -q --bare -b main ~/remote/hello.git
+cmd: git clone -q ~/remote/hello.git ~/hello-git
+cmd: cd ~/hello-git
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt" && git push -q -u origin main
+cmd: git log --oneline --decorate
+> A teammate pushes a change | users
+text: The teammate has their own clone in another folder. They add a line and push. Your folder is untouched, but look at the Remote box: the server is now one commit ahead of you.
+cmd: git clone -q ~/remote/hello.git ~/teammate
+cmd: cd ~/teammate
+cmd: echo "From the teammate" >> hello.txt && git commit -qam "Teammate line" && git push -q
+cmd: cd ~/hello-git
+cmd: git log --oneline --decorate
+> git fetch: look without changing your files | download
+text: fetch downloads new commits into the remote-tracking branch origin/main but does not touch your branch or files. You can inspect first, then decide.
+cmd: git fetch
+cmd: git log --oneline --graph --all --decorate
+cmd: cat hello.txt
+> git pull: fetch and bring it into your branch | download
+text: pull is fetch plus merge. Your branch had no commits of its own, so it just fast-forwards, and the teammate's line appears in your file.
+cmd: git pull
+cmd: cat hello.txt
+> You commit while the teammate pushes: push is rejected | ban
+text: Both of you add a commit from the same starting point. The teammate pushes first, so your push is refused because the server has work you do not have.
+cmd: cd ~/teammate
+cmd: echo "Second teammate line" >> hello.txt && git commit -qam "Teammate again" && git push -q
+cmd: cd ~/hello-git
+cmd: echo "Mine" > mine.txt && git add mine.txt && git commit -qm "Add mine.txt"
+cmd: git push
+> pull --rebase, then push | retry
+text: Rebase places your commit after the teammate's, so history stays straight, and then the push is accepted. This is the usual fix for a rejected push.
+cmd: git pull --rebase
+cmd: git push
+cmd: git log --oneline --graph --decorate
+
+= hello-stash-tags | Module 9: Stash unfinished work and tag a release | 2 | tag | Park half-done changes safely, bring them back, and mark a version with a tag that you also push.
+> Start with a committed hello.txt and a remote | cloud
+text: A clean repository connected to a server.
+cmd: git init -q --bare -b main ~/remote/hello.git
+cmd: git clone -q ~/remote/hello.git ~/hello-git
+cmd: cd ~/hello-git
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt" && git push -q -u origin main
+cmd: git status --short
+> Half-done work appears | edit
+text: You started a change but are not ready to commit. The working folder is dirty.
+cmd: echo "Unfinished idea" >> hello.txt
+cmd: git status --short
+> git stash: park it | save
+text: stash saves the working and staging changes on a shelf and returns the folder to the last commit. You can now switch branches or pull safely.
+cmd: git stash
+cmd: cat hello.txt
+cmd: git stash list
+> git stash pop: take it off the shelf | undo
+text: pop puts the saved change back into the working folder and removes it from the shelf. If the file changed meanwhile you may get a conflict to resolve.
+cmd: git stash pop
+cmd: cat hello.txt
+cmd: git stash list
+> Commit it and mark release v1.0 with a tag | tag
+text: A tag is a permanent name for one commit. An annotated tag (-a) stores a message, author and date, which is right for releases.
+cmd: git commit -qam "Add idea line"
+cmd: git tag -a v1.0 -m "First release"
+cmd: git tag
+cmd: git log --oneline --decorate
+> Push the tag to the server | upload
+text: A normal push does not send tags. Push the tag by name, or all tags with --tags. Then describe tells you where HEAD is relative to the last tag.
+cmd: git push origin v1.0
+cmd: git describe
+cmd: git ls-remote --tags origin
+
+= hello-detached-head | Module 10: Time travel: checkout old commits and detached HEAD | 3 | clock | Move HEAD to an old commit, see the file as it was, learn why commits made there can be lost, and rescue them.
+> Start with three commits | commit
+text: Three commits, each adding a line. We hide Git's long hint so the boxes stay readable; the lesson explains it.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q && git config advice.detachedHead false
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Line one"
+cmd: echo "Line two" >> hello.txt && git commit -qam "Line two"
+cmd: echo "Line three" >> hello.txt && git commit -qam "Line three"
+cmd: git log --oneline --decorate
+> Detach HEAD at an old commit | clock
+text: switch --detach points HEAD straight at a commit instead of at a branch name. Your folder now shows the file exactly as it was then: only one line. HEAD is "detached".
+cmd: git switch --detach HEAD~2
+cmd: cat hello.txt
+cmd: git log --oneline --decorate
+> Commit while detached | commit
+text: You can commit here, but no branch label follows this commit. It is reachable only from HEAD, so it can be lost once you move away.
+cmd: echo "Side idea" >> hello.txt && git commit -qam "Side idea"
+cmd: git log --oneline --all --graph --decorate
+> Go back to main: the commit seems lost | warn
+text: Switching to main moves HEAD. The side commit is no longer on any branch, and it is gone from the log. It still exists for a while; the reflog knows its hash.
+cmd: git switch main
+cmd: cat hello.txt
+cmd: git reflog | head -n 5
+> Rescue it with a branch | undo
+text: Create a branch at the lost commit using the hash from the reflog. Now it has a name and is safe.
+cmd: git branch rescue HEAD@{1}
+cmd: git log --oneline --all --graph --decorate
+cmd: git show rescue:hello.txt
+note: The commit before the last switch is HEAD@{1}. Use the hash shown in your own reflog.
+
+= hello-move-rename-delete | Module 11: Move, rename and delete files | 1 | folder | Rename and move hello.txt into a folder and delete files, with Git recording each change.
+> Start with hello.txt committed | folder
+text: One tracked file at the top of the project.
+cmd: mkdir -p ~/hello-git && cd ~/hello-git
+cmd: git init -q
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt"
+cmd: ls
+> git mv: rename the file | swap
+text: git mv renames in the working folder and stages the change in one go. Git sees a rename: the content is the same, only the path changed.
+cmd: git mv hello.txt greeting.txt
+cmd: git status --short
+cmd: ls
+> Commit the rename | commit
+text: The rename is now part of history. Use log --follow to track a file across renames.
+cmd: git commit -qm "Rename hello.txt to greeting.txt"
+cmd: git log --oneline --follow greeting.txt
+> Move it into a folder | folder
+text: Moving into a new directory is the same command. Git stores folders only through the files inside them.
+cmd: mkdir docs
+cmd: git mv greeting.txt docs/greeting.txt
+cmd: git commit -qm "Move greeting into docs"
+cmd: ls -R
+cmd: git log --oneline --follow docs/greeting.txt
+> git rm: delete a tracked file | trash
+text: rm deletes the file and stages the deletion. The file still exists in older commits, so you can get it back with restore from a past commit.
+cmd: git rm docs/greeting.txt
+cmd: git commit -qm "Remove greeting"
+cmd: git ls-files
+cmd: git restore --source=HEAD~1 docs/greeting.txt
+cmd: cat docs/greeting.txt
+
+= hello-pr-flow | Module 12: Feature branch to pull request to merged | 2 | rocket | Do the full team flow: branch, commit, push, merge as a pull request would, then clean up.
+> Start: main on the server | cloud
+text: The shared repository has hello.txt. Everyone works on branches and merges through pull requests.
+cmd: git init -q --bare -b main ~/remote/hello.git
+cmd: git clone -q ~/remote/hello.git ~/hello-git
+cmd: cd ~/hello-git
+cmd: echo "Hello Srinivas" > hello.txt && git add hello.txt && git commit -qm "Add hello.txt" && git push -q -u origin main
+cmd: git branch -a
+> Create a feature branch and commit | branch
+text: Never work directly on main. Make a branch named for the task and commit on it.
+cmd: git switch -c feature/welcome
+cmd: echo "Welcome to Git" >> hello.txt && git commit -qam "Add welcome line"
+cmd: git log --oneline --decorate
+> Push the branch to the server | upload
+text: The server now has your branch. On GitHub, GitLab or Bitbucket this is the moment the site offers "Open pull request" (or merge request).
+cmd: git push -u origin feature/welcome
+cmd: git branch -vv
+> The pull request is merged on the server | merge
+text: A reviewer approves and presses Merge. We simulate that button with a merge in a second clone that pushes main. In your own clone, main is not updated yet.
+cmd: git clone -q ~/remote/hello.git ~/reviewer
+cmd: git -C ~/reviewer merge --no-ff origin/feature/welcome -m "Merge pull request #1 from feature/welcome"
+cmd: git -C ~/reviewer push -q origin main
+cmd: git fetch
+cmd: git log --oneline --graph --all --decorate
+> Update main and clean up | trash
+text: Pull the merged main, then delete the finished branch locally and on the server. fetch --prune removes the stale remote-tracking name.
+cmd: git switch main
+cmd: git pull
+cmd: git branch -d feature/welcome
+cmd: git push origin --delete feature/welcome
+cmd: git fetch --prune
+cmd: git branch -a

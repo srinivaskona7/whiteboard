@@ -1,0 +1,177 @@
+# Q&A for batch 2 workflows.
+
+= git-objects
+q: In which situation do we use this?
+a: When Git behaves in a way you cannot explain, or you want to understand why branches are cheap and why identical files cost nothing.
+q: What are the three object types?
+a: A blob holds file bytes, a tree lists names and blobs like a folder, and a commit points to a tree and its parent.
+q: What comes next?
+a: git-reset-reflog and git-large-files make much more sense once you know that refs are just files holding a hash.
+
+= git-large-files
+q: In which situation do we use this?
+a: A clone has become slow or the repository is far larger than the code, and you need to find out why.
+q: Does ignoring a file shrink the repository?
+a: No. Old versions stay in history. Only rewriting history (git filter-repo) or never committing the file removes them.
+q: What comes next?
+a: Use Git LFS for binaries you must version, and agree on a size limit with the team.
+
+= git-notes-range-diff
+q: In which situation do we use this?
+a: A reviewer asked you to rebase and wants proof that nothing else changed, or you need to attach information to commits you cannot amend.
+q: How do I read range-diff?
+a: A line with = means the commit is identical after the rebase, ! means its patch changed, < or > means a commit was dropped or added.
+q: What comes next?
+a: Remember that notes are not pushed unless you push refs/notes/commits.
+
+= git-patches
+q: In which situation do we use this?
+a: There is no shared server: an air-gapped network, an email-based project, or a quick hand-off to one colleague.
+q: Patch, bundle or archive?
+a: A patch carries a few commits, a bundle carries a whole repository with history, and an archive carries only files of one commit.
+q: What comes next?
+a: Use apply --check before am, so a failure leaves your repository untouched.
+
+= git-force-push-recovery
+q: In which situation do we use this?
+a: Someone force-pushed over shared work, or you did and need the lost commits back.
+q: Force or force-with-lease?
+a: --force-with-lease refuses when the server has commits you have not seen, so you cannot silently erase a teammate's push.
+q: What comes next?
+a: Recover quickly from origin/main@{1} or a teammate's clone before the server cleans up unreachable commits.
+
+= lnx-csv-report
+q: In which situation do we use this?
+a: A quick answer is needed from a CSV or log: totals per group, the largest value, an average. No spreadsheet is available on the server.
+q: When is awk the wrong tool?
+a: When fields contain quoted commas or newlines. Use a CSV-aware tool or Python for those files.
+q: What comes next?
+a: Save the one-liner as a script and run it from cron for a daily report.
+
+= lnx-namespaces-cgroups
+q: In which situation do we use this?
+a: Understanding what a container really is, or debugging why a container hits a memory or CPU limit.
+q: What is the difference between the two?
+a: Namespaces limit what a process can see; cgroups limit how much it can use.
+q: What comes next?
+a: Read docker inspect and the pod resource limits with these two ideas in mind.
+
+= lnx-audit-gpg
+q: In which situation do we use this?
+a: You must know who changed a sensitive file, or you must store a secret in a file safely.
+q: Is a checksum a signature?
+a: No. A checksum shows the file changed; only a signature shows who produced it.
+q: What comes next?
+a: Ship audit logs to a central place so an intruder cannot erase them.
+
+= lnx-rsync-tar
+q: In which situation do we use this?
+a: Backups, migrating data between servers, deploying a folder, or packaging files for transfer.
+q: What is the main danger?
+a: --delete with a wrong path or a missing trailing slash. Always run with -n first and read the list.
+q: What comes next?
+a: Add a restore test, as in lnx-backup-restore.
+
+= lnx-time-chrony
+q: In which situation do we use this?
+a: TLS errors, odd log times, failing token or Kerberos logins, or database clusters that disagree about order.
+q: Why UTC on servers?
+a: Logs from many machines and regions line up, and daylight saving never creates repeated or missing hours.
+q: What comes next?
+a: Monitor the clock offset and alert if it passes a few hundred milliseconds.
+
+= lnx-kernel-sysctl
+q: In which situation do we use this?
+a: Preparing a machine for Kubernetes or routing, tuning network limits, or fixing "too many open files".
+q: Why do changes disappear after reboot?
+a: sysctl -w and ulimit change only the running system. Put the setting in /etc/sysctl.d, a systemd unit or limits.d.
+q: What comes next?
+a: Change one value at a time and record the old value.
+
+= ans-pull-cron
+q: In which situation do we use this?
+a: Servers that scale automatically, laptops, or machines behind NAT that the control node cannot reach.
+q: What do I give up compared to push?
+a: A single central run. You need logging and monitoring to confirm that every host applied the latest commit.
+q: What comes next?
+a: Use --only-if-changed and a random delay so a thousand hosts do not pull at the same second.
+
+= ans-dynamic-inventory
+q: In which situation do we use this?
+a: Cloud servers that come and go. A static host list is out of date the moment an autoscaling group changes.
+q: How do I group hosts?
+a: Use keyed_groups on tags, such as Role=web becoming role_web, so playbooks target by role, not by address.
+q: What comes next?
+a: Enable caching and give the plugin a read-only IAM role.
+
+= ans-async-retry
+q: In which situation do we use this?
+a: A service needs time to start, a download is flaky, or a job takes longer than the SSH timeout.
+q: until or wait_for?
+a: wait_for suits ports and files. until with retries suits any module result, such as an HTTP status.
+q: What comes next?
+a: Prefer failed_when with a precise rule instead of ignore_errors.
+
+= ans-molecule-test
+q: In which situation do we use this?
+a: A role is shared or critical and you want proof it works on a clean machine, and that a second run changes nothing.
+q: What does molecule test do?
+a: It creates an instance, converges, repeats to check idempotence, verifies, and destroys the instance.
+q: What comes next?
+a: Run it in CI on every pull request.
+
+= ans-kubernetes-k8s
+q: In which situation do we use this?
+a: You already use Ansible and want cluster objects managed in the same repository and pipeline as the servers.
+q: Ansible or kubectl and Helm?
+a: Ansible is handy when Kubernetes is one part of a bigger run. For pure application delivery, Helm or GitOps tools are usually a better fit.
+q: What comes next?
+a: Check kubectl config current-context before every run, so you do not change the wrong cluster.
+
+= net-ssh-forwarding
+q: In which situation do we use this?
+a: A database or admin page is private and you have SSH access to a host inside the network.
+q: Which flag, in one line?
+a: -L brings a remote service to your machine, -R sends your service to the server, -D makes a SOCKS proxy.
+q: What comes next?
+a: Close tunnels when finished, and use only systems you are authorised to reach.
+
+= net-nmap-basics
+q: In which situation do we use this?
+a: Checking which ports your own servers really expose, or confirming that a firewall change worked.
+q: What do open, closed and filtered mean?
+a: Open means a program answers, closed means nothing listens, filtered means a firewall hides the answer.
+q: What comes next?
+a: Save scans and diff them after each change. Scan only with permission.
+
+= net-wireguard
+q: In which situation do we use this?
+a: A small, fast VPN between two sites or from a laptop to a server, with little configuration.
+q: What identifies a peer?
+a: Its public key. AllowedIPs says which addresses may be sent through that peer.
+q: What comes next?
+a: Rotate keys on a schedule and never share a private key.
+
+= net-iptables-nat
+q: In which situation do we use this?
+a: A Linux box must act as a router or gateway for a private network, or forward a public port to an internal server.
+q: SNAT or DNAT?
+a: MASQUERADE rewrites the source for outgoing traffic. DNAT rewrites the destination for port forwarding.
+q: What comes next?
+a: On new systems look at nftables, which replaces iptables.
+
+= net-aws-peering-endpoints
+q: In which situation do we use this?
+a: Two VPCs, for example prod and shared services, need private connectivity, or private subnets need S3 without a NAT gateway.
+q: Why does my peering not work?
+a: Usual causes: only one route table was updated, a security group blocks it, or the CIDR ranges overlap.
+q: What comes next?
+a: For many VPCs, compare Transit Gateway.
+
+= net-k8s-networkpolicy
+q: In which situation do we use this?
+a: Locking down a namespace so only the right pods can talk to each other, for example only the frontend reaching the database.
+q: Where do people go wrong?
+a: The network plugin must enforce policies, and after denying egress you must still allow DNS on port 53.
+q: What comes next?
+a: Test both the allowed and the denied path.

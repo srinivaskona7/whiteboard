@@ -64,7 +64,7 @@ const OP_RATE_LIMITS = {
   'reaction:send': { burst: 10, refillPerSec: 1 },
   'chat:cursor': { burst: 5, refillPerSec: 0.5 },
   'question:add': { burst: 4, refillPerSec: 0.2 },
-  'question:update': { burst: 10, refillPerSec: 2 },
+  'question:update': { burst: 30, refillPerSec: 5 },
   'vote:cast': { burst: 12, refillPerSec: 2 },
 };
 
@@ -493,6 +493,10 @@ export class CollabStore {
       const target = page.elements.find((e) => e.id === op.elementId);
       if (!target) return { ok: false, code: 404, error: 'Voting target not found.' };
       const votes = castVote(target);
+      // A vote must outrank any in-flight teacher scene sync carrying the
+      // same updatedAt: without this bump, the >= merge tie lets a stale
+      // sync clobber the count until the next broadcast heals it.
+      target.updatedAt = Date.now();
       room.updatedAt = Date.now();
       this._saveToDisk();
       return {

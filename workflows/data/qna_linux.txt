@@ -1,0 +1,209 @@
+# Q&A per workflow: situations, pitfalls, next step. Format: "= id", then q:/a: pairs.
+
+= lnx-boot
+q: In which situation do we use this?
+a: A server will not start, starts slowly, or you need to know whether it uses UEFI or legacy BIOS.
+q: What is the order of boot?
+a: Firmware, boot loader (GRUB), kernel plus initramfs, then systemd starts services until the target is reached.
+q: What comes next?
+a: lnx-boot-inspect to read the details, lnx-boot-slow to measure.
+
+= lnx-boot-inspect
+q: In which situation do we use this?
+a: After an unexpected reboot, or before changing boot settings. Check what actually ran during the last boot.
+q: Which command first?
+a: journalctl -b shows the current boot log; journalctl -b -1 shows the previous one.
+q: What comes next?
+a: If the previous boot failed, look at lnx-boot-rescue.
+
+= lnx-boot-slow
+q: In which situation do we use this?
+a: A machine takes minutes to become usable. Find which unit delays the boot.
+q: Which command shows the culprit?
+a: systemd-analyze blame lists units by time; critical-chain shows what the boot actually waited for.
+q: What comes next?
+a: Disable only units you understand, and compare with your baseline after the next reboot.
+
+= lnx-boot-rescue
+q: In which situation do we use this?
+a: A machine you own will not boot after a bad update or an fstab mistake. Use rescue mode to repair it.
+q: What do I check first?
+a: Whether the root filesystem is mounted read-only, and the last lines of journalctl -xb.
+q: What comes next?
+a: After the repair, reboot and re-check; keep a note of what you changed.
+
+= lnx-files-text
+q: In which situation do we use this?
+a: Daily work on any server: moving around, reading logs and config, copying and removing files.
+q: What is the safe habit?
+a: Run ls and pwd before rm, and preview with ls pattern before using a wildcard in a delete.
+q: What comes next?
+a: lnx-permissions explains why some files cannot be opened.
+
+= lnx-permissions
+q: In which situation do we use this?
+a: You see "Permission denied", a script will not run, or a web server cannot read its files.
+q: What do the numbers mean?
+a: Read is 4, write is 2, execute is 1, added per owner, group and others. So 640 is rw- for owner, r-- for group.
+q: What comes next?
+a: Avoid chmod 777; give the right owner or group instead.
+
+= lnx-users-groups
+q: In which situation do we use this?
+a: A new colleague, a service account, or access to a shared folder. Groups are cleaner than per-user rules.
+q: What goes wrong with usermod -G?
+a: It replaces the group list. Use usermod -aG to add a group and keep the existing ones.
+q: What comes next?
+a: Group changes apply at the next login.
+
+= lnx-find-search
+q: In which situation do we use this?
+a: Find a lost file, large files filling a disk, files changed today, or text inside many files.
+q: find or grep?
+a: find searches names and file properties; grep searches contents. Combine them with -exec or xargs.
+q: What comes next?
+a: Test a find command without -delete first, then add it.
+
+= lnx-packages
+q: In which situation do we use this?
+a: Installing, updating or removing software; checking which package owns a file; fixing a broken update.
+q: apt, dnf or rpm?
+a: apt (Debian, Ubuntu) and dnf (RHEL, Fedora) use repositories. dpkg and rpm work on single package files.
+q: What comes next?
+a: Run update before install, and read what will be removed before you confirm.
+
+= lnx-systemd-services
+q: In which situation do we use this?
+a: A service needs to start, stop, restart, start at boot, or you need to know why it failed.
+q: start or enable?
+a: start runs it now; enable makes it start at boot. enable --now does both.
+q: What comes next?
+a: Read systemctl status and journalctl -u name for the reason.
+
+= lnx-custom-service
+q: In which situation do we use this?
+a: Your own script or app must run in the background, restart on failure and start at boot.
+q: What must I do after writing the unit file?
+a: Run systemctl daemon-reload so systemd reads it, then enable --now.
+q: What comes next?
+a: Add Restart=on-failure and a dedicated non-root user.
+
+= lnx-processes
+q: In which situation do we use this?
+a: A program hangs, uses all the CPU, or you need to find what is listening on a port.
+q: kill or kill -9?
+a: kill sends a polite TERM so the program can clean up. Use -9 only when it ignores that.
+q: What comes next?
+a: lnx-diagnose-process goes deeper with lsof and strace.
+
+= lnx-cron-timers
+q: In which situation do we use this?
+a: Anything that must run on a schedule: backups, cleanup, reports, certificate renewal.
+q: Why does a cron job work by hand but not on schedule?
+a: Cron has a minimal environment and PATH. Use full paths and redirect output to a log file.
+q: What comes next?
+a: systemd timers add logging and catch-up runs with Persistent=true.
+
+= lnx-disks-mount
+q: In which situation do we use this?
+a: Adding a new disk or volume to a server, or finding what is mounted where.
+q: What is the dangerous step?
+a: mkfs erases the target. Confirm the device name with lsblk and blkid before formatting.
+q: What comes next?
+a: Make it permanent in fstab (lnx-swap-fstab) and test with mount -a.
+
+= lnx-lvm-grow
+q: In which situation do we use this?
+a: A filesystem is almost full and you need to grow it without downtime.
+q: What is the order?
+a: Extend the volume group with a new disk, extend the logical volume, then grow the filesystem. lvextend -r does the last two.
+q: What comes next?
+a: Shrinking is riskier than growing; plan sizes with room to expand.
+
+= lnx-net-troubleshoot
+q: In which situation do we use this?
+a: A server cannot reach something, or cannot be reached. Work from your own interface outward.
+q: What is the order?
+a: Interface and IP, gateway, DNS, then the remote port. Stop at the first step that fails.
+q: What comes next?
+a: net-troubleshoot-method gives a layered checklist.
+
+= lnx-harden-ssh-firewall
+q: In which situation do we use this?
+a: A new server on the internet: disable password logins and root login, allow only needed ports, ban repeated failures.
+q: What goes wrong if I rush?
+a: You can lock yourself out. Keep a second session open and test with sshd -t before restarting.
+q: What comes next?
+a: Add fail2ban and automatic security updates.
+
+= lnx-logs
+q: In which situation do we use this?
+a: Something failed and you need to know what and when: a service crash, a login attempt, a disk error.
+q: journalctl or /var/log?
+a: journalctl queries the systemd journal by unit, time and priority. Plain files in /var/log hold text logs from other programs.
+q: What comes next?
+a: Rotate logs with logrotate so they do not fill the disk.
+
+= lnx-backup-restore
+q: In which situation do we use this?
+a: Before any risky change, and on a schedule for data you cannot recreate.
+q: What is the rule people forget?
+a: A backup is only real after a restore test. Verify checksums and practise restoring to another folder.
+q: What comes next?
+a: Keep a copy off the machine, and automate with cron or a timer.
+
+= lnx-health-script
+q: In which situation do we use this?
+a: You want a quick daily answer to "is this server healthy?": disk, memory, load and failed services.
+q: Why use thresholds?
+a: A script that only prints numbers is ignored. Exit non-zero when a limit is crossed so cron or monitoring can alert.
+q: What comes next?
+a: Run it from a timer and send the output to a log.
+
+= lnx-text-pipeline
+q: In which situation do we use this?
+a: A log or CSV is too large to read: count errors, rank top IPs, extract one column, clean text.
+q: Why sort before uniq?
+a: uniq only merges neighbouring duplicates, so unsorted input gives wrong counts.
+q: What comes next?
+a: For heavier analysis move to a script or a log tool.
+
+= lnx-links
+q: In which situation do we use this?
+a: Switching versions with a current -> v2 link, sharing one file under two names, or saving disk space.
+q: Hard or symbolic?
+a: Symbolic links point at a path and can break; hard links share the data and survive deleting the original name.
+q: What comes next?
+a: Use ln -sfn to replace a symlink safely.
+
+= lnx-tmux-jobs
+q: In which situation do we use this?
+a: A long task runs over a remote session that might drop: builds, downloads, migrations.
+q: nohup or tmux?
+a: nohup just survives logout. tmux lets you detach and reattach, and see the live screen.
+q: What comes next?
+a: For real services use systemd, not a terminal session.
+
+= lnx-diagnose-process
+q: In which situation do we use this?
+a: The server is slow, a port is busy, a file cannot be deleted, or a program fails with a vague error.
+q: Which tool for which symptom?
+a: vmstat for CPU, memory and I/O; lsof for open files and ports; strace for the failing system call.
+q: What comes next?
+a: Use strace briefly; it slows the program a lot.
+
+= lnx-selinux-basics
+q: In which situation do we use this?
+a: Permissions look right but access is still denied on a RHEL-family machine, often for web content or custom folders.
+q: What should I avoid?
+a: Disabling SELinux. Fix the label with restorecon or semanage fcontext, or set the right boolean.
+q: What comes next?
+a: Use setenforce 0 only to test the theory, then switch back with setenforce 1.
+
+= lnx-swap-fstab
+q: In which situation do we use this?
+a: Memory pressure on a small server, or a data disk that must mount automatically at boot.
+q: What protects me from a bad fstab?
+a: Run mount -a and findmnt --verify before rebooting, and use nofail on non-essential disks.
+q: What comes next?
+a: Keep a backup copy of fstab before editing.

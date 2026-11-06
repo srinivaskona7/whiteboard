@@ -1,0 +1,261 @@
+@topic terraform | Terraform: infrastructure as code | #7B42F4 | iac-terraform | Describe infrastructure in files, preview it, create it, change it and delete it. Modules 1 to 3 use the built-in provider, so every command runs on your laptop with no cloud account. I ran module 1 and the console expressions with Terraform 1.9.8; the rest of the output is written by hand. Modules 4 to 8 build a VPC and a web server on AWS. The code was checked with terraform fmt and a reference check, but not against the AWS provider schema, so run terraform validate yourself. Their plan and apply output is an example.
+
+= tf-first-config | Module 1: Your first Terraform config: Hello Srinivas | 1 | iac-terraform | Write main.tf, then run init, validate, apply, output and destroy and see what each command does.
+> Check the install | terminal
+text: Terraform is one program. It reads .tf files, compares them with what exists, and makes the difference real.
+cmd: terraform version
+cmd: mkdir -p ~/tf-hello && cd ~/tf-hello
+out: Terraform v1.9.8\non darwin_arm64
+> Write main.tf | edit
+text: A resource block describes one thing to create. terraform_data is built into Terraform, so nothing is downloaded. An output prints a value after apply.
+cmd: cat > main.tf <<'EOF'\nvariable "who" {\n  type    = string\n  default = "Srinivas"\n}\n\nresource "terraform_data" "greeting" {\n  input = "Hello ${var.who}"\n}\n\noutput "message" {\n  value = terraform_data.greeting.output\n}\nEOF
+cmd: cat main.tf
+> terraform init: prepare the folder | gear
+text: init downloads the providers named in the config and sets up the backend. Run it once per folder and again after adding a provider or module.
+cmd: terraform init
+out: Initializing the backend...\nInitializing provider plugins...\n- terraform.io/builtin/terraform is built in to Terraform\n\nTerraform has been successfully initialized!
+> fmt and validate: tidy and check | check
+text: fmt rewrites files into the standard style and validate checks syntax and references. Neither touches real infrastructure.
+cmd: terraform fmt -check && echo "formatted"
+cmd: terraform validate
+out: formatted\nSuccess! The configuration is valid.
+> terraform plan then apply | rocket
+text: plan is a preview. apply shows the same preview and, after you type yes (or use -auto-approve), creates the resource. The + sign means create. "known after apply" means the value does not exist yet.
+cmd: terraform apply -auto-approve
+out: Terraform will perform the following actions:\n\n  # terraform_data.greeting will be created\n  + resource "terraform_data" "greeting" {\n      + id     = (known after apply)\n      + input  = "Hello Srinivas"\n      + output = (known after apply)\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + message = (known after apply)\nterraform_data.greeting: Creating...\nterraform_data.greeting: Creation complete after 0s [id=b4160acb-e877-22ae-a454-0ddfca1eebf6]
+> Read the result | eye
+text: output prints values; -raw prints one value with no quotes, which is handy in scripts. The files created are main.tf, the state file and a lock file.
+cmd: terraform output
+cmd: terraform output -raw message
+cmd: ls -a
+out: message = "Hello Srinivas"\nHello Srinivas\n.\n..\n.terraform\n.terraform.lock.hcl\nmain.tf\nterraform.tfstate
+> terraform destroy | trash
+text: destroy removes everything this configuration created. The - sign means delete. Your .tf files stay, so apply can recreate it.
+cmd: terraform destroy -auto-approve
+out: terraform_data.greeting: Destroying... [id=b4160acb-e877-22ae-a454-0ddfca1eebf6]\nterraform_data.greeting: Destruction complete after 0s\n\nDestroy complete! Resources: 1 destroyed.
+risk: 1
+
+= tf-variables-functions | Module 2: Variables, locals, functions and loops | 2 | sliders | Make a config flexible: typed variables, a tfvars file, locals, built-in functions, count and for_each.
+> Typed variables with checks | sliders
+text: A variable has a type, a default and optionally a validation rule. Invalid input stops before anything is created.
+cmd: mkdir -p ~/tf-vars && cd ~/tf-vars
+cmd: cat > variables.tf <<'EOF'\nvariable "env" {\n  type    = string\n  default = "dev"\n  validation {\n    condition     = contains(["dev", "prod"], var.env)\n    error_message = "env must be dev or prod."\n  }\n}\n\nvariable "names" {\n  type    = list(string)\n  default = ["srinivas", "india"]\n}\nEOF
+> Locals and expressions | code
+text: A local is a named expression you reuse. Terraform has no assignment: values are computed from other values.
+cmd: cat > main.tf <<'EOF'\nlocals {\n  prefix = "hello-${var.env}"\n  upper  = [for n in var.names : upper(n)]\n}\n\nresource "terraform_data" "item" {\n  for_each = toset(var.names)\n  input    = "${local.prefix}-${each.key}"\n}\n\noutput "upper" {\n  value = local.upper\n}\n\noutput "items" {\n  value = { for k, v in terraform_data.item : k => v.output }\n}\nEOF
+cmd: terraform init -no-color | tail -n 1
+> Try functions in the console | search
+text: terraform console evaluates expressions. cidrsubnet is the one you will use most for network design: it cuts a smaller block out of a larger one.
+cmd: echo 'upper("hello")' | terraform console
+cmd: echo 'cidrsubnet("10.0.0.0/16", 8, 10)' | terraform console
+cmd: echo 'cidrsubnet("10.0.0.0/16", 8, 1)' | terraform console
+cmd: echo 'format("%s-%s", "hello", "srinivas")' | terraform console
+cmd: echo 'cidrhost("10.0.0.0/24", 5)' | terraform console
+out: "HELLO"\n"10.0.10.0/24"\n"10.0.1.0/24"\n"hello-srinivas"\n"10.0.0.5"
+> Override a variable | edit
+text: Three ways, in order of strength: -var on the command line, a terraform.tfvars file, and the default. An invalid value is rejected at once.
+cmd: echo 'env = "prod"' > terraform.tfvars
+cmd: terraform apply -auto-approve | tail -n 8
+cmd: terraform apply -var 'env=staging' -auto-approve
+out: Error: Invalid value for variable\n\n  on variables.tf line 1:\n   1: variable "env" {\n     var.env is "staging"\n\nenv must be dev or prod.
+> count and for_each | layers
+text: count makes numbered copies (a list), for_each makes one per key (a map or set). Prefer for_each: removing the middle item does not renumber the rest.
+cmd: terraform state list
+cmd: terraform output items
+out: terraform_data.item["india"]\nterraform_data.item["srinivas"]\n{\n  "india" = "hello-prod-india"\n  "srinivas" = "hello-prod-srinivas"\n}
+> Clean up | trash
+text: Remove everything this folder created.
+cmd: terraform destroy -auto-approve | tail -n 2
+
+= tf-state-lifecycle | Module 3: State, plan, change and destroy | 2 | database | Understand the state file: see a change as a plan, save a plan, inspect state and recover from drift.
+> Create something to track | rocket
+text: Apply once so there is state to look at. The state file maps your config to real objects, and without it Terraform cannot know what it owns.
+cmd: mkdir -p ~/tf-state && cd ~/tf-state
+cmd: cat > main.tf <<'EOF'\nvariable "who" {\n  type    = string\n  default = "Srinivas"\n}\n\nresource "terraform_data" "greeting" {\n  input = "Hello ${var.who}"\n}\nEOF
+cmd: terraform init -no-color | tail -n 1
+cmd: terraform apply -auto-approve | tail -n 2
+> Look at the state | database
+text: state list shows every resource Terraform manages and show prints the saved attributes. The file is JSON, but never edit it by hand.
+cmd: terraform state list
+cmd: terraform show
+cmd: head -c 220 terraform.tfstate
+out: terraform_data.greeting\n# terraform_data.greeting:\nresource "terraform_data" "greeting" {\n    id     = "b4160acb-e877-22ae-a454-0ddfca1eebf6"\n    input  = "Hello Srinivas"\n    output = "Hello Srinivas"\n}
+note: State can contain secrets. Keep it out of Git and store it in a protected remote backend (module 7).
+> Change the config and read the plan | diff
+text: The ~ sign means change in place. The arrow shows the old and new value. -> forces replacement is shown when a change cannot be done in place.
+cmd: terraform plan -var 'who=India'
+out: Terraform will perform the following actions:\n\n  # terraform_data.greeting will be updated in-place\n  ~ resource "terraform_data" "greeting" {\n        id     = "b4160acb-e877-22ae-a454-0ddfca1eebf6"\n      ~ input  = "Hello Srinivas" -> "Hello India"\n      ~ output = "Hello Srinivas" -> (known after apply)\n    }\n\nPlan: 0 to add, 1 to change, 0 to destroy.
+> Save a plan and apply exactly that | save
+text: plan -out saves the decision. apply with that file does exactly what was reviewed, which is how pipelines separate review from execution.
+cmd: terraform plan -var 'who=India' -out=tfplan
+cmd: terraform show tfplan | tail -n 4
+cmd: terraform apply tfplan
+> Replace on purpose | retry
+text: -replace forces a resource to be destroyed and created again, for example to rebuild a broken server.
+cmd: terraform apply -replace=terraform_data.greeting -auto-approve | tail -n 3
+> Remove from state without deleting | wrench
+text: state rm makes Terraform forget a resource. The real object stays. This is useful when you move ownership to another configuration.
+cmd: terraform state rm terraform_data.greeting
+cmd: terraform state list
+risk: 1
+note: Afterwards plan would try to create it again. Use import to bring an existing object back under control.
+
+= tf-aws-vpc | Module 4: Build a basic VPC with public and private subnets | 3 | cloud | Describe a network: VPC, two public and two private subnets, an internet gateway and route tables. Optional NAT stays off to avoid cost.
+> The picture before the code | network
+text: A VPC is your private network. Public subnets route to an internet gateway. Private subnets have no route out unless you add a NAT. Two zones give resilience.
+cmd: mkdir -p ~/tf-vpc && cd ~/tf-vpc
+viz: Internet>Internet gateway:public traffic ; Internet gateway>Public route table:0.0.0.0/0 ; Public route table>Public subnets:associated ; Private route table>Private subnets:local only
+> versions.tf and variables.tf | doc
+text: Pin the AWS provider so a new major version cannot surprise you. Variables hold the choices: region, name, address range, zones and whether to pay for a NAT gateway.
+cmd: cat > versions.tf <<'EOF'\nterraform {\n  required_version = ">= 1.6"\n  required_providers {\n    aws = {\n      source  = "hashicorp/aws"\n      version = "~> 5.0"\n    }\n  }\n}\n\nprovider "aws" {\n  region = var.region\n}\nEOF
+cmd: cat > variables.tf <<'EOF'\nvariable "region" {\n  type    = string\n  default = "ap-south-1"\n}\n\nvariable "name" {\n  type    = string\n  default = "hello-srinivas"\n}\n\nvariable "vpc_cidr" {\n  type    = string\n  default = "10.0.0.0/16"\n}\n\nvariable "azs" {\n  type    = list(string)\n  default = ["ap-south-1a", "ap-south-1b"]\n}\n\nvariable "enable_nat" {\n  description = "A NAT gateway costs money every hour. Keep false for the lesson."\n  type        = bool\n  default     = false\n}\n\nvariable "instance_type" {\n  type    = string\n  default = "t3.micro"\n}\nEOF
+> The VPC, subnets and gateway | cloud
+text: cidrsubnet cuts 10.0.0.0/16 into /24 blocks: public subnets get 10.0.0.0 and 10.0.1.0, private ones 10.0.10.0 and 10.0.11.0. count creates one subnet per zone.
+cmd: cat > network.tf <<'EOF'\nresource "aws_vpc" "main" {\n  cidr_block           = var.vpc_cidr\n  enable_dns_hostnames = true\n  tags                 = { Name = "${var.name}-vpc" }\n}\n\nresource "aws_internet_gateway" "igw" {\n  vpc_id = aws_vpc.main.id\n  tags   = { Name = "${var.name}-igw" }\n}\n\nresource "aws_subnet" "public" {\n  count                   = length(var.azs)\n  vpc_id                  = aws_vpc.main.id\n  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)\n  availability_zone       = var.azs[count.index]\n  map_public_ip_on_launch = true\n  tags                    = { Name = "${var.name}-public-${count.index + 1}" }\n}\n\nresource "aws_subnet" "private" {\n  count             = length(var.azs)\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10)\n  availability_zone = var.azs[count.index]\n  tags              = { Name = "${var.name}-private-${count.index + 1}" }\n}\nEOF
+> Route tables | map
+text: The public route table sends 0.0.0.0/0 (everything else) to the internet gateway. Each subnet must be associated with a table, otherwise it uses the VPC default.
+cmd: cat >> network.tf <<'EOF'\n\nresource "aws_route_table" "public" {\n  vpc_id = aws_vpc.main.id\n  route {\n    cidr_block = "0.0.0.0/0"\n    gateway_id = aws_internet_gateway.igw.id\n  }\n  tags = { Name = "${var.name}-public-rt" }\n}\n\nresource "aws_route_table_association" "public" {\n  count          = length(var.azs)\n  subnet_id      = aws_subnet.public[count.index].id\n  route_table_id = aws_route_table.public.id\n}\nEOF
+> Optional NAT for the private subnets | nat
+text: A NAT gateway lets private servers reach the internet for updates without being reachable from it. It bills by the hour, so it is behind a switch. dynamic adds the route only when the switch is on.
+cmd: cat >> network.tf <<'EOF'\n\nresource "aws_eip" "nat" {\n  count  = var.enable_nat ? 1 : 0\n  domain = "vpc"\n}\n\nresource "aws_nat_gateway" "nat" {\n  count         = var.enable_nat ? 1 : 0\n  allocation_id = aws_eip.nat[0].id\n  subnet_id     = aws_subnet.public[0].id\n  tags          = { Name = "${var.name}-nat" }\n  depends_on    = [aws_internet_gateway.igw]\n}\n\nresource "aws_route_table" "private" {\n  vpc_id = aws_vpc.main.id\n  dynamic "route" {\n    for_each = var.enable_nat ? [1] : []\n    content {\n      cidr_block     = "0.0.0.0/0"\n      nat_gateway_id = aws_nat_gateway.nat[0].id\n    }\n  }\n  tags = { Name = "${var.name}-private-rt" }\n}\n\nresource "aws_route_table_association" "private" {\n  count          = length(var.azs)\n  subnet_id      = aws_subnet.private[count.index].id\n  route_table_id = aws_route_table.private.id\n}\nEOF
+> Outputs, init, validate and plan | rocket
+text: Outputs expose IDs for other modules and for you. init downloads the AWS provider, validate checks the code and plan previews 12 resources. Nothing is created yet.
+cmd: cat > outputs.tf <<'EOF'\noutput "vpc_id" {\n  value = aws_vpc.main.id\n}\n\noutput "public_subnet_ids" {\n  value = aws_subnet.public[*].id\n}\n\noutput "private_subnet_ids" {\n  value = aws_subnet.private[*].id\n}\nEOF
+cmd: terraform init
+cmd: terraform fmt -check && terraform validate
+cmd: terraform plan -out=tfplan
+out: Plan: 12 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + private_subnet_ids = [(known after apply), (known after apply)]\n  + public_subnet_ids  = [(known after apply), (known after apply)]\n  + vpc_id             = (known after apply)
+> Apply and verify with the AWS CLI | check
+text: apply builds the network in about a minute. Confirm with the CLI that the subnets and routes are what you expected.
+cmd: terraform apply tfplan
+cmd: aws ec2 describe-subnets --filters Name=vpc-id,Values=$(terraform output -raw vpc_id) --query 'Subnets[].[Tags[0].Value,CidrBlock,AvailabilityZone]' --output table
+out: ---------------------------------------------------------\n|                    DescribeSubnets                    |\n+--------------------------+--------------+-------------+\n|  hello-srinivas-public-1 |  10.0.0.0/24 | ap-south-1a |\n|  hello-srinivas-public-2 |  10.0.1.0/24 | ap-south-1b |\n|  hello-srinivas-private-1|  10.0.10.0/24| ap-south-1a |\n|  hello-srinivas-private-2|  10.0.11.0/24| ap-south-1b |\n+--------------------------+--------------+-------------+
+
+= tf-app-deploy | Module 5: Deploy a web app into the VPC | 3 | server | Add a security group and an EC2 server that installs nginx and serves Hello Srinivas, then test it in the browser.
+> Find the newest Linux image automatically | search
+text: A data source reads existing information. This one asks AWS for the current Amazon Linux 2023 image, so you never paste an out-of-date AMI ID.
+cmd: cd ~/tf-vpc
+cmd: cat > app.tf <<'EOF'\ndata "aws_ssm_parameter" "al2023" {\n  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"\n}\nEOF
+> A security group as the firewall | firewall
+text: Allow HTTP in from anywhere and everything out. Anything not allowed is blocked.
+cmd: cat >> app.tf <<'EOF'\n\nresource "aws_security_group" "web" {\n  name        = "${var.name}-web"\n  description = "Allow HTTP from anywhere"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    from_port   = 80\n    to_port     = 80\n    protocol    = "tcp"\n    cidr_blocks = ["0.0.0.0/0"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = "-1"\n    cidr_blocks = ["0.0.0.0/0"]\n  }\n}\nEOF
+> The server and its start-up script | server
+text: user_data runs once on first boot. It installs nginx and writes the page. The server is placed in the first public subnet and uses the security group.
+cmd: cat >> app.tf <<'EOF'\n\nresource "aws_instance" "web" {\n  ami                    = data.aws_ssm_parameter.al2023.value\n  instance_type          = var.instance_type\n  subnet_id              = aws_subnet.public[0].id\n  vpc_security_group_ids = [aws_security_group.web.id]\n\n  user_data = <<-EOT\n    #!/bin/bash\n    dnf install -y nginx\n    echo "Hello Srinivas from Terraform" > /usr/share/nginx/html/index.html\n    systemctl enable --now nginx\n  EOT\n\n  tags = { Name = "${var.name}-web" }\n}\nEOF
+cmd: cat >> outputs.tf <<'EOF'\n\noutput "web_url" {\n  value = "http://${aws_instance.web.public_ip}"\n}\nEOF
+> Plan and apply | rocket
+text: The plan now shows 14 resources: the network from module 4 plus the group and the server. Dependencies are worked out from the references, so the server waits for the subnet.
+cmd: terraform validate
+cmd: terraform plan -out=tfplan
+cmd: terraform apply tfplan
+out: Plan: 14 to add, 0 to change, 0 to destroy.\n\naws_vpc.main: Creating...\naws_instance.web: Creation complete after 17s [id=i-0abc123def4567890]\n\nApply complete! Resources: 14 added, 0 changed, 0 destroyed.\n\nOutputs:\nweb_url = "http://13.233.10.45"
+> Test it | check
+text: Wait about a minute for the start-up script, then call the address from the output.
+cmd: curl $(terraform output -raw web_url)
+cmd: terraform state list | head -n 8
+out: Hello Srinivas from Terraform\ndata.aws_ssm_parameter.al2023\naws_instance.web\naws_internet_gateway.igw\naws_route_table.private\naws_route_table.public
+> Change the page and see an in-place or replace plan | diff
+text: Changing user_data replaces the server because it only runs at first boot. The plan says "forces replacement" in red, a clear warning before you apply.
+cmd: sed -i.bak 's/from Terraform/from Terraform v2/' app.tf
+cmd: terraform plan | grep -E "forces replacement|Plan:"
+out: # aws_instance.web must be replaced\n      ~ user_data = "..." -> (known after apply) # forces replacement\nPlan: 1 to add, 0 to change, 1 to destroy.
+> Destroy it all | trash
+text: Destroy in the right order automatically: server, groups, subnets, gateway, then the VPC. Confirm nothing is left.
+cmd: terraform destroy -auto-approve
+cmd: aws ec2 describe-vpcs --filters Name=tag:Name,Values=hello-srinivas-vpc --query 'Vpcs[]' --output text
+risk: 1
+
+= tf-modules-envs | Module 6: Reuse code with modules and environments | 3 | package | Move the network into a module, call it twice with different settings, and use workspaces or folders for dev and prod.
+> Why modules | package
+text: A module is a folder of .tf files with inputs (variables) and outputs. You write the VPC once and use it for dev, test and prod.
+cmd: mkdir -p ~/tf-modules/modules/vpc ~/tf-modules/envs/dev ~/tf-modules/envs/prod
+cmd: cd ~/tf-modules && find . -type d | sort
+out: .\n./envs\n./envs/dev\n./envs/prod\n./modules\n./modules/vpc
+> Move the network code into the module | folder
+text: Copy network.tf into modules/vpc and keep only variables and outputs beside it. Everything that differs between environments becomes an input.
+cmd: cp ~/tf-vpc/network.tf modules/vpc/main.tf
+cmd: printf 'variable "name" {\n  type = string\n}\n\nvariable "vpc_cidr" {\n  type = string\n}\n\nvariable "azs" {\n  type = list(string)\n}\n\nvariable "enable_nat" {\n  type    = bool\n  default = false\n}\n' > modules/vpc/variables.tf
+cmd: printf 'output "vpc_id" {\n  value = aws_vpc.main.id\n}\n\noutput "public_subnet_ids" {\n  value = aws_subnet.public[*].id\n}\n' > modules/vpc/outputs.tf
+> Call it from dev | link
+text: The module block gives the source folder and the inputs. Dev uses a small range and no NAT.
+cmd: printf 'terraform {\n  required_providers {\n    aws = {\n      source  = "hashicorp/aws"\n      version = "~> 5.0"\n    }\n  }\n}\n\nprovider "aws" {\n  region = "ap-south-1"\n}\n\nmodule "vpc" {\n  source     = "../../modules/vpc"\n  name       = "dev"\n  vpc_cidr   = "10.10.0.0/16"\n  azs        = ["ap-south-1a", "ap-south-1b"]\n  enable_nat = false\n}\n\noutput "vpc_id" {\n  value = module.vpc.vpc_id\n}\n' > envs/dev/main.tf
+> Call it from prod with different values | scale
+text: Same module, different inputs: another address range and a NAT gateway for private servers.
+cmd: sed -e 's/"dev"/"prod"/' -e 's#10.10.0.0/16#10.20.0.0/16#' -e 's/enable_nat = false/enable_nat = true/' envs/dev/main.tf > envs/prod/main.tf
+cmd: diff envs/dev/main.tf envs/prod/main.tf
+out: 15c15\n<   name       = "dev"\n---\n>   name       = "prod"\n16c16\n<   vpc_cidr   = "10.10.0.0/16"\n---\n>   vpc_cidr   = "10.20.0.0/16"\n18c18\n<   enable_nat = false\n---\n>   enable_nat = true
+> Run each environment separately | rocket
+text: Each folder has its own state, so a mistake in dev can never touch prod. Run init and plan inside the one you mean.
+cmd: cd envs/dev && terraform init && terraform plan
+cmd: cd ../prod && terraform init && terraform plan
+out: Plan: 12 to add, 0 to change, 0 to destroy.\nPlan: 14 to add, 0 to change, 0 to destroy.
+> Public modules and workspaces | globe
+text: The Terraform Registry has ready-made modules, for example terraform-aws-modules/vpc/aws. Workspaces give one folder several states, but separate folders are easier to review.
+cmd: terraform workspace list
+cmd: terraform workspace new staging
+cmd: terraform workspace show
+out: * default\nCreated and switched to workspace "staging"!\nstaging
+
+= tf-remote-state | Module 7: Remote state in S3 with locking | 3 | lock | Store state safely so a team can share it: create the bucket, configure the backend, migrate and test the lock.
+> Why not keep state on a laptop | warn
+text: A local file is lost with the laptop, cannot be shared, and two people applying at once can corrupt it. A remote backend fixes all three.
+cmd: ls terraform.tfstate* 2>/dev/null
+> Create the state bucket | database
+text: Create it once, outside the project that uses it. Turn on versioning so any bad write can be undone, encryption, and block public access.
+cmd: BUCKET=tfstate-$(aws sts get-caller-identity --query Account --output text)-ap-south-1
+cmd: aws s3api create-bucket --bucket $BUCKET --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+cmd: aws s3api put-bucket-versioning --bucket $BUCKET --versioning-configuration Status=Enabled
+cmd: aws s3api put-bucket-encryption --bucket $BUCKET --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+cmd: aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+> Configure the backend | doc
+text: use_lockfile (Terraform 1.10 and newer) locks the state with a file in S3. Older versions use a DynamoDB table named in dynamodb_table. The key is the path of this project's state.
+cmd: cat > backend.tf <<'EOF'\nterraform {\n  backend "s3" {\n    bucket       = "tfstate-123456789012-ap-south-1"\n    key          = "hello-srinivas/vpc/terraform.tfstate"\n    region       = "ap-south-1"\n    encrypt      = true\n    use_lockfile = true\n  }\n}\nEOF
+note: Backend blocks cannot use variables. Put real values or pass them with terraform init -backend-config.
+> Migrate the existing state | upload
+text: init sees the new backend and asks to copy local state into it. Answer yes. Afterwards the local file is empty and S3 holds the state.
+cmd: terraform init -migrate-state -force-copy
+cmd: aws s3 ls s3://$BUCKET/hello-srinivas/vpc/
+out: Successfully configured the backend "s3"!\n2026-11-04 11:02:44       9124 terraform.tfstate
+> Prove the lock works | shield
+text: Start an apply in one terminal and a second in another. The second waits or fails with Error acquiring the state lock and shows who holds it.
+cmd: terraform plan -lock-timeout=5s
+out: Error: Error acquiring the state lock\n\nLock Info:\n  ID:        6f1f0c5e-9c1e-5f0a-8b3d-1f0c2e9a7b11\n  Operation: OperationTypeApply\n  Who:       srinivas@laptop
+> Break a stuck lock safely | wrench
+text: If a run crashed, the lock may stay. Check that nobody is really running, then force-unlock with the ID from the error.
+cmd: terraform force-unlock 6f1f0c5e-9c1e-5f0a-8b3d-1f0c2e9a7b11
+risk: 1
+
+= tf-safe-changes | Module 8: Safe changes: import, moved, lifecycle and pipelines | 4 | shield | Bring existing resources under Terraform, rename without destroying, protect critical resources and run it in CI.
+> Import something that already exists | download
+text: A resource created by hand can be adopted. Write the resource block, then import it by its real ID. Run plan afterwards and fix the config until it shows no changes.
+cmd: aws ec2 create-security-group --group-name manual-sg --description manual --vpc-id $(terraform output -raw vpc_id) --query GroupId --output text
+cmd: terraform import aws_security_group.manual sg-0abc123def456789
+cmd: terraform plan
+out: aws_security_group.manual: Import prepared!\nImport successful!\nNo changes. Your infrastructure matches the configuration.
+> Rename without destroying: moved blocks | swap
+text: Renaming a resource in code looks like delete-and-create to Terraform. A moved block says it is the same object, so nothing is rebuilt.
+cmd: printf 'moved {\n  from = aws_instance.web\n  to   = aws_instance.app\n}\n' > moved.tf
+cmd: terraform plan | grep -E "has moved|Plan:"
+out: # aws_instance.web has moved to aws_instance.app\nPlan: 0 to add, 0 to change, 0 to destroy.
+> Protect critical resources | lock
+text: prevent_destroy makes any plan that would delete the resource fail. ignore_changes stops Terraform fighting changes made elsewhere, such as autoscaling.
+cmd: printf 'resource "aws_s3_bucket" "data" {\n  bucket = "hello-srinivas-data-123456789012"\n  lifecycle {\n    prevent_destroy = true\n  }\n}\n' > protect.tf
+cmd: terraform destroy
+out: Error: Instance cannot be destroyed\n\n  Resource aws_s3_bucket.data has lifecycle.prevent_destroy set, but the plan calls for it to be destroyed.
+> Detect drift | eye
+text: Drift means reality no longer matches the state, usually because someone changed it in the console. plan -refresh-only shows it without changing anything.
+cmd: terraform plan -refresh-only
+out: Note: Objects have changed outside of Terraform\n  ~ aws_security_group.web has changed
+> Check the code in a pipeline | rocket
+text: Run fmt, validate, a security scan and a saved plan on every pull request. Apply the saved plan only after approval, from the main branch.
+cmd: terraform fmt -check -recursive
+cmd: terraform validate
+cmd: tflint
+cmd: trivy config .
+cmd: terraform plan -out=tfplan -input=false
+note: tflint and trivy are separate tools. Checkov does a similar job.
+> Delete safely | trash
+text: Remove protection first, then destroy. Always read the destroy plan out loud with someone else before you answer yes.
+cmd: terraform plan -destroy | tail -n 3
+cmd: terraform destroy
+risk: 1

@@ -1,0 +1,253 @@
+@topic docker | Docker: containers from scratch | #2496ED | docker-container | Run, build, connect and ship containers step by step, from your first docker run to multi-stage images. Commands target Docker Engine 27 and Compose v2. Outputs are examples, because Docker is not installed on the machine that built this library.
+
+= dkr-first-container | Module 1: What a container is, and your first one | 1 | docker-engine | A container is a normal process with its own filesystem view and limits. Run one, look at it, remove it.
+> Check that Docker works | docker-engine
+text: The docker command talks to the Docker daemon, which does the real work. version proves both parts answer.
+cmd: docker version --format 'client {{.Client.Version}}  server {{.Server.Version}}'
+cmd: docker info --format '{{.ServerVersion}} on {{.OperatingSystem}}'
+out: $ docker version --format 'client {{.Client.Version}}  server {{.Server.Version}}'\nclient 27.3.1  server 27.3.1\n$ docker info --format '{{.ServerVersion}} on {{.OperatingSystem}}'\n27.3.1 on Ubuntu 24.04.1 LTS
+> Container versus virtual machine | cube
+text: A virtual machine boots a whole second operating system. A container shares your kernel and only isolates what a process can see and use.
+cmd: uname -r
+cmd: docker run --rm alpine:3.20 uname -r
+out: $ uname -r\n6.8.0-45-generic\n$ docker run --rm alpine:3.20 uname -r\n6.8.0-45-generic
+note: Same kernel version inside and outside: that is the proof. On Docker Desktop for Mac the shared kernel is a small Linux VM.
+> Run hello-world | play
+text: Docker pulls the image if it is missing, creates a container, runs it once and exits. --rm deletes the container afterwards.
+cmd: docker run --rm hello-world
+out: Unable to find image 'hello-world:latest' locally\nlatest: Pulling from library/hello-world\nDigest: sha256:d211f485f2dd1dee407a80973c8f129f00d54604d2c90732e8e320e5038a0348\nStatus: Downloaded newer image for hello-world:latest\n\nHello from Docker!\nThis message shows that your installation appears to be working correctly.
+> Run a command in a fresh Linux userland | terminal
+text: Each run starts from the image, so tools here are not on your host. Add -it for an interactive shell.
+cmd: docker run --rm alpine:3.20 cat /etc/os-release
+cmd: docker run -it --rm alpine:3.20 sh
+out: $ docker run --rm alpine:3.20 cat /etc/os-release\nNAME="Alpine Linux"\nID=alpine\nVERSION_ID=3.20.3\nPRETTY_NAME="Alpine Linux v3.20"
+note: Inside the interactive shell type exit to leave. The container stops when its main process ends.
+> A container is just a process | eye
+text: Start one in the background and find it in the host process list.
+cmd: docker run -d --name sleeper alpine:3.20 sleep 300
+cmd: docker ps
+cmd: ps aux | grep "[s]leep 300"
+out: $ docker ps\nCONTAINER ID   IMAGE         COMMAND       CREATED         STATUS         NAMES\n3f2a9c1d8e7b   alpine:3.20   "sleep 300"   4 seconds ago   Up 3 seconds   sleeper\n$ ps aux | grep "[s]leep 300"\nroot  21873  0.0  0.0  1600  768 ?  Ss  10:02  0:00 sleep 300
+> Stop and remove it | trash
+text: stop sends a polite signal, rm deletes the stopped container. ps -a also lists stopped ones.
+cmd: docker stop sleeper
+cmd: docker rm sleeper
+cmd: docker ps -a
+out: $ docker ps -a\nCONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES
+
+= dkr-images-run | Module 2: Images, ports, logs and exec | 1 | docker-image | Pull an image, run a web server and a database in the background, and look inside them.
+> Pull an image and list it | download
+text: An image is a read-only template made of layers. Always use an explicit tag, not latest.
+cmd: docker pull nginx:1.27
+cmd: docker images
+out: $ docker images\nREPOSITORY   TAG    IMAGE ID       CREATED       SIZE\nnginx        1.27   3b25b682ea82   2 weeks ago   192MB
+> Run nginx in the background with a published port | play
+text: -d detaches, --name names it, and -p 8080:80 maps host port 8080 to container port 80.
+cmd: docker run -d --name web -p 8080:80 nginx:1.27
+cmd: docker ps
+cmd: curl -I http://localhost:8080
+out: $ curl -I http://localhost:8080\nHTTP/1.1 200 OK\nServer: nginx/1.27.2\nContent-Type: text/html
+> Read logs, run a command inside | search
+text: logs shows what the main process printed. exec starts another process inside the running container.
+cmd: docker logs --tail 3 web
+cmd: docker exec web nginx -v
+cmd: docker exec -it web sh
+out: $ docker exec web nginx -v\nnginx version: nginx/1.27.2
+> Pass settings with environment variables | sliders
+text: -e sets an environment variable, which is how most images are configured. --restart keeps the container alive across reboots.
+cmd: docker run -d --name db -e POSTGRES_PASSWORD=demo --restart unless-stopped postgres:16
+cmd: docker exec db psql -U postgres -c "select version();"
+out: $ docker exec db psql -U postgres -c "select version();"\n version\n PostgreSQL 16.4 (Debian 16.4-1.pgdg120+1) on x86_64-pc-linux-gnu
+risk: 1
+note: demo is only a lab password. Use secrets for anything real.
+> Stop and clean up | trash
+text: Remove both containers. The images stay on disk, so the next run starts instantly.
+cmd: docker stop web db
+cmd: docker rm web db
+cmd: docker ps -a
+
+= dkr-dockerfile | Module 3: Build your own image with a Dockerfile | 2 | package | Write a tiny app that prints Hello Srinivas, describe it in a Dockerfile, build, run and see the layers.
+> Write the app | edit
+text: A 6-line Python web server that answers every request with Hello Srinivas.
+cmd: mkdir -p ~/hello-app && cd ~/hello-app
+cmd: cat > app.py <<'EOF'\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        self.send_response(200); self.end_headers(); self.wfile.write(b"Hello Srinivas\\n")\n\nHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()\nEOF
+> Describe the image in a Dockerfile | doc
+text: FROM picks the base, WORKDIR sets the folder, COPY adds files, EXPOSE documents the port, CMD is what runs at start.
+cmd: cat > Dockerfile <<'EOF'\nFROM python:3.12-slim\nWORKDIR /app\nCOPY app.py .\nEXPOSE 8000\nCMD ["python", "app.py"]\nEOF
+> Build the image | gear
+text: build reads the Dockerfile in . and tags the result name:version. Each instruction becomes one layer.
+cmd: docker build -t hello-app:1.0 .
+cmd: docker images hello-app
+out: $ docker build -t hello-app:1.0 .\n[+] Building 6.2s (8/8) FINISHED\n => [1/3] FROM docker.io/library/python:3.12-slim\n => [2/3] WORKDIR /app\n => [3/3] COPY app.py .\n => exporting to image\n$ docker images hello-app\nREPOSITORY   TAG   IMAGE ID       SIZE\nhello-app    1.0   a1b2c3d4e5f6   130MB
+> Run it and call it | play
+text: Publish port 8000 and call it with curl. The container prints the greeting from your code.
+cmd: docker run -d --name hello -p 8000:8000 hello-app:1.0
+cmd: curl http://localhost:8000
+out: $ curl http://localhost:8000\nHello Srinivas
+> See the layers and the build cache | layers
+text: history lists the layers. Change only app.py and rebuild: unchanged steps are reused from the cache and the build takes a moment.
+cmd: docker history hello-app:1.0
+cmd: sed -i.bak 's/Hello Srinivas/Hello Srinivas, v2/' app.py
+cmd: docker build -t hello-app:2.0 .
+out: => CACHED [1/3] FROM docker.io/library/python:3.12-slim\n => CACHED [2/3] WORKDIR /app\n => [3/3] COPY app.py .
+note: Put the lines that change least first (dependencies) and the ones that change most (your code) last.
+> Clean up | trash
+text: Stop and remove the container. The images stay for the next modules.
+cmd: docker rm -f hello
+cmd: docker ps -a
+
+= dkr-volumes-networks | Module 4: Keep data with volumes, connect containers with networks | 2 | database | Show that container files vanish, keep data in a volume, edit a site with a bind mount, and let two containers talk by name.
+> Container files are temporary | warn
+text: Data written inside a container is deleted with it. Write a file, remove the container, start a new one: the file is gone.
+cmd: docker run --name tmp alpine:3.20 sh -c 'echo "Hello Srinivas" > /data.txt && cat /data.txt'
+cmd: docker rm tmp
+cmd: docker run --rm alpine:3.20 cat /data.txt
+out: Hello Srinivas\ncat: can't open '/data.txt': No such file or directory
+> A named volume survives | database
+text: A volume is storage managed by Docker. Mount it at /data and the file lives on after the container is removed.
+cmd: docker volume create hello-data
+cmd: docker run --rm -v hello-data:/data alpine:3.20 sh -c 'echo "Hello Srinivas" > /data/hello.txt'
+cmd: docker run --rm -v hello-data:/data alpine:3.20 cat /data/hello.txt
+cmd: docker volume ls
+out: Hello Srinivas\nDRIVER    VOLUME NAME\nlocal     hello-data
+> A bind mount shares a host folder | folder
+text: -v host-folder:container-folder maps your own files into the container, so you can edit and refresh. :ro makes it read-only.
+cmd: mkdir -p ~/site && echo "<h1>Hello Srinivas</h1>" > ~/site/index.html
+cmd: docker run -d --name site -p 8081:80 -v ~/site:/usr/share/nginx/html:ro nginx:1.27
+cmd: curl http://localhost:8081
+out: <h1>Hello Srinivas</h1>
+> A user-defined network gives names | network
+text: Containers on the same user-defined network reach each other by name through Docker's built-in DNS.
+cmd: docker network create appnet
+cmd: docker run -d --name api --network appnet nginx:1.27
+cmd: docker run --rm --network appnet alpine:3.20 wget -qO- http://api
+out: <!DOCTYPE html>\n<html>\n<title>Welcome to nginx!</title>
+> Published versus internal ports | wf-port
+text: -p opens a container port to the outside world. Containers on the same network need no -p to talk to each other.
+cmd: docker port site
+cmd: docker network inspect appnet --format '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{"\\n"}}{{end}}'
+out: 80/tcp -> 0.0.0.0:8081\napi 172.18.0.2/16
+> Clean up | trash
+text: Remove containers, the network and the volume you created.
+cmd: docker rm -f site api
+cmd: docker network rm appnet
+cmd: docker volume rm hello-data
+
+= dkr-compose | Module 5: Run several containers with Docker Compose | 2 | docker-compose | Describe a web app and a Redis cache in one file and start, inspect, scale and remove them together.
+> Write compose.yaml | doc
+text: One file lists every service, its image, ports and settings. Compose creates a private network for them automatically.
+cmd: mkdir -p ~/compose-demo && cd ~/compose-demo
+cmd: cat > compose.yaml <<'EOF'\nservices:\n  web:\n    image: nginx:1.27\n    ports:\n      - "8082:80"\n    depends_on:\n      cache:\n        condition: service_healthy\n  cache:\n    image: redis:7\n    healthcheck:\n      test: ["CMD", "redis-cli", "ping"]\n      interval: 5s\n      retries: 5\n    volumes:\n      - cache-data:/data\nvolumes:\n  cache-data:\nEOF
+> Start everything | play
+text: up -d creates the network, volume and both containers, and waits for the health check before starting web.
+cmd: docker compose up -d
+cmd: docker compose ps
+out: $ docker compose ps\nNAME                  IMAGE        STATUS                  PORTS\ncompose-demo-cache-1  redis:7      Up 8 seconds (healthy)  6379/tcp\ncompose-demo-web-1    nginx:1.27   Up 3 seconds            0.0.0.0:8082->80/tcp
+> Talk between the services | link
+text: The service name is the host name. From web you can reach the cache at cache:6379.
+cmd: docker compose exec cache redis-cli set greeting "Hello Srinivas"
+cmd: docker compose exec web sh -c 'getent hosts cache'
+cmd: docker compose exec cache redis-cli get greeting
+out: OK\n172.19.0.2   cache\n"Hello Srinivas"
+> Logs and config values | search
+text: logs merges all services, config prints the final file after variables are filled in.
+cmd: docker compose logs --tail 2
+cmd: docker compose config --services
+out: cache\nweb
+> Stop and remove | trash
+text: down removes containers and the network but keeps volumes. Add -v to delete the data too.
+cmd: docker compose down
+cmd: docker volume ls
+cmd: docker compose down -v
+risk: 1
+note: down -v deletes the cache-data volume for good.
+
+= dkr-registry-push | Module 6: Tag, push and pull images with a registry (Docker Hub or ECR) | 2 | docker-registry | Name an image for a registry, log in, push it, and pull the exact same image on another machine.
+> Image names have four parts | tag
+text: registry/repository:tag. If the registry is missing Docker Hub is assumed. A tag can move; a digest (sha256:...) never does.
+cmd: docker image ls --digests hello-app
+out: REPOSITORY   TAG   DIGEST    IMAGE ID\nhello-app    1.0   <none>    a1b2c3d4e5f6
+> Create a private repository in Amazon ECR | aws-ecr
+text: ECR is AWS's registry. One repository holds all versions of one image. Turn on scan-on-push.
+cmd: export AWS_REGION=ap-south-1 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+cmd: aws ecr create-repository --repository-name hello-app --image-scanning-configuration scanOnPush=true --region $AWS_REGION
+out: {\n  "repository": {\n    "repositoryName": "hello-app",\n    "repositoryUri": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/hello-app"\n  }\n}
+> Log in to the registry | lock
+text: ECR gives a token valid for 12 hours that docker login accepts. For Docker Hub use docker login with your user name.
+cmd: aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
+out: Login Succeeded
+> Tag and push | upload
+text: tag adds a second name that points at the same image. push uploads only the layers the registry does not have.
+cmd: docker tag hello-app:1.0 $ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/hello-app:1.0
+cmd: docker push $ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/hello-app:1.0
+out: 1.0: digest: sha256:8d9c0b1f... size: 1573
+> Pull it anywhere | download
+text: On another machine log in the same way and pull. Pin by digest in production so the image cannot change under you.
+cmd: docker pull $ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/hello-app:1.0
+cmd: aws ecr describe-images --repository-name hello-app --query 'imageDetails[].[imageTags[0],imageDigest,imagePushedAt]' --output text
+> Keep the registry tidy | trash
+text: A lifecycle policy deletes old images automatically so storage cost stays small.
+cmd: cat > lifecycle.json <<'EOF'\n{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}\nEOF
+cmd: aws ecr put-lifecycle-policy --repository-name hello-app --lifecycle-policy-text file://lifecycle.json
+
+= dkr-multistage-secure | Module 7: Small and safe images: multi-stage builds | 3 | shield | Compile in one stage, ship only the result, run as a non-root user with a read-only filesystem.
+> The problem: build tools in production | warn
+text: A normal Go image holds the compiler, sources and caches, hundreds of MB that production never needs and attackers can use.
+cmd: mkdir -p ~/go-hello && cd ~/go-hello
+cmd: cat > main.go <<'EOF'\npackage main\n\nimport "fmt"\n\nfunc main() { fmt.Println("Hello Srinivas") }\nEOF
+> Two stages in one Dockerfile | layers
+text: The first stage builds the binary. The second starts empty (distroless) and copies only that binary.
+cmd: cat > Dockerfile <<'EOF'\nFROM golang:1.23 AS build\nWORKDIR /src\nCOPY main.go .\nRUN CGO_ENABLED=0 go build -o /out/hello main.go\n\nFROM gcr.io/distroless/static-debian12:nonroot\nCOPY --from=build /out/hello /hello\nUSER nonroot\nENTRYPOINT ["/hello"]\nEOF
+> Build, run and compare sizes | gauge
+text: The final image has no shell and no package manager, so there is very little to attack.
+cmd: docker build -t go-hello:slim .
+cmd: docker run --rm go-hello:slim
+cmd: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -E 'go-hello|golang'
+out: Hello Srinivas\ngolang:1.23 842MB\ngo-hello:slim 2.4MB
+> Exclude files with .dockerignore | filter
+text: Anything in the build folder is sent to the daemon. Ignore .git, secrets and caches to keep builds fast and safe.
+cmd: printf '.git\n.env\n*.log\nnode_modules\n' > .dockerignore
+cmd: cat .dockerignore
+> Run with least privilege | lock
+text: Drop all Linux capabilities, make the filesystem read-only, forbid privilege escalation and limit memory.
+cmd: docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 64m go-hello:slim
+cmd: docker inspect --format '{{.Config.User}}' go-hello:slim
+out: Hello Srinivas\nnonroot
+> Scan for known vulnerabilities | search
+text: A scanner compares the packages in the image with public vulnerability lists. Run it in CI and fail on high severity.
+cmd: trivy image --severity HIGH,CRITICAL go-hello:slim
+out: go-hello:slim (debian 12.7)\nTotal: 0 (HIGH: 0, CRITICAL: 0)
+note: Trivy is a separate tool. Docker Scout (docker scout cves) does the same job.
+
+= dkr-debug-cleanup | Module 8: Debug a container and clean up disk | 2 | bug | Find out why a container will not start or keeps dying, watch resources, set limits and reclaim space.
+> Find the failure | search
+text: ps -a lists stopped containers with their exit code. Exit 0 is success, 1 is an app error, 137 means killed (often out of memory), 143 is SIGTERM.
+cmd: docker run --name broken alpine:3.20 sh -c 'echo starting; exit 3'
+cmd: docker ps -a --filter name=broken --format '{{.Names}} {{.Status}}'
+cmd: docker logs broken
+out: starting\nbroken Exited (3) 2 seconds ago
+> Inspect the full configuration | eye
+text: inspect prints everything Docker knows. Pull out one field with --format.
+cmd: docker inspect broken --format '{{.State.ExitCode}} {{.Config.Image}} {{.HostConfig.RestartPolicy.Name}}'
+cmd: docker rm broken
+out: 3 alpine:3.20 no
+> Watch CPU, memory and processes | gauge
+text: stats is a live view per container, top lists the processes inside one, events shows what the daemon does.
+cmd: docker run -d --name busy alpine:3.20 sh -c 'while true; do :; done'
+cmd: docker stats --no-stream busy
+cmd: docker top busy
+out: CONTAINER ID   NAME   CPU %    MEM USAGE / LIMIT\n8c1f2e3d4b5a   busy   99.8%    1.1MiB / 7.6GiB
+> Set limits so one container cannot hurt others | shield
+text: --cpus and --memory cap resources. A process that exceeds its memory limit is killed and marked OOMKilled.
+cmd: docker rm -f busy
+cmd: docker run -d --name limited --cpus 0.5 --memory 128m alpine:3.20 sleep 300
+cmd: docker inspect limited --format '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}'
+out: 134217728 500000000
+> See and reclaim disk space | trash
+text: system df shows what images, containers and volumes use. prune removes unused ones.
+cmd: docker rm -f limited
+cmd: docker system df
+cmd: docker image prune -f
+cmd: docker system prune --volumes
+risk: 1
+note: system prune --volumes also deletes unused volumes. Read the list it prints before you answer y.

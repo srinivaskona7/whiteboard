@@ -1,0 +1,413 @@
+@topic k8s | Kubernetes: from pod to production | #326CE5 | k8s-cluster | Learn Kubernetes one object at a time: pods, deployments, services, config, storage, ingress, probes, scaling, access control, Helm and Kustomize, debugging and node maintenance. Practise on a local kind or minikube cluster, never on a shared one. Output is example output, because commands that talk to a cluster cannot run on the machine that built this library.
+
+= k8s-first-look | Module 1: Cluster, context and the first kubectl commands | 1 | k8s-cluster | Know which cluster you are pointed at before you type anything, then look around with get, describe and explain.
+> Check which cluster you are talking to | k8s-cluster
+text: kubectl sends every command to the cluster named in your current context. Read it first, every time, so you never change the wrong cluster.
+cmd: kubectl config current-context
+cmd: kubectl config get-contexts
+out: platformsbx\nCURRENT   NAME          CLUSTER       AUTHINFO      NAMESPACE\n*         platformsbx   platformsbx   platformsbx   default\n          kind-lab      kind-lab      kind-lab
+note: Use a throwaway local cluster to learn. kind create cluster --name lab starts one in Docker.
+> Create a safe practice cluster | k8s-node
+text: kind runs a whole cluster inside Docker containers on your laptop. Delete it when you finish and nothing is left behind.
+cmd: kind create cluster --name lab
+cmd: kubectl cluster-info --context kind-lab
+out: Creating cluster "lab" ...\n Ensuring node image (kindest/node:v1.31.0)\n Starting control-plane\nSet kubectl context to "kind-lab"\nKubernetes control plane is running at https://127.0.0.1:41233
+> Switch context and namespace on purpose | k8s-namespace
+text: use-context changes the cluster, and --current --namespace changes the default namespace for the context. Namespaces split one cluster into separate areas.
+cmd: kubectl config use-context kind-lab
+cmd: kubectl create namespace demo
+cmd: kubectl config set-context --current --namespace=demo
+cmd: kubectl config view --minify --output 'jsonpath={..namespace}'
+out: Switched to context "kind-lab".\nnamespace/demo created\nContext "kind-lab" modified.\ndemo
+> Look at the nodes and the system pods | k8s-apiserver
+text: A node is a machine that runs pods. The control plane pods in kube-system run the API server, the scheduler and etcd (the database).
+cmd: kubectl get nodes -o wide
+cmd: kubectl get pods -n kube-system
+out: NAME                STATUS   ROLES           AGE   VERSION\nlab-control-plane   Ready    control-plane   2m    v1.31.0\nNAME                                        READY   STATUS    RESTARTS\netcd-lab-control-plane                      1/1     Running   0\nkube-apiserver-lab-control-plane            1/1     Running   0
+> get, describe, explain, api-resources | k8s-etcd
+text: get lists objects, describe shows details and recent events, explain documents every field offline, api-resources lists all object kinds.
+cmd: kubectl api-resources --namespaced=true | head -n 8
+cmd: kubectl explain pod.spec.containers.resources
+cmd: kubectl get pods -A
+out: NAME         SHORTNAMES   APIVERSION   NAMESPACED   KIND\nconfigmaps   cm           v1           true         ConfigMap\npods         po           v1           true         Pod\nservices     svc          v1           true         Service
+> Shortcuts for daily work | k8s-cm
+text: Short names save typing, -o yaml shows the full object, and an alias plus completion make kubectl fast.
+cmd: alias k=kubectl
+cmd: source <(kubectl completion bash)
+cmd: k get po,svc,deploy
+cmd: k get pod -o name
+
+= k8s-pod-hello | Module 2: Your first pod: Hello Srinivas | 1 | k8s-pod | Write a pod manifest, create it, read its logs, run a command inside it, and delete it.
+> What a pod is | k8s-pod
+text: A pod is the smallest thing Kubernetes runs: one or more containers that share an IP address and storage. Pods are disposable, so you rarely create them directly.
+cmd: kubectl config current-context
+cmd: kubectl get pods
+> Generate the YAML instead of typing it | k8s-deployment
+text: --dry-run=client -o yaml prints the manifest without creating anything. This is the fastest way to start a new file.
+cmd: kubectl run hello --image=nginx:1.27 --port=80 --labels=app=hello --dry-run=client -o yaml > pod.yaml
+cmd: cat pod.yaml
+out: apiVersion: v1\nkind: Pod\nmetadata:\n  labels:\n    app: hello\n  name: hello\nspec:\n  containers:\n  - image: nginx:1.27\n    name: hello\n    ports:\n    - containerPort: 80
+> Create it and watch it start | k8s-pod
+text: apply creates the object from the file. -w watches the status change from Pending to ContainerCreating to Running.
+cmd: kubectl apply -f pod.yaml
+cmd: kubectl get pod hello -w
+out: pod/hello created\nNAME    READY   STATUS              RESTARTS   AGE\nhello   0/1     ContainerCreating   0          2s\nhello   1/1     Running             0          6s
+> Read logs and run commands inside | k8s-node
+text: logs shows what the container printed. exec runs a command inside it. port-forward lets your laptop reach it without a Service.
+cmd: kubectl logs hello
+cmd: kubectl exec hello -- nginx -v
+cmd: kubectl exec -it hello -- sh
+cmd: kubectl port-forward pod/hello 8080:80
+out: nginx version: nginx/1.27.2
+> Describe and read the events | k8s-etcd
+text: describe ends with an Events table that explains what the scheduler and the kubelet did. It is the first place to look when something is wrong.
+cmd: kubectl describe pod hello | tail -n 8
+out: Events:\n  Type    Reason     Message\n  Normal  Scheduled  Successfully assigned demo/hello to lab-control-plane\n  Normal  Pulled     Container image "nginx:1.27" already present\n  Normal  Created    Created container hello\n  Normal  Started    Started container hello
+> Delete it | k8s-job
+text: A bare pod is gone for good: nothing recreates it. That is why deployments exist.
+cmd: kubectl delete pod hello
+cmd: kubectl get pods
+out: pod "hello" deleted\nNo resources found in demo namespace.
+
+= k8s-deployment-rollout | Module 3: Deployments, scaling, rolling updates and rollback | 2 | k8s-deployment | Run two copies, change the image with zero downtime, watch the rollout and go back to the previous version.
+> Create a deployment | k8s-deployment
+text: A deployment keeps the number of pods you asked for. If one dies, a new one is created. It owns a ReplicaSet, which owns the pods.
+cmd: kubectl create deployment hello --image=nginx:1.26 --replicas=2
+cmd: kubectl get deploy,rs,pods
+out: deployment.apps/hello created\nNAME                    READY   UP-TO-DATE   AVAILABLE\ndeployment.apps/hello   2/2     2            2\nNAME                         DESIRED   CURRENT   READY\nreplicaset.apps/hello-6b9f   2         2         2
+> Self-healing in action | k8s-hpa
+text: Delete one pod. The deployment notices it is below two and starts a new one within seconds.
+cmd: kubectl delete pod -l app=hello --field-selector=status.phase=Running --wait=false | head -n 1
+cmd: kubectl get pods -l app=hello
+out: pod "hello-6b9f-x7k2p" deleted\nNAME             READY   STATUS              AGE\nhello-6b9f-m4c8d   1/1   Running             3m\nhello-6b9f-t9q5w   0/1   ContainerCreating   1s
+> Scale up and down | k8s-hpa
+text: scale changes the replica count at once. Edit the file and apply for a change you want to keep in Git.
+cmd: kubectl scale deployment hello --replicas=4
+cmd: kubectl get deploy hello
+out: deployment.apps/hello scaled\nNAME    READY   UP-TO-DATE   AVAILABLE\nhello   4/4     4            4
+> Rolling update to a new image | k8s-ds
+text: set image starts a new ReplicaSet and moves pods over gradually, so the service stays up. rollout status waits until it finishes.
+cmd: kubectl set image deployment/hello nginx=nginx:1.27 --record=false
+cmd: kubectl rollout status deployment/hello
+cmd: kubectl get rs
+out: Waiting for deployment "hello" rollout to finish: 2 out of 4 new replicas have been updated...\ndeployment "hello" successfully rolled out\nNAME           DESIRED   CURRENT   READY\nhello-6b9f     0         0         0\nhello-7c4d     4         4         4
+> A bad update and the rollback | k8s-sts
+text: A wrong image tag leaves new pods in ImagePullBackOff, but the old pods keep serving because the rollout never completes. undo goes back.
+cmd: kubectl set image deployment/hello nginx=nginx:does-not-exist
+cmd: kubectl rollout status deployment/hello --timeout=30s
+cmd: kubectl rollout undo deployment/hello
+cmd: kubectl rollout history deployment/hello
+out: error: timed out waiting for the condition\ndeployment.apps/hello rolled back\nREVISION  CHANGE-CAUSE\n3         <none>\n4         <none>
+> Tune the strategy | k8s-mesh
+text: maxUnavailable and maxSurge control how many pods may be down or extra during an update. Zero unavailable gives the safest rollout.
+cmd: kubectl patch deployment hello -p '{"spec":{"strategy":{"rollingUpdate":{"maxUnavailable":0,"maxSurge":1}}}}'
+cmd: kubectl get deploy hello -o jsonpath='{.spec.strategy}'
+out: {"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}
+
+= k8s-service-expose | Module 4: Services: ClusterIP, NodePort and LoadBalancer | 2 | k8s-service | Give pods a stable address, find them by label, reach them from inside and outside the cluster.
+> Why pods need a Service | k8s-service
+text: Pod IPs change every time a pod is replaced. A Service is a fixed virtual IP and DNS name that sends traffic to whichever pods match its label selector.
+cmd: kubectl get pods -l app=hello -o wide
+out: NAME             READY   STATUS    IP\nhello-7c4d-aaaaa  1/1    Running   10.244.0.5\nhello-7c4d-bbbbb  1/1    Running   10.244.0.6
+viz: Client>Service hello:ClusterIP 10.96.12.7:80 ; Service hello>Pod 10.244.0.5:forward ; Service hello>Pod 10.244.0.6:forward
+> Create a ClusterIP service | k8s-svc
+text: ClusterIP is reachable only inside the cluster. port is what clients call, targetPort is the container port.
+cmd: kubectl expose deployment hello --port=80 --target-port=80 --name=hello
+cmd: kubectl get svc hello
+cmd: kubectl get endpoints hello
+out: NAME    TYPE        CLUSTER-IP     PORT(S)   AGE\nhello   ClusterIP   10.96.12.7     80/TCP    4s\nNAME    ENDPOINTS                         AGE\nhello   10.244.0.5:80,10.244.0.6:80       4s
+note: An empty ENDPOINTS column means the selector matches no ready pod. This is the most common service problem.
+> Call it from another pod by name | k8s-node
+text: CoreDNS gives every service a name: hello inside the same namespace, hello.demo from another, hello.demo.svc.cluster.local in full.
+cmd: kubectl run tmp --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- http://hello
+cmd: kubectl run tmp --rm -it --restart=Never --image=busybox:1.36 -- nslookup hello
+out: <!DOCTYPE html>\n<html>\n<title>Welcome to nginx!</title>\nName: hello.demo.svc.cluster.local\nAddress: 10.96.12.7
+> Reach it from your laptop | k8s-ing
+text: port-forward is the simplest way to test. NodePort opens a port on every node. LoadBalancer asks your cloud for a public address.
+cmd: kubectl port-forward svc/hello 8080:80
+cmd: curl -s http://localhost:8080 | head -n 3
+cmd: kubectl patch svc hello -p '{"spec":{"type":"NodePort"}}'
+cmd: kubectl get svc hello
+out: NAME    TYPE       CLUSTER-IP    PORT(S)\nhello   NodePort   10.96.12.7    80:31845/TCP
+> Selectors and labels are the glue | k8s-pvc
+text: The service finds pods only by label. Change a pod's label and it leaves the service without being deleted. This is how blue-green and canary tricks work.
+cmd: kubectl get pods --show-labels
+cmd: kubectl label pod hello-7c4d-aaaaa app=debug --overwrite
+cmd: kubectl get endpoints hello
+out: NAME    ENDPOINTS\nhello   10.244.0.6:80
+
+= k8s-config-secrets | Module 5: ConfigMaps and Secrets | 2 | k8s-configmap | Keep settings outside the image: put hello.txt in a ConfigMap, use it as an environment variable and as a file, and store a Secret.
+> Create a ConfigMap from hello.txt | k8s-configmap
+text: A ConfigMap holds non-secret settings. --from-file stores a whole file, --from-literal stores a key and value. Generate the YAML first to see it.
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: kubectl create configmap hello-config --from-file=hello.txt --from-literal=GREETING=Namaste --dry-run=client -o yaml
+cmd: kubectl create configmap hello-config --from-file=hello.txt --from-literal=GREETING=Namaste
+out: apiVersion: v1\ndata:\n  GREETING: Namaste\n  hello.txt: |\n    Hello Srinivas\nkind: ConfigMap\nmetadata:\n  name: hello-config
+> Use it as environment variables | k8s-cm
+text: envFrom turns every key into an environment variable. Changing the ConfigMap later does not change a running pod, so restart it.
+cmd: kubectl set env deployment/hello --from=configmap/hello-config
+cmd: kubectl exec deploy/hello -- printenv GREETING
+out: Namaste
+> Mount it as a file | k8s-pvc
+text: A configMap volume appears as files. Mounted files update by themselves after a short delay, while environment variables do not.
+cmd: kubectl patch deployment hello --type=json -p '[{"op":"add","path":"/spec/template/spec/volumes","value":[{"name":"cfg","configMap":{"name":"hello-config"}}]},{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts","value":[{"name":"cfg","mountPath":"/etc/hello"}]}]'
+cmd: kubectl exec deploy/hello -- cat /etc/hello/hello.txt
+out: Hello Srinivas
+> Create a Secret | k8s-secret
+text: A Secret holds passwords and tokens. Its values are only base64 encoded, which is not encryption. Anyone who can read the Secret can decode it.
+cmd: kubectl create secret generic hello-secret --from-literal=password=s3cret
+cmd: kubectl get secret hello-secret -o jsonpath='{.data.password}' | base64 -d; echo
+out: secret/hello-secret created\ns3cret
+risk: 1
+note: s3cret is a lab value. Restrict who can read Secrets with RBAC and consider an external store such as AWS Secrets Manager.
+> Use the Secret in a pod | k8s-secret
+text: Reference one key with secretKeyRef. Prefer mounting as a file over environment variables, because variables show up in process listings and crash dumps.
+cmd: kubectl set env deployment/hello --from=secret/hello-secret --prefix=APP_
+cmd: kubectl exec deploy/hello -- printenv APP_PASSWORD
+cmd: kubectl rollout restart deployment/hello
+out: s3cret\ndeployment.apps/hello restarted
+
+= k8s-storage | Module 6: Storage: volumes, PersistentVolumeClaims and StatefulSets | 3 | k8s-pvc | Show that pod files vanish, keep data with a PersistentVolumeClaim, and run a database as a StatefulSet.
+> Pod storage is temporary | k8s-pod
+text: An emptyDir lives as long as the pod. Write a file, delete the pod, and the replacement starts empty.
+cmd: kubectl run scratch --image=busybox:1.36 --restart=Never -- sh -c 'echo "Hello Srinivas" > /tmp/hello.txt; sleep 3600'
+cmd: kubectl exec scratch -- cat /tmp/hello.txt
+cmd: kubectl delete pod scratch
+out: Hello Srinivas\npod "scratch" deleted
+> Ask for durable storage with a PVC | k8s-pvc
+text: A PersistentVolumeClaim is a request for disk. The cluster's StorageClass creates the volume. Check which classes exist first.
+cmd: kubectl get storageclass
+cmd: printf 'apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: hello-data\nspec:\n  accessModes: [ReadWriteOnce]\n  resources:\n    requests:\n      storage: 1Gi\n' | kubectl apply -f -
+cmd: kubectl get pvc
+out: NAME       PROVISIONER             DEFAULT\nstandard   rancher.io/local-path   (default)\nNAME         STATUS    VOLUME      CAPACITY   ACCESS MODES\nhello-data   Pending                                   \n
+note: With WaitForFirstConsumer the claim stays Pending until a pod uses it. That is normal.
+> Mount the claim and keep the file | k8s-deployment
+text: Mount the claim at /data. After the pod is deleted and recreated the file is still there, because the disk outlives the pod.
+cmd: printf 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: writer\nspec:\n  containers:\n  - name: c\n    image: busybox:1.36\n    command: ["sh","-c","echo Hello Srinivas > /data/hello.txt; sleep 3600"]\n    volumeMounts:\n    - {name: d, mountPath: /data}\n  volumes:\n  - name: d\n    persistentVolumeClaim:\n      claimName: hello-data\n' | kubectl apply -f -
+cmd: kubectl delete pod writer --wait && kubectl get pvc hello-data
+out: NAME         STATUS   VOLUME             CAPACITY   ACCESS MODES\nhello-data   Bound    pvc-3f2a...        1Gi        RWO
+> StatefulSet for a database | k8s-sts
+text: A StatefulSet gives each pod a stable name (db-0, db-1) and its own disk. Use it for databases and anything that needs identity.
+cmd: kubectl create deployment placeholder --image=nginx --dry-run=client -o yaml > /dev/null
+cmd: printf 'apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: db\nspec:\n  serviceName: db\n  replicas: 2\n  selector: {matchLabels: {app: db}}\n  template:\n    metadata: {labels: {app: db}}\n    spec:\n      containers:\n      - name: pg\n        image: postgres:16\n        env: [{name: POSTGRES_PASSWORD, value: demo}]\n  volumeClaimTemplates:\n  - metadata: {name: data}\n    spec:\n      accessModes: [ReadWriteOnce]\n      resources: {requests: {storage: 1Gi}}\n' | kubectl apply -f -
+cmd: kubectl get sts,pods,pvc -l app=db
+out: NAME                  READY\nstatefulset.apps/db   2/2\nNAME       READY   STATUS\npod/db-0   1/1     Running\npod/db-1   1/1     Running\nNAME                       STATUS   VOLUME\npersistentvolumeclaim/data-db-0   Bound\npersistentvolumeclaim/data-db-1   Bound
+> Reclaim policy and clean-up | k8s-job
+text: Deleting a claim may delete the data, depending on the reclaim policy. A StatefulSet leaves its claims behind on purpose, so delete them yourself.
+cmd: kubectl delete sts db
+cmd: kubectl delete pvc -l app=db
+cmd: kubectl get pv -o custom-columns=NAME:.metadata.name,RECLAIM:.spec.persistentVolumeReclaimPolicy
+risk: 1
+
+= k8s-ingress-dns | Module 7: Ingress: one entrance for many services | 3 | k8s-ingress | Install an ingress controller, route two paths to two services, and add TLS.
+> Controller and resource | k8s-ingress
+text: An Ingress is a set of routing rules. A controller such as ingress-nginx reads them and does the work. Without a controller the Ingress object does nothing.
+cmd: kubectl get ingressclass
+cmd: kubectl get pods -n ingress-nginx
+out: NAME    CONTROLLER             PARAMETERS   AGE\nnginx   k.io/ingress-nginx     <none>       5d
+viz: Browser>Ingress controller:hello.example.com ; Ingress controller>Service web:/ ; Ingress controller>Service api:/api
+> Two services to route to | k8s-service
+text: Create two small deployments, web and api, and expose each as a Service.
+cmd: kubectl create deployment web --image=nginx:1.27 && kubectl expose deployment web --port=80
+cmd: kubectl create deployment api --image=hashicorp/http-echo:1.0 -- /http-echo -text="Hello Srinivas API" && kubectl expose deployment api --port=5678
+> Write the Ingress | k8s-ing
+text: The host rule matches the name in the request. Each path points to a service and port. pathType Prefix matches everything below the path.
+cmd: printf 'apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: hello\nspec:\n  ingressClassName: nginx\n  rules:\n  - host: hello.example.com\n    http:\n      paths:\n      - {path: /, pathType: Prefix, backend: {service: {name: web, port: {number: 80}}}}\n      - {path: /api, pathType: Prefix, backend: {service: {name: api, port: {number: 5678}}}}\n' | kubectl apply -f -
+cmd: kubectl get ingress hello
+out: NAME    CLASS   HOSTS               ADDRESS        PORTS\nhello   nginx   hello.example.com   203.0.113.10   80
+> Test it with a Host header | k8s-pod
+text: No DNS yet? Send the host name yourself with curl --resolve. A 404 from the controller means the host or path did not match.
+cmd: curl -s --resolve hello.example.com:80:203.0.113.10 http://hello.example.com/api
+cmd: curl -sI --resolve hello.example.com:80:203.0.113.10 http://hello.example.com/ | head -n 1
+out: Hello Srinivas API\nHTTP/1.1 200 OK
+> Add HTTPS | k8s-secret
+text: A TLS Secret holds the certificate and key. In production cert-manager creates and renews it for you from Let's Encrypt.
+cmd: kubectl create secret tls hello-tls --cert=tls.crt --key=tls.key
+cmd: kubectl patch ingress hello --type=json -p '[{"op":"add","path":"/spec/tls","value":[{"hosts":["hello.example.com"],"secretName":"hello-tls"}]}]'
+cmd: curl -sI https://hello.example.com | head -n 1
+out: HTTP/2 200
+
+= k8s-probes-resources | Module 8: Health checks, requests and limits | 2 | k8s-pod | Tell Kubernetes when a pod is alive and ready, and how much CPU and memory it needs and may use.
+> Liveness, readiness and startup | k8s-pod
+text: Readiness decides if the pod receives traffic. Liveness restarts a stuck container. Startup gives slow applications time before the other two begin.
+cmd: kubectl explain pod.spec.containers.readinessProbe | head -n 8
+out: FIELD: readinessProbe <Probe>\nDESCRIPTION:\n  Periodic probe of container service readiness. Container will be removed from service endpoints if the probe fails.
+> Add probes to the deployment | k8s-deployment
+text: The readiness probe calls / every 5 seconds. A failing probe removes the pod from the Service without restarting it.
+cmd: kubectl patch deployment hello --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":80},"periodSeconds":5}},{"op":"add","path":"/spec/template/spec/containers/0/livenessProbe","value":{"httpGet":{"path":"/","port":80},"initialDelaySeconds":10,"periodSeconds":10}}]'
+cmd: kubectl rollout status deployment/hello
+> Requests and limits | k8s-hpa
+text: A request is what the scheduler reserves. A limit is the ceiling. Exceed the memory limit and the container is killed with OOMKilled. CPU over the limit is only slowed down.
+cmd: kubectl set resources deployment hello --requests=cpu=100m,memory=64Mi --limits=cpu=250m,memory=128Mi
+cmd: kubectl get pod -l app=hello -o jsonpath='{.items[0].spec.containers[0].resources}'
+out: {"limits":{"cpu":"250m","memory":"128Mi"},"requests":{"cpu":"100m","memory":"64Mi"}}
+> See the usage | k8s-node
+text: top reads metrics from metrics-server. Compare real use with requests to right-size your pods.
+cmd: kubectl top pods
+cmd: kubectl top nodes
+out: NAME             CPU(cores)   MEMORY(bytes)\nhello-8d5c-abc   2m           7Mi
+> Read a failing probe | k8s-etcd
+text: Break the path on purpose. Events show Readiness probe failed, the pod shows 0/1 Ready, and the Service drops it from its endpoints.
+cmd: kubectl patch deployment hello --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/missing"}]'
+cmd: kubectl describe pod -l app=hello | grep -A2 -i "readiness probe failed" | head -n 4
+out: Warning  Unhealthy  Readiness probe failed: HTTP probe failed with statuscode: 404
+
+= k8s-scaling-hpa | Module 9: Autoscaling with the Horizontal Pod Autoscaler | 3 | k8s-hpa | Scale on CPU automatically, generate load, watch pods increase and decrease.
+> What the HPA does | k8s-hpa
+text: The Horizontal Pod Autoscaler compares average CPU use with the target and changes replicas between a minimum and a maximum. It needs metrics-server and CPU requests on the pods.
+cmd: kubectl get apiservices v1beta1.metrics.k8s.io
+cmd: kubectl top pods
+out: NAME                     SERVICE                      AVAILABLE\nv1beta1.metrics.k8s.io   kube-system/metrics-server   True
+> Create the autoscaler | k8s-hpa
+text: autoscale makes a target of 50 percent CPU with two to six pods. It looks at the request value, so the request must be set.
+cmd: kubectl autoscale deployment hello --cpu-percent=50 --min=2 --max=6
+cmd: kubectl get hpa hello
+out: NAME    REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS\nhello   Deployment/hello   2%/50%    2         6         2
+note: TARGETS shows unknown when the pods have no CPU request.
+> Generate load | k8s-job
+text: A busybox pod calls the service in a tight loop. Leave it running and watch in a second terminal.
+cmd: kubectl run load --image=busybox:1.36 --restart=Never -- sh -c 'while true; do wget -q -O- http://hello > /dev/null; done'
+cmd: kubectl get hpa hello -w
+out: NAME    TARGETS    REPLICAS\nhello   2%/50%     2\nhello   180%/50%   2\nhello   180%/50%   4\nhello   72%/50%    6
+> Watch it scale back | k8s-pvc
+text: After the load stops, pods are removed slowly. A five-minute stabilisation window stops the count from bouncing up and down.
+cmd: kubectl delete pod load
+cmd: kubectl describe hpa hello | grep -A4 Events
+out: Normal  SuccessfulRescale  New size: 6; reason: cpu resource utilization above target\nNormal  SuccessfulRescale  New size: 2; reason: All metrics below target
+> Other kinds of scaling | k8s-node
+text: The Vertical Pod Autoscaler changes requests, the Cluster Autoscaler or Karpenter adds nodes, and KEDA scales on queues and events.
+cmd: kubectl get nodes
+cmd: kubectl get pods -A | grep -iE "autoscaler|karpenter|keda"
+
+= k8s-rbac | Module 10: Who can do what: ServiceAccounts, Roles and RBAC | 3 | k8s-secret | Create a service account that may only read pods, then test what it can and cannot do.
+> The four pieces | k8s-secret
+text: A ServiceAccount is an identity for a pod. A Role lists allowed verbs on resources in one namespace. A RoleBinding gives a role to a subject. ClusterRole and ClusterRoleBinding do the same cluster-wide.
+cmd: kubectl auth whoami
+cmd: kubectl auth can-i create deployments
+out: ATTRIBUTE   VALUE\nUsername    kubernetes-admin\nyes
+> Create an identity | k8s-namespace
+text: A new service account can do nothing until you bind a role to it.
+cmd: kubectl create serviceaccount reader
+cmd: kubectl auth can-i list pods --as=system:serviceaccount:demo:reader
+out: serviceaccount/reader created\nno
+> Define a read-only role | k8s-cm
+text: get, list and watch on pods is enough to look but not to change. Name the exact verbs and resources.
+cmd: kubectl create role pod-reader --verb=get,list,watch --resource=pods
+cmd: kubectl create rolebinding read-pods --role=pod-reader --serviceaccount=demo:reader
+cmd: kubectl get role,rolebinding
+out: role.rbac.authorization.k8s.io/pod-reader created\nrolebinding.rbac.authorization.k8s.io/read-pods created
+> Test the permissions | k8s-hpa
+text: can-i with --as impersonates the account. Allowed to list pods, but not to delete them or read Secrets.
+cmd: kubectl auth can-i list pods --as=system:serviceaccount:demo:reader
+cmd: kubectl auth can-i delete pods --as=system:serviceaccount:demo:reader
+cmd: kubectl auth can-i get secrets --as=system:serviceaccount:demo:reader
+cmd: kubectl auth can-i --list --as=system:serviceaccount:demo:reader
+out: yes\nno\nno
+> Run a pod as that account | k8s-pod
+text: Set serviceAccountName in the pod. A token is mounted, so code inside can call the API with only the rights you gave.
+cmd: kubectl run api-test --image=bitnami/kubectl:1.31 --overrides='{"spec":{"serviceAccountName":"reader"}}' --command -- sleep 3600
+cmd: kubectl exec api-test -- kubectl get pods
+cmd: kubectl exec api-test -- kubectl delete pod api-test
+out: NAME       READY   STATUS\napi-test   1/1     Running\nError from server (Forbidden): pods "api-test" is forbidden: User "system:serviceaccount:demo:reader" cannot delete resource "pods"
+
+= k8s-helm-kustomize | Module 11: Package and reuse: Helm charts and Kustomize | 3 | k8s-deploy | Create a chart, change values, template and lint it offline, install and roll back, then do the same job with Kustomize overlays.
+> Create a chart | k8s-deploy
+text: A chart is a folder of templates plus default values. helm create gives a working example with a Deployment, a Service and more.
+cmd: helm create hello-chart
+cmd: ls hello-chart hello-chart/templates
+out: hello-chart:\nChart.yaml  charts  templates  values.yaml\nhello-chart/templates:\nNOTES.txt  _helpers.tpl  deployment.yaml  hpa.yaml  ingress.yaml  service.yaml  serviceaccount.yaml
+> Check it without a cluster | k8s-deployment
+text: lint finds mistakes. template renders the YAML locally, so you can read exactly what would be created.
+cmd: helm lint hello-chart
+cmd: helm template hello hello-chart --set replicaCount=2 --set image.tag=1.27.2 | grep -E "^kind:|replicas:|image:"
+out: ==> Linting hello-chart\n[INFO] Chart.yaml: icon is recommended\n\n1 chart(s) linted, 0 chart(s) failed\nkind: ServiceAccount\nkind: Service\nkind: Deployment\n  replicas: 2\n          image: "nginx:1.27.2"
+> Install, upgrade, roll back | k8s-sts
+text: install creates a release. upgrade changes it using new values, and each change is a numbered revision you can return to.
+cmd: helm install hello hello-chart --set replicaCount=2
+cmd: helm upgrade hello hello-chart --set replicaCount=3
+cmd: helm history hello
+cmd: helm rollback hello 1
+out: REVISION  STATUS      DESCRIPTION\n1         superseded  Install complete\n2         superseded  Upgrade complete\n3         deployed    Rollback to 1
+> Kustomize: patch without templates | k8s-cm
+text: A base holds plain YAML and an overlay changes it: a name prefix, a replica count, an image tag. No template language.
+cmd: mkdir -p base overlays/prod
+cmd: kubectl create deployment hello --image=nginx:1.27 --dry-run=client -o yaml > base/deployment.yaml
+cmd: printf 'resources:\n  - deployment.yaml\n' > base/kustomization.yaml
+cmd: printf 'resources:\n  - ../../base\nnamePrefix: prod-\nreplicas:\n  - name: hello\n    count: 4\nimages:\n  - name: nginx\n    newTag: 1.27.2\n' > overlays/prod/kustomization.yaml
+> Build and apply the overlay | k8s-job
+text: kubectl kustomize prints the result. kubectl apply -k builds and applies it in one step.
+cmd: kubectl kustomize overlays/prod | grep -E "name:|replicas:|image:"
+cmd: kubectl apply -k overlays/prod
+out:   name: prod-hello\n  replicas: 4\n      - image: nginx:1.27.2\n        name: nginx
+note: Helm suits software you install from others. Kustomize suits your own manifests across environments. Many teams use both.
+
+= k8s-debug | Module 12: Debug a broken workload step by step | 2 | k8s-etcd | A repeatable method for Pending, ImagePullBackOff, CrashLoopBackOff and a Service that does not answer.
+> Method: state, events, logs, config | k8s-etcd
+text: Ask in this order: what is the status, what do the events say, what do the logs say, and is the configuration what you meant.
+cmd: kubectl get pods
+cmd: kubectl describe pod <name>
+cmd: kubectl logs <name> --previous
+cmd: kubectl get events --sort-by=.lastTimestamp | tail -n 10
+> Pending: nothing can place the pod | k8s-node
+text: Events say 0/3 nodes are available, with the reason: not enough CPU or memory, a taint with no toleration, or a claim that cannot bind.
+cmd: kubectl run big --image=nginx --requests=cpu=100
+cmd: kubectl describe pod big | grep -A3 Events
+out: Warning  FailedScheduling  0/1 nodes are available: 1 Insufficient cpu.
+> ImagePullBackOff: wrong image or no access | k8s-deployment
+text: A typo in the tag, a private registry without a pull secret, or no network. The event shows the exact error from the registry.
+cmd: kubectl run bad --image=nginx:nope
+cmd: kubectl describe pod bad | grep -E "Failed|Back-off" | head -n 3
+out: Failed to pull image "nginx:nope": manifest for nginx:nope not found\nBack-off pulling image "nginx:nope"
+> CrashLoopBackOff: the app keeps exiting | k8s-pod
+text: Read the logs of the previous run. Exit code 1 is an app error, 137 means killed (often out of memory), 126 or 127 means the command was not found.
+cmd: kubectl run crash --image=busybox:1.36 -- sh -c 'echo starting; exit 3'
+cmd: kubectl logs crash --previous
+cmd: kubectl get pod crash -o jsonpath='{.status.containerStatuses[0].lastState.terminated}'
+out: starting\n{"exitCode":3,"reason":"Error"}
+> Service answers nothing | k8s-service
+text: Check endpoints first. If it is empty, the selector does not match or no pod is ready. Then test the pod IP directly, then the DNS name.
+cmd: kubectl get endpoints hello
+cmd: kubectl get svc hello -o jsonpath='{.spec.selector}'
+cmd: kubectl get pods --show-labels
+cmd: kubectl run tmp --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- -T 3 http://hello
+> A debug shell without changing the pod | k8s-ing
+text: kubectl debug adds a temporary container to a running pod, or makes a copy. Use it when the image has no shell.
+cmd: kubectl debug -it <pod> --image=busybox:1.36 --target=<container>
+cmd: kubectl debug <pod> --copy-to=debug-copy --container=<container> -it -- sh
+
+= k8s-node-maintenance | Module 13: Upgrades and node maintenance: cordon, drain and uncordon | 4 | k8s-node | Take a node out of service safely, protect apps with a PodDisruptionBudget, and always put the node back.
+> See where pods run | k8s-node
+text: Before touching a node, know what is on it. Check the cluster has spare room to take the pods.
+cmd: kubectl config current-context
+cmd: kubectl get nodes
+cmd: kubectl get pods -A -o wide --field-selector spec.nodeName=<node>
+out: platformsbx\nNAME        STATUS   ROLES    VERSION\nnode-a      Ready    <none>   v1.31.0\nnode-b      Ready    <none>   v1.31.0
+note: Managed platforms such as Kyma or EKS have their own upgrade process. Check it before draining by hand, because the platform may reconcile node state.
+> Protect the app with a PodDisruptionBudget | k8s-hpa
+text: A PDB says how many pods may be down at once during voluntary changes. A drain waits instead of breaking the budget.
+cmd: kubectl create pdb hello-pdb --selector=app=hello --min-available=1
+cmd: kubectl get pdb
+out: NAME        MIN AVAILABLE   ALLOWED DISRUPTIONS\nhello-pdb   1               1
+> Cordon: stop new pods landing | k8s-ns
+text: cordon marks the node unschedulable. Existing pods keep running. STATUS shows SchedulingDisabled.
+cmd: kubectl cordon <node>
+cmd: kubectl get nodes
+out: node/node-a cordoned\nNAME     STATUS                     ROLES\nnode-a   Ready,SchedulingDisabled   <none>
+> Drain: move the pods away | k8s-ds
+text: drain evicts pods politely, respecting PDBs, and the controllers recreate them elsewhere. DaemonSet pods stay, and pods with local storage need a flag.
+cmd: kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=300s
+cmd: kubectl get pods -o wide
+out: evicting pod demo/hello-8d5c-abc\npod/hello-8d5c-abc evicted\nnode/node-a drained
+risk: 1
+> Uncordon and verify, every time | k8s-service
+text: After the work, uncordon makes the node schedulable again. Always check the status afterwards, because a cordon that stays behind quietly removes capacity.
+cmd: kubectl uncordon <node>
+cmd: kubectl get nodes
+cmd: kubectl get nodes | grep -c SchedulingDisabled
+out: node/node-a uncordoned\nNAME     STATUS   ROLES\nnode-a   Ready    <none>\n0
+note: Zero lines with SchedulingDisabled means every node is back in service. On Gardener-managed clusters reconciliation can change cordon state, so check again after a few minutes.
+> Version skew and the upgrade order | k8s-cluster
+text: Upgrade the control plane first, then the nodes, one minor version at a time. kubectl may be one minor version older or newer than the API server.
+cmd: kubectl version
+cmd: kubectl get nodes -o custom-columns=NAME:.metadata.name,KUBELET:.status.nodeInfo.kubeletVersion
+out: Client Version: v1.31.0\nServer Version: v1.31.2

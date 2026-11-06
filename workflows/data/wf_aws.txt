@@ -1,0 +1,327 @@
+@topic aws | AWS: cloud from scratch | #FF9900 | cloud | Sign in, secure access with IAM, store files, launch servers, balance and scale them, add a database, DNS and HTTPS, monitor cost, and run a function. Commands use AWS CLI v2 in ap-south-1 (Mumbai). Outputs are examples with placeholder IDs. Many steps create billable resources, so every module ends with clean-up.
+
+= aws-cli-sso | Module 1: AWS CLI, sign-in with SSO, and reading output | 1 | terminal | Install-check the CLI, sign in with short-lived SSO credentials, confirm who you are and shape the output.
+> Check the CLI | terminal
+text: AWS CLI v2 is one program for every service. The version should start with aws-cli/2.
+cmd: aws --version
+cmd: which aws
+out: $ aws --version\naws-cli/2.17.40 Python/3.12.6 Linux/6.8.0-45-generic exe/x86_64.ubuntu.24
+> Sign in with IAM Identity Center (SSO) | key
+text: SSO gives short-lived credentials that expire on their own, which is safer than long-lived access keys. configure sso asks for your start URL and region and saves a named profile.
+cmd: aws configure sso
+cmd: aws sso login --profile dev
+out: Attempting to automatically open the SSO authorization page in your default browser.\nSuccessfully logged into Start URL: https://example.awsapps.com/start
+note: Never commit access keys to Git. If you must use keys, put them only in ~/.aws/credentials with file permission 600.
+> Who am I? | users
+text: sts get-caller-identity is the safest first command: it changes nothing and shows the account and the role you are using.
+cmd: export AWS_PROFILE=dev AWS_REGION=ap-south-1
+cmd: aws sts get-caller-identity
+out: {\n  "UserId": "AROAXXXXXXXXXXXXXXXXX:srinivas",\n  "Account": "123456789012",\n  "Arn": "arn:aws:sts::123456789012:assumed-role/AdministratorAccess/srinivas"\n}
+> Shape the output with --query and --output | filter
+text: --query uses JMESPath to pick fields. --output text is easy to use in scripts, table is easy to read, json is the default.
+cmd: aws ec2 describe-regions --query 'Regions[].RegionName' --output text
+cmd: aws ec2 describe-vpcs --query 'Vpcs[].{id:VpcId,cidr:CidrBlock,default:IsDefault}' --output table
+out: ---------------------------------------------\n|               DescribeVpcs                |\n+-------------+--------------+--------------+\n|    cidr     |   default    |     id       |\n+-------------+--------------+--------------+\n|  172.31.0.0/16 |  True     | vpc-0a1b2c3d |\n+-------------+--------------+--------------+
+> Ask the CLI for help and try a dry run | book
+text: Every command has built-in help. --dry-run checks permissions without creating anything: a message saying DryRunOperation means the call would have worked.
+cmd: aws ec2 run-instances help | head -n 12
+cmd: aws ec2 run-instances --image-id ami-0abcdef1234567890 --instance-type t3.micro --dry-run
+out: An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded, but DryRun flag is set.
+> Profiles and the config files | folder
+text: Profiles live in ~/.aws/config. Switch with AWS_PROFILE or --profile. Keep one profile per account and role.
+cmd: cat ~/.aws/config
+cmd: aws configure list
+out: [profile dev]\nsso_session = corp\nsso_account_id = 123456789012\nsso_role_name = AdministratorAccess\nregion = ap-south-1\noutput = json
+
+= aws-iam-roles-policies | Module 2: IAM users, roles and least-privilege policies | 2 | lock | Write a policy that allows one thing, give it to a role that EC2 can assume, then prove with the simulator what is allowed.
+> The four ideas | shield
+text: A user or role is who. A policy is a JSON list of allowed or denied actions. A role has no password: a trusted service or person assumes it and receives temporary credentials. Everything is denied unless a policy allows it.
+cmd: aws iam get-account-summary --query 'SummaryMap.{Users:Users,Groups:Groups,Roles:Roles,Policies:Policies}'
+out: {"Users": 2, "Groups": 1, "Roles": 14, "Policies": 5}
+> Write a least-privilege policy | doc
+text: This policy lets a server read objects from one bucket and nothing else. Resource names the exact bucket, so other buckets stay unreachable.
+cmd: cat > s3-read.json <<'EOF'\n{\n  "Version": "2012-10-17",\n  "Statement": [\n    {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": "arn:aws:s3:::hello-srinivas-bucket"},\n    {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": "arn:aws:s3:::hello-srinivas-bucket/*"}\n  ]\n}\nEOF
+cmd: aws iam create-policy --policy-name hello-s3-read --policy-document file://s3-read.json --query Policy.Arn --output text
+out: arn:aws:iam::123456789012:policy/hello-s3-read
+> Create a role EC2 is allowed to assume | users
+text: The trust policy answers who may use this role. Here only the EC2 service can. Servers then get credentials automatically, with no keys on disk.
+cmd: cat > trust.json <<'EOF'\n{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}\nEOF
+cmd: aws iam create-role --role-name hello-ec2-role --assume-role-policy-document file://trust.json --query Role.Arn --output text
+out: arn:aws:iam::123456789012:role/hello-ec2-role
+> Attach the policy and make an instance profile | link
+text: attach-role-policy connects permissions to the role. An instance profile is the wrapper that lets an EC2 instance carry the role.
+cmd: aws iam attach-role-policy --role-name hello-ec2-role --policy-arn arn:aws:iam::123456789012:policy/hello-s3-read
+cmd: aws iam create-instance-profile --instance-profile-name hello-ec2-profile
+cmd: aws iam add-role-to-instance-profile --instance-profile-name hello-ec2-profile --role-name hello-ec2-role
+cmd: aws iam list-attached-role-policies --role-name hello-ec2-role --output table
+> Test it with the policy simulator | flask
+text: The simulator answers allowed or denied without touching any data. Reading is allowed; deleting is not.
+cmd: aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::123456789012:role/hello-ec2-role --action-names s3:GetObject s3:DeleteObject --resource-arns arn:aws:s3:::hello-srinivas-bucket/hello.txt --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text
+out: s3:GetObject\tallowed\ns3:DeleteObject\timplicitDeny
+> Review, then clean up in order | trash
+text: Detach policies before deleting a role, and remove the role from the profile before deleting the profile. Review access regularly with a credential report.
+cmd: aws iam generate-credential-report --query State --output text
+cmd: aws iam remove-role-from-instance-profile --instance-profile-name hello-ec2-profile --role-name hello-ec2-role
+cmd: aws iam delete-instance-profile --instance-profile-name hello-ec2-profile
+cmd: aws iam detach-role-policy --role-name hello-ec2-role --policy-arn arn:aws:iam::123456789012:policy/hello-s3-read
+cmd: aws iam delete-role --role-name hello-ec2-role
+cmd: aws iam delete-policy --policy-arn arn:aws:iam::123456789012:policy/hello-s3-read
+risk: 1
+
+= aws-s3-storage | Module 3: S3 buckets, versioning, presigned links and lifecycle | 2 | database | Create a private bucket, upload hello.txt, keep old versions, share a temporary link and clean up properly.
+> Create a bucket with a unique name | database
+text: Bucket names are global, so add your account ID. Outside us-east-1 you must give the location.
+cmd: ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+cmd: BUCKET=hello-srinivas-$ACCOUNT
+cmd: aws s3api create-bucket --bucket $BUCKET --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+out: {\n  "Location": "http://hello-srinivas-123456789012.s3.amazonaws.com/"\n}
+> Make it private and encrypted | shield
+text: Block Public Access stops accidental exposure for good. Default encryption protects data at rest with no extra work.
+cmd: aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+cmd: aws s3api put-bucket-encryption --bucket $BUCKET --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+cmd: aws s3api get-public-access-block --bucket $BUCKET --query PublicAccessBlockConfiguration
+> Upload hello.txt and read it back | upload
+text: s3 cp copies in either direction. A trailing - as the destination prints to the screen.
+cmd: echo "Hello Srinivas" > hello.txt
+cmd: aws s3 cp hello.txt s3://$BUCKET/hello.txt
+cmd: aws s3 ls s3://$BUCKET/
+cmd: aws s3 cp s3://$BUCKET/hello.txt -
+out: upload: ./hello.txt to s3://hello-srinivas-123456789012/hello.txt\n2026-11-04 10:02:11         15 hello.txt\nHello Srinivas
+> Turn on versioning and overwrite | commit
+text: With versioning, an overwrite or delete keeps the old copy. It is the cloud version of Git history for objects.
+cmd: aws s3api put-bucket-versioning --bucket $BUCKET --versioning-configuration Status=Enabled
+cmd: echo "Hello Srinivas, version 2" > hello.txt
+cmd: aws s3 cp hello.txt s3://$BUCKET/hello.txt
+cmd: aws s3api list-object-versions --bucket $BUCKET --prefix hello.txt --query 'Versions[].[VersionId,IsLatest]' --output text
+out: 3sL4kqtJlcpXroDTDmJ.rRSRpBPU3ByA\tTrue\nnull\tFalse
+> Restore the first version | undo
+text: Fetch a specific version by its ID, or copy it over the current one to make it current again.
+cmd: aws s3api get-object --bucket $BUCKET --key hello.txt --version-id null old.txt
+cmd: cat old.txt
+out: Hello Srinivas
+> Share with a temporary link | link
+text: A presigned URL lets someone download a private object for a short time, with no AWS account needed.
+cmd: aws s3 presign s3://$BUCKET/hello.txt --expires-in 300
+cmd: curl -s "$(aws s3 presign s3://$BUCKET/hello.txt --expires-in 300)"
+out: Hello Srinivas, version 2
+> Save money with a lifecycle rule | clock
+text: A rule can move old data to cheaper storage and delete it later. This one expires old versions after 30 days.
+cmd: aws s3api put-bucket-lifecycle-configuration --bucket $BUCKET --lifecycle-configuration '{"Rules":[{"ID":"old-versions","Status":"Enabled","Filter":{},"NoncurrentVersionExpiration":{"NoncurrentDays":30}}]}'
+cmd: aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET --query 'Rules[].ID'
+> Delete everything, versions included | trash
+text: A versioned bucket cannot be removed until every version is gone. List them all, delete them, then delete the bucket.
+cmd: aws s3api delete-objects --bucket $BUCKET --delete "$(aws s3api list-object-versions --bucket $BUCKET --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json)"
+cmd: aws s3api delete-bucket --bucket $BUCKET
+risk: 1
+note: Add delete markers to the same list if the bucket contains any.
+
+= aws-ec2-launch | Module 4: Launch a web server on EC2 | 2 | server | Find an image, create a key and a firewall, boot an instance with a start-up script that serves Hello Srinivas, and shut it down.
+> Find the latest Amazon Linux image | search
+text: AWS publishes the newest image ID as a public parameter, so you never copy an outdated AMI ID.
+cmd: AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text)
+cmd: echo $AMI
+out: ami-0c1a2b3c4d5e6f789
+> Create a key pair | key
+text: The key pair lets you log in by SSH. The private key is shown only once, so save it with strict permissions.
+cmd: aws ec2 create-key-pair --key-name srinivas-key --query KeyMaterial --output text > srinivas-key.pem
+cmd: chmod 400 srinivas-key.pem
+cmd: ls -l srinivas-key.pem
+out: -r-------- 1 you you 1675 Nov  4 10:10 srinivas-key.pem
+> Create a security group (the instance firewall) | firewall
+text: Allow web traffic from anywhere and SSH only from your own address. Everything else is blocked by default.
+cmd: VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+cmd: SG=$(aws ec2 create-security-group --group-name hello-web --description "Hello Srinivas web" --vpc-id $VPC --query GroupId --output text)
+cmd: MYIP=$(curl -s https://checkip.amazonaws.com)
+cmd: aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 80 --cidr 0.0.0.0/0
+cmd: aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 22 --cidr $MYIP/32
+> Write the start-up script | doc
+text: User data runs once as root when the instance first boots. It installs nginx and writes the page.
+cmd: cat > user-data.sh <<'EOF'\n#!/bin/bash\ndnf install -y nginx\necho "Hello Srinivas from $(hostname)" > /usr/share/nginx/html/index.html\nsystemctl enable --now nginx\nEOF
+cmd: cat user-data.sh
+> Launch and wait | rocket
+text: run-instances starts the server. wait instance-running blocks until it is up, then describe shows its public address.
+cmd: ID=$(aws ec2 run-instances --image-id $AMI --instance-type t3.micro --key-name srinivas-key --security-group-ids $SG --user-data file://user-data.sh --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=hello-srinivas}]' --query 'Instances[0].InstanceId' --output text)
+cmd: aws ec2 wait instance-running --instance-ids $ID
+cmd: IP=$(aws ec2 describe-instances --instance-ids $ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+cmd: echo $ID $IP
+out: i-0abc123def4567890 13.233.10.45
+> Test it | check
+text: Give the script a minute to finish, then call the web server and log in by SSH.
+cmd: curl http://$IP
+cmd: ssh -i srinivas-key.pem ec2-user@$IP 'uptime'
+out: Hello Srinivas from ip-172-31-5-20.ap-south-1.compute.internal
+> Stop, start and delete | trash
+text: A stopped instance costs nothing for compute but still bills for its disk. Terminate it and delete the security group and key to leave no charges.
+cmd: aws ec2 stop-instances --instance-ids $ID
+cmd: aws ec2 terminate-instances --instance-ids $ID
+cmd: aws ec2 wait instance-terminated --instance-ids $ID
+cmd: aws ec2 delete-security-group --group-id $SG
+cmd: aws ec2 delete-key-pair --key-name srinivas-key
+risk: 1
+
+= aws-alb-asg | Module 5: Load balancer and Auto Scaling group | 3 | lb | Put an Application Load Balancer in front of servers that scale themselves, then test, scale and remove it all.
+> The picture | network
+text: The ALB is the single public entry. It forwards to a target group, which sends requests to healthy instances that an Auto Scaling group keeps at the size you set.
+cmd: aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerName' --output text
+viz: Browser>ALB:HTTP 80 ; ALB>Target group:forward ; Target group>EC2 instances:health check /
+> Collect network IDs | map
+text: You need a VPC, two subnets in different zones and a security group that allows port 80. The default VPC has them.
+cmd: VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+cmd: SUBNETS=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC --query 'Subnets[0:2].SubnetId' --output text)
+cmd: set -- $SUBNETS; S1=$1; S2=$2
+cmd: SG=$(aws ec2 create-security-group --group-name hello-alb-sg --description "web" --vpc-id $VPC --query GroupId --output text)
+cmd: aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 80 --cidr 0.0.0.0/0
+> Create a launch template | doc
+text: The template is the recipe for every new instance: image, size, firewall and start-up script. The script puts the instance name in the page so you can see balancing.
+cmd: cat > user-data.sh <<'EOF'\n#!/bin/bash\ndnf install -y nginx\necho "Hello Srinivas from $(hostname)" > /usr/share/nginx/html/index.html\nsystemctl enable --now nginx\nEOF
+cmd: AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text)
+cmd: aws ec2 create-launch-template --launch-template-name hello-lt --launch-template-data "{\"ImageId\":\"$AMI\",\"InstanceType\":\"t3.micro\",\"SecurityGroupIds\":[\"$SG\"],\"UserData\":\"$(base64 -w0 user-data.sh)\"}" --query LaunchTemplate.LaunchTemplateId --output text
+note: On macOS replace base64 -w0 with base64 -b 0.
+> Create the target group and the load balancer | lb
+text: The target group defines the health check. The listener sends HTTP port 80 to it.
+cmd: TG=$(aws elbv2 create-target-group --name hello-tg --protocol HTTP --port 80 --vpc-id $VPC --health-check-path / --query 'TargetGroups[0].TargetGroupArn' --output text)
+cmd: ALB=$(aws elbv2 create-load-balancer --name hello-alb --subnets $S1 $S2 --security-groups $SG --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+cmd: aws elbv2 create-listener --load-balancer-arn $ALB --protocol HTTP --port 80 --default-actions Type=forward,TargetGroupArn=$TG
+> Create the Auto Scaling group | layers
+text: Keep 2 to 4 instances, replace unhealthy ones using the load balancer's health check, and give new ones two minutes before judging.
+cmd: aws autoscaling create-auto-scaling-group --auto-scaling-group-name hello-asg --launch-template LaunchTemplateName=hello-lt,Version='$Latest' --min-size 2 --max-size 4 --desired-capacity 2 --vpc-zone-identifier "$S1,$S2" --target-group-arns $TG --health-check-type ELB --health-check-grace-period 120
+cmd: aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names hello-asg --query 'AutoScalingGroups[0].Instances[].[InstanceId,HealthStatus]' --output text
+> Scale on CPU automatically | gauge
+text: Target tracking adds instances when average CPU is above 50 percent and removes them when it falls.
+cmd: aws autoscaling put-scaling-policy --auto-scaling-group-name hello-asg --policy-name cpu50 --policy-type TargetTrackingScaling --target-tracking-configuration '{"PredefinedMetricSpecification":{"PredefinedMetricType":"ASGAverageCPUUtilization"},"TargetValue":50.0}'
+> Test the balancing | check
+text: Call the load balancer repeatedly. The host name in the answer changes as requests are spread across instances.
+cmd: DNS=$(aws elbv2 describe-load-balancers --names hello-alb --query 'LoadBalancers[0].DNSName' --output text)
+cmd: for i in 1 2 3 4; do curl -s http://$DNS; done
+out: Hello Srinivas from ip-172-31-5-20.ap-south-1.compute.internal\nHello Srinivas from ip-172-31-21-8.ap-south-1.compute.internal\nHello Srinivas from ip-172-31-5-20.ap-south-1.compute.internal\nHello Srinivas from ip-172-31-21-8.ap-south-1.compute.internal
+> Delete in reverse order | trash
+text: Remove the group first so it stops launching servers, then the load balancer, the target group and the template. Leaving the ALB running costs money every hour.
+cmd: aws autoscaling delete-auto-scaling-group --auto-scaling-group-name hello-asg --force-delete
+cmd: aws elbv2 delete-load-balancer --load-balancer-arn $ALB
+cmd: aws elbv2 delete-target-group --target-group-arn $TG
+cmd: aws ec2 delete-launch-template --launch-template-name hello-lt
+risk: 1
+
+= aws-rds-secrets | Module 6: A managed database with the password in Secrets Manager | 3 | database | Create a PostgreSQL database in private subnets, let AWS manage the master password, connect with it and delete safely.
+> Decide what to manage yourself | scale
+text: RDS runs the database engine, backups, patching and failover for you. You still choose size, network access and who can connect. A database must never be open to the internet.
+cmd: aws rds describe-db-engine-versions --engine postgres --default-only --query 'DBEngineVersions[0].EngineVersion' --output text
+out: 16.4
+> Subnet group in private subnets | network
+text: The subnet group tells RDS which subnets it may use. Choose private ones in at least two zones.
+cmd: aws rds create-db-subnet-group --db-subnet-group-name hello-db-subnets --db-subnet-group-description "private subnets" --subnet-ids subnet-0aaa111 subnet-0bbb222
+> Create a security group that only the app can reach | firewall
+text: Allow port 5432 only from the application's security group, not from an address range.
+cmd: DBSG=$(aws ec2 create-security-group --group-name hello-db-sg --description "db" --vpc-id $VPC --query GroupId --output text)
+cmd: aws ec2 authorize-security-group-ingress --group-id $DBSG --protocol tcp --port 5432 --source-group $SG
+> Create the database; AWS stores the password | lock
+text: --manage-master-user-password makes RDS create the secret in Secrets Manager and rotate it. You never see or write the password in a script.
+cmd: aws rds create-db-instance --db-instance-identifier hello-db --engine postgres --db-instance-class db.t4g.micro --allocated-storage 20 --master-username appadmin --manage-master-user-password --db-subnet-group-name hello-db-subnets --vpc-security-group-ids $DBSG --no-publicly-accessible --backup-retention-period 7 --storage-encrypted
+cmd: aws rds wait db-instance-available --db-instance-identifier hello-db
+out: Waiting for the instance to become available (about 8 minutes)
+> Read the endpoint and connect | plug
+text: Look up the host name, fetch the password from the secret at the moment you need it, and connect from a server inside the VPC.
+cmd: HOST=$(aws rds describe-db-instances --db-instance-identifier hello-db --query 'DBInstances[0].Endpoint.Address' --output text)
+cmd: SECRET=$(aws rds describe-db-instances --db-instance-identifier hello-db --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+cmd: PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id $SECRET --query SecretString --output text | python3 -c 'import sys,json;print(json.load(sys.stdin)["password"])') psql -h $HOST -U appadmin -d postgres -c "select 'Hello Srinivas' as greeting;"
+out: greeting\n----------------\n Hello Srinivas
+> Snapshot and delete | trash
+text: Take a final snapshot if the data matters. Deleting without one is permanent. Turn off deletion protection first if it is on.
+cmd: aws rds create-db-snapshot --db-instance-identifier hello-db --db-snapshot-identifier hello-db-final
+cmd: aws rds delete-db-instance --db-instance-identifier hello-db --skip-final-snapshot --delete-automated-backups
+risk: 1
+
+= aws-route53-acm | Module 7: Your own domain name with HTTPS | 3 | globe | Point a name at the load balancer with Route 53, get a free certificate from ACM and serve HTTPS with a redirect.
+> Create a hosted zone | globe
+text: A hosted zone holds the DNS records of one domain. The command returns four name servers; set them at your domain registrar.
+cmd: aws route53 create-hosted-zone --name example.com --caller-reference $(date +%s) --query 'DelegationSet.NameServers' --output text
+out: ns-111.awsdns-01.com ns-222.awsdns-02.net ns-333.awsdns-03.org ns-444.awsdns-04.co.uk
+> Point app.example.com at the load balancer | link
+text: An alias record points at an AWS resource, works at the zone root and costs nothing for queries. Zone IDs come from the load balancer description.
+cmd: ZONE=$(aws route53 list-hosted-zones-by-name --dns-name example.com --query 'HostedZones[0].Id' --output text)
+cmd: ALBZONE=$(aws elbv2 describe-load-balancers --names hello-alb --query 'LoadBalancers[0].CanonicalHostedZoneId' --output text)
+cmd: cat > record.json <<'EOF'\n{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"app.example.com","Type":"A","AliasTarget":{"HostedZoneId":"ALBZONE_ID","DNSName":"DNS_NAME","EvaluateTargetHealth":true}}}]}\nEOF
+cmd: aws route53 change-resource-record-sets --hosted-zone-id $ZONE --change-batch file://record.json
+note: Replace ALBZONE_ID and DNS_NAME with the values from the load balancer.
+> Request a certificate | lock
+text: ACM issues free certificates for AWS services. DNS validation proves you control the domain by adding one special record.
+cmd: CERT=$(aws acm request-certificate --domain-name app.example.com --validation-method DNS --query CertificateArn --output text)
+cmd: aws acm describe-certificate --certificate-arn $CERT --query 'Certificate.DomainValidationOptions[0].ResourceRecord'
+out: {"Name": "_a1b2.app.example.com.", "Type": "CNAME", "Value": "_c3d4.acm-validations.aws."}
+> Add the validation record and wait | clock
+text: Create that CNAME in the same hosted zone. When ACM sees it the certificate becomes ISSUED.
+cmd: aws acm wait certificate-validated --certificate-arn $CERT
+cmd: aws acm describe-certificate --certificate-arn $CERT --query Certificate.Status --output text
+out: ISSUED
+> Add an HTTPS listener and redirect HTTP | shield
+text: Port 443 serves the site with the certificate. The old port 80 listener now answers with a redirect, so everyone ends on HTTPS.
+cmd: aws elbv2 create-listener --load-balancer-arn $ALB --protocol HTTPS --port 443 --certificates CertificateArn=$CERT --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 --default-actions Type=forward,TargetGroupArn=$TG
+cmd: aws elbv2 modify-listener --listener-arn $HTTP_LISTENER --default-actions 'Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}'
+> Verify | check
+text: Check that the name resolves, the certificate is trusted and HTTP redirects.
+cmd: dig +short app.example.com
+cmd: curl -sI https://app.example.com | head -n 1
+cmd: curl -sI http://app.example.com | grep -i location
+out: HTTP/2 200\nlocation: https://app.example.com:443/
+
+= aws-monitor-cost | Module 8: Logs, alarms and cost control | 2 | chart | Read logs, check a metric, get an e-mail when CPU is high, and put a budget on your spending.
+> Create a log group and read logs | doc
+text: Logs live in log groups. logs tail follows new lines like tail -f. Set a retention period so old logs do not cost money forever.
+cmd: aws logs create-log-group --log-group-name /hello/app
+cmd: aws logs put-retention-policy --log-group-name /hello/app --retention-in-days 14
+cmd: aws logs tail /hello/app --since 10m
+> Read a metric | chart
+text: Metrics are numbers over time. This asks for the average CPU of one instance in five-minute steps.
+cmd: aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value=i-0abc123def4567890 --start-time $(date -u -d '-1 hour' +%FT%TZ) --end-time $(date -u +%FT%TZ) --period 300 --statistics Average --query 'Datapoints[].Average'
+out: [2.31, 2.28, 5.9, 3.4]
+> Create a topic and subscribe by e-mail | bell
+text: SNS delivers alerts. After subscribing you receive a confirmation e-mail that you must accept.
+cmd: TOPIC=$(aws sns create-topic --name hello-alerts --query TopicArn --output text)
+cmd: aws sns subscribe --topic-arn $TOPIC --protocol email --notification-endpoint you@example.com
+> Alarm on high CPU | bolt
+text: The alarm checks the metric every five minutes and sends a message when it stays above 80 percent for two periods.
+cmd: aws cloudwatch put-metric-alarm --alarm-name hello-cpu-high --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value=i-0abc123def4567890 --statistic Average --period 300 --evaluation-periods 2 --threshold 80 --comparison-operator GreaterThanThreshold --alarm-actions $TOPIC
+cmd: aws cloudwatch describe-alarms --alarm-names hello-cpu-high --query 'MetricAlarms[0].StateValue' --output text
+out: OK
+> Budget with an alert | gauge
+text: A budget watches your spending. This one e-mails you when the actual cost passes 80 percent of 10 US dollars a month.
+cmd: ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+cmd: aws budgets create-budget --account-id $ACCOUNT --budget '{"BudgetName":"hello-monthly","BudgetLimit":{"Amount":"10","Unit":"USD"},"TimeUnit":"MONTHLY","BudgetType":"COST"}' --notifications-with-subscribers '[{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},"Subscribers":[{"SubscriptionType":"EMAIL","Address":"you@example.com"}]}]'
+> See what you spent | table
+text: Cost Explorer shows spending by service. Tag every resource (Project, Owner) so you can also group by tag.
+cmd: aws ce get-cost-and-usage --time-period Start=$(date -u +%Y-%m-01),End=$(date -u +%F) --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE --query 'ResultsByTime[0].Groups[].[Keys[0],Metrics.UnblendedCost.Amount]' --output text
+out: Amazon Elastic Compute Cloud - Compute\t1.84\nAmazon Simple Storage Service\t0.02
+
+= aws-lambda-hello | Module 9: A serverless function: Lambda and a function URL | 2 | bolt | Write a Python function, create the role it needs, deploy it, call it, publish a URL and read its logs.
+> Write the function | code
+text: Lambda runs your code on demand and charges per millisecond. The handler receives an event and returns a result.
+cmd: mkdir -p ~/lambda-hello && cd ~/lambda-hello
+cmd: cat > lambda_function.py <<'EOF'\nimport json\n\ndef lambda_handler(event, context):\n    name = (event or {}).get("name", "Srinivas")\n    return {"statusCode": 200, "body": json.dumps({"message": f"Hello {name}"})}\nEOF
+> Create an execution role | users
+text: The function needs a role so it can write its logs. The managed policy AWSLambdaBasicExecutionRole grants exactly that.
+cmd: cat > trust.json <<'EOF'\n{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}\nEOF
+cmd: ROLE=$(aws iam create-role --role-name hello-lambda-role --assume-role-policy-document file://trust.json --query Role.Arn --output text)
+cmd: aws iam attach-role-policy --role-name hello-lambda-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+> Package and deploy | package
+text: Zip the file and create the function. A new role can take a few seconds to become usable.
+cmd: zip function.zip lambda_function.py
+cmd: sleep 10
+cmd: aws lambda create-function --function-name hello --runtime python3.12 --role $ROLE --handler lambda_function.lambda_handler --zip-file fileb://function.zip --query FunctionArn --output text
+out: arn:aws:lambda:ap-south-1:123456789012:function:hello
+> Invoke it | play
+text: invoke runs the function once. The reply is written to out.json. --cli-binary-format lets you pass plain JSON.
+cmd: aws lambda invoke --function-name hello --payload '{"name":"Srinivas"}' --cli-binary-format raw-in-base64-out out.json
+cmd: cat out.json
+out: {"statusCode": 200, "body": "{\\"message\\": \\"Hello Srinivas\\"}"}
+> Publish an HTTPS address | globe
+text: A function URL gives the function a public address. NONE means anyone can call it, which is right for a demo but wrong for private data; use AWS_IAM for that.
+cmd: aws lambda create-function-url-config --function-name hello --auth-type NONE --query FunctionUrl --output text
+cmd: aws lambda add-permission --function-name hello --statement-id public-url --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE
+cmd: curl -s "https://abc123xyz.lambda-url.ap-south-1.on.aws/?name=Srinivas"
+risk: 1
+> Logs and clean-up | trash
+text: Every invocation writes to the log group /aws/lambda/hello. Delete the function and role when you are done.
+cmd: aws logs tail /aws/lambda/hello --since 5m
+cmd: aws lambda delete-function --function-name hello
+cmd: aws iam detach-role-policy --role-name hello-lambda-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+cmd: aws iam delete-role --role-name hello-lambda-role

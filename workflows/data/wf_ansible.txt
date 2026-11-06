@@ -1,0 +1,616 @@
+@topic ansible | Ansible | #EE0000 | gear | Agentless automation: inventory, playbooks, roles, templates, vault and real projects.
+
+= ans-what-is | What is Ansible? Start here | 1 | gear | Eight plain steps: the problem, the agentless idea, inventory, playbook, modules, idempotence and where Ansible fits.
+> The problem: the same job on many servers | users
+text: Imagine installing a web server on ten machines. Typing the same commands ten times is slow, and the machines slowly drift apart because a step was missed on number seven. You need a way to describe the result you want once and apply it everywhere.
+> Ansible in one sentence | gear
+text: Ansible is an automation tool. You write down the state you want (a package installed, a file in place, a service running) and Ansible makes each machine match it. It is free, open source and uses plain text files that you can keep in Git.
+> Agentless: nothing to install on the servers | network
+text: There is no agent or background program on the managed servers. Your own computer, the control node, connects over SSH, runs small tasks and disconnects. The servers only need SSH access and Python.
+viz: Control node>web1:SSH, run task ; Control node>web2:SSH, run task ; web1>Control node:result ; web2>Control node:result
+> Inventory: which machines | table
+text: The inventory is a list of your servers, organised into groups such as web and db. It answers the question "where?".
+cmd: cat inventory.ini
+out: [web]\nweb1.example.com\nweb2.example.com\n\n[db]\ndb1.example.com
+> Playbook: what to do | doc
+text: A playbook is a YAML file that lists tasks for a group of hosts. It answers the question "what?". Read it top to bottom like a checklist.
+cmd: cat site.yml
+out: - name: Install and start Apache\n  hosts: web\n  become: true\n  tasks:\n    - name: Install the package\n      ansible.builtin.package:\n        name: apache2\n        state: present
+> Modules: the building blocks | package
+text: Each task calls a module, a small tested program such as package, copy, template, service or user. Modules are written to be safe to repeat. You rarely write shell commands yourself.
+cmd: ansible-doc -l | head -n 5
+cmd: ansible-doc ansible.builtin.copy | head -n 20
+> Idempotent: safe to run again | retry
+text: Idempotent means running it twice gives the same result as running it once. Ansible checks first and only changes what is different. The summary shows ok for things already correct and changed for things it fixed.
+out: PLAY RECAP *********************************************\nweb1.example.com : ok=3 changed=0 unreachable=0 failed=0
+note: The first run usually shows changed. A second run showing changed=0 is the proof that the system matches your description.
+> Where Ansible fits | layers
+text: Terraform creates infrastructure (servers, networks, load balancers). Ansible configures what runs on it (packages, files, users, services). Docker packages an application with its dependencies. Teams often use the three together: Terraform builds the server, Ansible prepares it and Docker runs the app.
+
+= ans-architecture | Ansible architecture: control node to managed nodes | 1 | network | Follow one command through the control node, inventory, modules, SSH and the managed nodes.
+> Control node | laptop
+text: The control node is the machine where Ansible is installed and where you run commands. It can be a laptop or a small jump server. It holds your inventory, playbooks and roles. Managed nodes never need Ansible.
+> Managed nodes | server
+text: Managed nodes are the servers and devices you configure. They need SSH and a Python interpreter for most modules. Windows hosts use WinRM or SSH instead.
+> Inventory selects the targets | table
+text: When you run a command, Ansible reads the inventory, expands groups and patterns into a list of hosts and loads variables for each.
+cmd: ansible-inventory -i inventory.ini --graph
+out: @all:\n  |--@ungrouped:\n  |--@web:\n  |  |--web1.example.com\n  |  |--web2.example.com
+> One task, step by step | pipeline
+text: For each task and each host Ansible connects, copies a small module script to a temporary folder, runs it with the arguments, collects the JSON result and removes the temporary files. Hosts run in parallel, 5 at a time by default (forks).
+viz: Control node>web1:1 connect (SSH) ; Control node>web1:2 copy module to temp dir ; Control node>web1:3 run module ; web1>Control node:4 JSON result ; Control node>web1:5 remove temp files
+cmd: ansible-config dump --only-changed
+cmd: ansible-config dump | grep -i forks
+> Playbooks, roles and collections | package
+text: A playbook is a list of plays, each mapping a host group to tasks. Roles package related tasks for reuse. Collections distribute modules, roles and plugins, for example ansible.posix or community.docker.
+cmd: ansible-galaxy collection list
+> Facts and results | search
+text: At the start of each play Ansible gathers facts about each host (OS, IP addresses, memory). It reports ok, changed, failed or unreachable per host, then a recap.
+cmd: ansible web1.example.com -i inventory.ini -m ansible.builtin.setup -a "filter=ansible_distribution*"
+out: web1.example.com | SUCCESS => {\n    "ansible_facts": {\n        "ansible_distribution": "Ubuntu",\n        "ansible_distribution_release": "noble"\n    },\n    "changed": false\n}
+
+= ans-install-first-ping | Install Ansible and run your first ping | 1 | download | Install with pipx, create an inventory, check SSH access and run the ping module.
+> Check Python | code
+text: Ansible is a Python program. Check the version on the control node. Use the Python that your OS ships or one you installed yourself.
+cmd: python3 --version
+> Install Ansible | download
+text: The Ansible documentation recommends pipx, which installs a command-line tool in its own isolated environment. --include-deps exposes the ansible commands. If you prefer, python3 -m pip install --user ansible also works.
+cmd: pipx install --include-deps ansible
+cmd: ansible --version
+out: ansible [core 2.18.x]\n  config file = None\n  python version = 3.12.x
+note: The package named ansible includes many collections. The package ansible-core is the minimal engine. Version numbers move quickly, so yours will differ.
+> Create a project folder and inventory | folder
+text: Keep everything for one automation project in one folder. The inventory lists your servers. Replace the names with your own servers.
+cmd: mkdir -p ~/ansible-lab && cd ~/ansible-lab
+cmd: printf '[web]\nweb1.example.com\nweb2.example.com\n' > inventory.ini
+cmd: cat inventory.ini
+> Set defaults in ansible.cfg | sliders
+text: A local ansible.cfg saves repeating options on every command. Here it sets the inventory file, the login user and the SSH settings.
+cmd: cat > ansible.cfg <<'EOF'\n[defaults]\ninventory = inventory.ini\nremote_user = ubuntu\nhost_key_checking = True\nEOF
+> Check that you can log in by hand | key
+text: Ansible uses the same SSH access you use. If this fails, Ansible will fail too. Fix SSH first.
+cmd: ssh ubuntu@web1.example.com hostname
+> Run the ping module | bolt
+text: This is not an ICMP network ping. The ping module logs in over SSH, finds Python and returns "pong". SUCCESS means SSH, login and Python are all working.
+cmd: ansible all -m ansible.builtin.ping
+out: web1.example.com | SUCCESS => {\n    "changed": false,\n    "ping": "pong"\n}\nweb2.example.com | UNREACHABLE! => {\n    "msg": "Failed to connect to the host via ssh: ...Connection timed out"\n}
+note: UNREACHABLE means a connection problem (name, network, firewall, key or user). FAILED means it connected but the task failed.
+> Read errors and use -v | bug
+text: Add -v for more detail, up to -vvvv for connection debugging. Most first-day problems are SSH keys, the wrong user, a missing Python or a host key prompt.
+cmd: ansible web1.example.com -m ansible.builtin.ping -vvv
+cmd: ansible all -m ansible.builtin.ping -u ubuntu --private-key ~/.ssh/id_ed25519
+
+= ans-inventory-ini | Inventory in INI format | 1 | table | From a flat list of hosts to groups, variables and groups of groups, then inspect and target them.
+> A flat list of hosts | table
+text: The simplest inventory is one host per line. Hosts outside any group belong to the built-in groups all and ungrouped.
+cmd: cat > inventory.ini <<'EOF'\nweb1.example.com\nweb2.example.com\ndb1.example.com\nEOF
+> Put hosts into groups | layers
+text: A group name in square brackets starts a section. Playbooks target groups, so grouping is how you say "all web servers".
+cmd: cat > inventory.ini <<'EOF'\n[web]\nweb1.example.com\nweb2.example.com\n\n[db]\ndb1.example.com\nEOF
+> Variables on hosts and groups | sliders
+text: ansible_host sets the real address when the name is not resolvable. [group:vars] sets variables for every host in the group.
+cmd: cat > inventory.ini <<'EOF'\n[web]\nweb1 ansible_host=10.0.1.11\nweb2 ansible_host=10.0.1.12\n\n[db]\ndb1 ansible_host=10.0.2.21\n\n[web:vars]\nhttp_port=80\n\n[all:vars]\nansible_user=ubuntu\nEOF
+> Groups of groups | branch
+text: [parent:children] lists groups instead of hosts. Targeting prod now covers both web and db.
+cmd: printf '\n[prod:children]\nweb\ndb\n' >> inventory.ini
+cmd: ansible-inventory -i inventory.ini --graph
+out: @all:\n  |--@ungrouped:\n  |--@prod:\n  |  |--@web:\n  |  |  |--web1\n  |  |  |--web2\n  |  |--@db:\n  |  |  |--db1
+> Inspect what Ansible sees | search
+text: --host prints all variables for one host, merged from every level. --list prints everything as JSON.
+cmd: ansible-inventory -i inventory.ini --host web1
+cmd: ansible-inventory -i inventory.ini --list | head -n 20
+> Target with patterns | filter
+text: Patterns pick hosts. A colon means OR, :& means AND, :! means NOT. --list-hosts shows the result without running anything.
+cmd: ansible 'web' -i inventory.ini --list-hosts
+cmd: ansible 'prod:!db' -i inventory.ini --list-hosts
+cmd: ansible 'web:&prod' -i inventory.ini --list-hosts
+out:   hosts (2):\n    web1\n    web2
+
+= ans-inventory-yaml | Inventory in YAML, group_vars and host_vars | 2 | folder | The same inventory as YAML, then move variables into group_vars and host_vars files.
+> The YAML inventory shape | doc
+text: Everything sits under all. Groups live under children, each with hosts and optional vars. YAML is indentation-sensitive: use spaces, never tabs.
+cmd: cat > inventory.yml <<'EOF'\nall:\n  children:\n    web:\n      hosts:\n        web1.example.com:\n        web2.example.com:\n      vars:\n        http_port: 80\n    db:\n      hosts:\n        db1.example.com:\n          ansible_host: 10.0.20.5\n  vars:\n    ansible_user: ubuntu\nEOF
+> Check it parses | check
+text: Let Ansible read it back. A syntax mistake shows up as a clear error, usually a wrong indent.
+cmd: ansible-inventory -i inventory.yml --graph
+cmd: ansible-inventory -i inventory.yml --host db1.example.com
+> Move variables to group_vars | folder
+text: Files named after a group inside group_vars are loaded automatically. This keeps the inventory short and the variables easy to find.
+cmd: mkdir -p group_vars host_vars
+cmd: printf 'http_port: 8080\nserver_admin: ops@example.com\n' > group_vars/web.yml
+cmd: ansible-inventory -i inventory.yml --host web1.example.com
+> Per-host overrides | edit
+text: host_vars/<host>.yml sets values for one machine. It beats group_vars for the same variable, which is how you make one exception.
+cmd: printf 'http_port: 9090\n' > host_vars/web2.example.com.yml
+cmd: ansible-inventory -i inventory.yml --host web2.example.com | grep http_port
+out:     "http_port": 9090,
+> Precedence in one sentence | up
+text: More specific wins: group_vars/all is overridden by a specific group, which is overridden by host_vars, then playbook variables, and finally -e on the command line beats everything. When a value surprises you, check with ansible-inventory --host.
+
+= ans-adhoc | Ad-hoc commands for quick jobs | 1 | terminal | One-line commands for checks and small changes, and when to switch to a playbook.
+> The shape of an ad-hoc command | terminal
+text: ansible <pattern> -m <module> -a "<arguments>". It runs one module on the chosen hosts, right now, without a playbook.
+viz: You>Control node:ansible web -m ping ; Control node>web1:run module ; Control node>web2:run module ; web1>You:pong ; web2>You:pong
+cmd: ansible web -i inventory.ini -m ansible.builtin.ping
+> Run a command | play
+text: The command module runs a program without a shell. The shell module uses a shell, so pipes and redirects work, at the cost of safety. Prefer command.
+cmd: ansible web -i inventory.ini -m ansible.builtin.command -a "uptime"
+cmd: ansible web -i inventory.ini -m ansible.builtin.shell -a "df -h / | tail -n 1"
+> Gather facts | search
+text: The setup module returns facts. Use filter to keep the output short.
+cmd: ansible web -i inventory.ini -m ansible.builtin.setup -a "filter=ansible_memtotal_mb"
+> Copy a file | upload
+text: The copy module sends a local file to the servers and sets the owner and mode. It only reports changed if the content differs.
+cmd: echo "managed by ansible" > motd.txt
+cmd: ansible web -i inventory.ini -b -m ansible.builtin.copy -a "src=motd.txt dest=/etc/motd mode=0644"
+> Become root and manage a service | key
+text: -b (become) uses sudo. The package and service modules work on any distribution, so the same command works on Ubuntu and RHEL.
+cmd: ansible web -i inventory.ini -b -m ansible.builtin.package -a "name=htop state=present"
+cmd: ansible web -i inventory.ini -b -m ansible.builtin.service -a "name=cron state=restarted"
+> When to write a playbook instead | doc
+text: Ad-hoc is for checks and one-off jobs. As soon as you want to repeat it, review it, share it or run several steps in order, put it in a playbook and commit it to Git.
+
+= ans-yaml-basics | YAML basics for Ansible | 1 | doc | The handful of YAML rules that cause most beginner errors: indentation, lists, dictionaries, quoting and booleans.
+> Key and value | edit
+text: A dictionary is a set of key: value pairs. There must be a space after the colon.
+cmd: printf 'name: web1\nport: 80\n' > demo.yml
+cmd: cat demo.yml
+> Lists | menu
+text: A list item starts with a dash and a space. Items line up at the same indentation. Playbooks and task lists are lists of dictionaries.
+cmd: printf 'packages:\n  - nginx\n  - git\n  - curl\n' > demo.yml
+cmd: python3 -c "import yaml,sys;print(yaml.safe_load(open('demo.yml')))"
+out: {'packages': ['nginx', 'git', 'curl']}
+note: This check needs PyYAML (pip install pyyaml). yamllint is a better tool for style checks.
+> Indentation | layers
+text: Use two spaces per level and never tabs. Children must be indented more than their parent. Mixed indentation is the most common cause of "mapping values are not allowed here" errors.
+> Quote values that start with a Jinja2 expression | warn
+text: A value that begins with {{ must be quoted, otherwise YAML reads it as a dictionary. This is the most common Ansible-specific mistake.
+cmd: printf 'good: "{{ http_port }}"\nbad: {{ http_port }}\n' > demo.yml
+cmd: python3 -c "import yaml;yaml.safe_load(open('demo.yml'))"
+out: yaml.scanner.ScannerError or ConstructorError: found unhashable key
+note: The second line is deliberately wrong to show the error.
+> Booleans and strings | check
+text: In YAML 1.1 words such as yes, no, on and off can become booleans. Use true and false in new files. Quote anything that must stay a string, such as a version 3.10 or a file mode "0644".
+cmd: printf 'enabled: true\nversion: "3.10"\nmode: "0644"\n' > demo.yml
+> Multi-line text | doc
+text: A | keeps line breaks (good for scripts and file content). A > folds lines into one (good for long sentences).
+cmd: printf 'motd: |\n  Welcome to the server.\n  Managed by Ansible.\n' > demo.yml
+cmd: python3 -c "import yaml;print(repr(yaml.safe_load(open('demo.yml'))['motd']))"
+out: 'Welcome to the server.\nManaged by Ansible.\n'
+> Validate before you run | check
+text: yamllint catches style and syntax problems. ansible-playbook --syntax-check understands Ansible structure. Use both.
+cmd: yamllint site.yml
+cmd: ansible-playbook site.yml --syntax-check
+
+= ans-first-playbook | Your first playbook | 1 | doc | Write a playbook that installs a package and starts a service, then check, preview, run and rerun it.
+> The anatomy of a playbook | doc
+text: A playbook is a list of plays. Each play has a name, the hosts it targets, whether to become root and a list of tasks. Each task has a name and calls one module with arguments.
+> Write site.yml | edit
+text: Two tasks: install Apache and make sure it is running and enabled at boot. The package name is apache2 on Debian and Ubuntu (it is httpd on RHEL).
+cmd: cat > site.yml <<'EOF'\n- name: Install and start Apache\n  hosts: web\n  become: true\n  tasks:\n    - name: Install Apache\n      ansible.builtin.package:\n        name: apache2\n        state: present\n    - name: Start and enable Apache\n      ansible.builtin.service:\n        name: apache2\n        state: started\n        enabled: true\nEOF
+> Check the syntax | check
+text: --syntax-check parses the playbook without connecting to any host.
+cmd: ansible-playbook site.yml --syntax-check
+out: playbook: site.yml
+> Preview with check and diff | eye
+text: --check predicts what would change without changing anything. --diff shows file differences. Some modules cannot predict, so use it as a guide, not a guarantee.
+cmd: ansible-playbook site.yml --check --diff
+> Run it | rocket
+text: Watch the task names go by. changed means the module changed something, ok means it was already right.
+cmd: ansible-playbook site.yml
+out: PLAY [Install and start Apache] ***\nTASK [Gathering Facts] ***\nok: [web1]\nTASK [Install Apache] ***\nchanged: [web1]\nTASK [Start and enable Apache] ***\nchanged: [web1]\nPLAY RECAP ***\nweb1 : ok=3 changed=2 unreachable=0 failed=0
+> Run it again: idempotence | retry
+text: The second run should report changed=0. If something always shows changed, it is probably a command or shell task, which cannot tell whether work is needed.
+cmd: ansible-playbook site.yml
+out: PLAY RECAP ***\nweb1 : ok=3 changed=0 unreachable=0 failed=0
+> Verify the result | check
+text: Check from the outside, the way a user would.
+cmd: ansible web -b -m ansible.builtin.command -a "systemctl is-active apache2"
+cmd: curl -sI http://web1.example.com | head -n 1
+
+= ans-variables-facts | Variables and facts | 2 | sliders | Define variables, override them from the command line, and use facts that Ansible discovers about each host.
+> Variables in a play | sliders
+text: vars: defines values you can reuse with {{ name }}. Quote the whole value when it starts with a Jinja2 expression.
+cmd: cat > vars-demo.yml <<'EOF'\n- name: Variables demo\n  hosts: web\n  vars:\n    greeting: Hello\n    port: 8080\n  tasks:\n    - name: Show variables\n      ansible.builtin.debug:\n        msg: "{{ greeting }} from {{ inventory_hostname }} on port {{ port }}"\nEOF
+cmd: ansible-playbook vars-demo.yml
+> Override from the command line | up
+text: -e (extra vars) has the highest precedence of all. It is handy for one-off changes and for passing values from CI.
+cmd: ansible-playbook vars-demo.yml -e "greeting=Hi port=9000"
+cmd: ansible-playbook vars-demo.yml -e @extra.yml
+> Magic variables | search
+text: Ansible provides built-in variables. inventory_hostname is the name in the inventory, groups lists all groups and hostvars lets you read another host's variables.
+cmd: ansible web -m ansible.builtin.debug -a "var=groups"
+cmd: ansible web -m ansible.builtin.debug -a "var=inventory_hostname"
+> Facts: what Ansible learns about a host | database
+text: At the start of each play Ansible runs the setup module and stores the results under ansible_facts. Access them with ansible_facts['key'].
+cmd: ansible web1.example.com -m ansible.builtin.setup -a "filter=ansible_distribution*"
+cmd: ansible web1.example.com -m ansible.builtin.setup -a "filter=ansible_default_ipv4"
+> Use facts in a task | check
+text: Facts let one playbook adapt to the host, for example choosing the right package name.
+cmd: cat > facts-demo.yml <<'EOF'\n- name: Facts demo\n  hosts: web\n  tasks:\n    - name: Show OS and memory\n      ansible.builtin.debug:\n        msg: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} with {{ ansible_facts['memtotal_mb'] }} MB"\nEOF
+cmd: ansible-playbook facts-demo.yml
+> Set and register your own values | edit
+text: set_fact creates a variable during the run. register stores a task's result so later tasks can use it.
+cmd: cat > register-demo.yml <<'EOF'\n- name: Register demo\n  hosts: web\n  tasks:\n    - name: Read the kernel version\n      ansible.builtin.command: uname -r\n      register: kernel\n      changed_when: false\n    - name: Show it\n      ansible.builtin.debug:\n        msg: "Kernel is {{ kernel.stdout }}"\nEOF
+cmd: ansible-playbook register-demo.yml
+
+= ans-conditionals-loops | Conditionals and loops | 2 | filter | Run tasks only when a condition holds and repeat a task over a list.
+> when: run a task conditionally | filter
+text: when takes a Jinja2 expression without braces. The task is skipped, not failed, when the condition is false.
+cmd: cat > when-demo.yml <<'EOF'\n- name: Conditional demo\n  hosts: all\n  tasks:\n    - name: Only on Debian family\n      ansible.builtin.debug:\n        msg: "This is a Debian-family host"\n      when: ansible_facts['os_family'] == "Debian"\nEOF
+cmd: ansible-playbook when-demo.yml
+> Combine conditions | layers
+text: Use and, or and not, or give when a list, which means all items must be true.
+cmd: cat > when-demo2.yml <<'EOF'\n- name: Several conditions\n  hosts: all\n  tasks:\n    - name: Big Ubuntu hosts only\n      ansible.builtin.debug:\n        msg: "match"\n      when:\n        - ansible_facts['distribution'] == "Ubuntu"\n        - ansible_facts['memtotal_mb'] > 1024\nEOF
+> loop: repeat over a list | retry
+text: loop runs the task once per item. The current item is {{ item }}. Giving the package module a list is faster than looping, but loop works for every module.
+cmd: cat > loop-demo.yml <<'EOF'\n- name: Loop demo\n  hosts: web\n  become: true\n  tasks:\n    - name: Create several users\n      ansible.builtin.user:\n        name: "{{ item }}"\n        state: present\n      loop:\n        - alice\n        - bob\n        - carol\nEOF
+cmd: ansible-playbook loop-demo.yml --check
+> Loop over dictionaries | table
+text: Each item can be a small dictionary. Access fields with item.name and item.groups.
+cmd: cat > loop-demo2.yml <<'EOF'\n- name: Users with groups\n  hosts: web\n  become: true\n  tasks:\n    - name: Create users\n      ansible.builtin.user:\n        name: "{{ item.name }}"\n        groups: "{{ item.groups }}"\n      loop:\n        - { name: alice, groups: sudo }\n        - { name: bob, groups: users }\nEOF
+> Conditions on results | check
+text: Register a task result and branch on it. Use failed_when and changed_when to define what counts as a failure or a change.
+cmd: cat > result-demo.yml <<'EOF'\n- name: React to a result\n  hosts: web\n  tasks:\n    - name: Is the app config present\n      ansible.builtin.stat:\n        path: /etc/myapp.conf\n      register: conf\n    - name: Warn when missing\n      ansible.builtin.debug:\n        msg: "config is missing"\n      when: not conf.stat.exists\nEOF
+
+= ans-handlers | Handlers and notify | 2 | bell | Restart a service only when its configuration actually changed.
+> The problem handlers solve | bell
+text: If you restart Apache after every run, you cause needless downtime. You only want to restart when the configuration file really changed. Handlers do exactly that.
+> A task that notifies | edit
+text: When a task reports changed it can notify a handler by name. If the task reports ok, nothing is notified.
+cmd: cat > handler-demo.yml <<'EOF'\n- name: Handler demo\n  hosts: web\n  become: true\n  tasks:\n    - name: Deploy the site config\n      ansible.builtin.copy:\n        src: mysite.conf\n        dest: /etc/apache2/conf-available/mysite.conf\n        mode: "0644"\n      notify: Reload Apache\n  handlers:\n    - name: Reload Apache\n      ansible.builtin.service:\n        name: apache2\n        state: reloaded\nEOF
+> First run: the handler fires | play
+text: The copy task changes the file, so the handler runs once at the end of the play, even if several tasks notified it.
+cmd: echo "# demo" > mysite.conf
+cmd: ansible-playbook handler-demo.yml
+out: TASK [Deploy the site config] ***\nchanged: [web1]\nRUNNING HANDLER [Reload Apache] ***\nchanged: [web1]
+> Second run: nothing happens | check
+text: The file is identical, so the task is ok, the handler is skipped and the service is not touched.
+cmd: ansible-playbook handler-demo.yml
+> Run handlers earlier | up
+text: Handlers normally wait until the end of the play. flush_handlers runs the pending ones immediately, which you need when a later task depends on the restart.
+cmd: printf '    - name: Run pending handlers now\n      ansible.builtin.meta: flush_handlers\n' >> handler-demo.yml.snippet
+note: Place this task between the tasks that need the service in its new state.
+
+= ans-templates | Templates with Jinja2 | 2 | code | Generate configuration files from templates and variables, including loops and defaults.
+> Why templates | code
+text: Two servers rarely need identical config files. A template is a file with placeholders. Ansible fills them with each host's variables and writes the result.
+> Create a template | edit
+text: Template files end in .j2. {{ }} prints a value, and {% %} runs logic. The default filter supplies a fallback when a variable is missing.
+cmd: mkdir -p templates
+cmd: cat > templates/index.html.j2 <<'EOF'\n<h1>Welcome to {{ inventory_hostname }}</h1>\n<p>Port: {{ http_port | default(80) }}</p>\n<p>Managed by Ansible. Do not edit by hand.</p>\nEOF
+> Use the template module | upload
+text: The template module renders the file on the control node and copies the result. It is idempotent: it only reports changed when the output differs.
+cmd: cat > template-demo.yml <<'EOF'\n- name: Render a page\n  hosts: web\n  become: true\n  tasks:\n    - name: Write index.html\n      ansible.builtin.template:\n        src: index.html.j2\n        dest: /var/www/html/index.html\n        mode: "0644"\nEOF
+cmd: ansible-playbook template-demo.yml --check --diff
+> Loops inside a template | retry
+text: A for loop can build a list from your inventory, for example one line per web server.
+cmd: cat > templates/hosts.j2 <<'EOF'\n{% for host in groups['web'] %}\n{{ hostvars[host]['ansible_host'] | default(host) }} {{ host }}\n{% endfor %}\nEOF
+> Validate risky files | shield
+text: The validate option runs a command on the rendered file before it replaces the real one. If it fails, the change is not applied. Use it for files that can lock you out, such as sudoers.
+cmd: cat > validate-demo.yml <<'EOF'\n- name: Safe sudoers change\n  hosts: web\n  become: true\n  tasks:\n    - name: Allow the ops group\n      ansible.builtin.copy:\n        content: "%ops ALL=(ALL) NOPASSWD:ALL\\n"\n        dest: /etc/sudoers.d/ops\n        mode: "0440"\n        validate: /usr/sbin/visudo -cf %s\nEOF
+
+= ans-roles | Roles: structure and reuse | 2 | package | Package tasks, handlers, templates and defaults into a role you can reuse in any playbook.
+> What a role is | package
+text: A role is a folder with a fixed layout. It lets you reuse the same automation, for example "webserver", across projects without copy-paste.
+> Generate the skeleton | folder
+text: ansible-galaxy creates the standard directories: tasks, handlers, defaults, vars, files, templates, meta and tests.
+cmd: ansible-galaxy role init --init-path roles webserver
+cmd: ls roles/webserver
+out: README.md  defaults  files  handlers  meta  tasks  templates  tests  vars
+> Fill in the tasks | edit
+text: Put tasks in tasks/main.yml. Put defaults (lowest precedence, easy to override) in defaults/main.yml. Keep every variable name prefixed with the role name to avoid clashes.
+cmd: cat > roles/webserver/defaults/main.yml <<'EOF'\nwebserver_package: apache2\nwebserver_service: apache2\nwebserver_port: 80\nEOF
+cmd: cat > roles/webserver/tasks/main.yml <<'EOF'\n- name: Install the web server\n  ansible.builtin.package:\n    name: "{{ webserver_package }}"\n    state: present\n- name: Start and enable the web server\n  ansible.builtin.service:\n    name: "{{ webserver_service }}"\n    state: started\n    enabled: true\nEOF
+> Use the role in a playbook | rocket
+text: The play lists the role. Variables passed here override the defaults.
+cmd: cat > site.yml <<'EOF'\n- name: Web servers\n  hosts: web\n  become: true\n  roles:\n    - role: webserver\n      vars:\n        webserver_port: 8080\nEOF
+cmd: ansible-playbook site.yml --syntax-check
+> Share roles | users
+text: Publish a role to Git or Ansible Galaxy. Other projects pull it in with a requirements.yml file.
+cmd: cat > requirements.yml <<'EOF'\nroles:\n  - name: geerlingguy.docker\ncollections:\n  - name: ansible.posix\nEOF
+cmd: ansible-galaxy install -r requirements.yml
+cmd: ansible-galaxy collection install -r requirements.yml
+
+= ans-vault | Secrets with Ansible Vault | 2 | lock | Encrypt passwords and keys so they can live in Git, and use them at run time.
+> Why vault | lock
+text: Variables files often hold passwords and tokens. Vault encrypts a file (or a single value) with a password so the encrypted version is safe to commit to Git.
+> Keep the vault password out of Git | shield
+text: Store the vault password in a file with tight permissions and tell Git to ignore it. Do this before you create any secret.
+cmd: openssl rand -base64 24 > .vault_pass
+cmd: chmod 600 .vault_pass
+cmd: echo ".vault_pass" >> .gitignore
+> Encrypt a variables file | lock
+text: Create the plain file, then encrypt it. The encrypted file starts with the header $ANSIBLE_VAULT.
+cmd: mkdir -p group_vars/all
+cmd: printf 'db_password: "change-me"\n' > group_vars/all/vault.yml
+cmd: ansible-vault encrypt group_vars/all/vault.yml --vault-password-file .vault_pass
+cmd: head -n 1 group_vars/all/vault.yml
+out: $ANSIBLE_VAULT;1.1;AES256
+> View and edit | eye
+text: view prints the decrypted content. edit opens it in your editor and re-encrypts on save. rekey changes the password.
+cmd: ansible-vault view group_vars/all/vault.yml --vault-password-file .vault_pass
+cmd: ansible-vault edit group_vars/all/vault.yml --vault-password-file .vault_pass
+cmd: ansible-vault rekey group_vars/all/vault.yml
+> Encrypt a single value | key
+text: encrypt_string produces a block you can paste into any YAML file, which keeps the rest of the file readable.
+cmd: ansible-vault encrypt_string 'S3cret!' --name db_password --vault-password-file .vault_pass
+> Use it when you run | rocket
+text: Point at the password file for each run, or set it once in ansible.cfg. Use --ask-vault-pass to type it instead.
+cmd: ansible-playbook site.yml --vault-password-file .vault_pass
+cmd: ansible-playbook site.yml --ask-vault-pass
+note: In CI, provide the password from the secret store of your CI system, not from the repository.
+
+= ans-idempotence-check | Idempotence, check mode and diff | 2 | check | Prove a playbook is safe to run repeatedly, and fix tasks that always report changed.
+> What idempotent means | retry
+text: Applying the playbook once or ten times gives the same result and no repeated side effects. The proof is a recap that shows changed=0 on the second run.
+> Modules are idempotent | check
+text: package, copy, file, user and service compare the desired and actual state first. Only differences are changed.
+cmd: ansible-playbook site.yml
+cmd: ansible-playbook site.yml
+> command and shell are not | warn
+text: These modules cannot know whether work is needed, so they always report changed. Prefer a real module. If you must use command, tell Ansible when to skip it or what counts as a change.
+cmd: cat > idem-demo.yml <<'EOF'\n- name: Idempotence demo\n  hosts: web\n  become: true\n  tasks:\n    - name: Always changed (bad)\n      ansible.builtin.command: touch /tmp/marker\n    - name: Skip when the file exists (good)\n      ansible.builtin.command: touch /tmp/marker2\n      args:\n        creates: /tmp/marker2\n    - name: Read-only command, never a change\n      ansible.builtin.command: uptime\n      changed_when: false\nEOF
+> Check mode and diff | eye
+text: --check simulates, --diff shows file changes. Tasks that depend on earlier changes may not predict well. Add check_mode: false to a read-only task that must always run.
+cmd: ansible-playbook site.yml --check --diff
+> Detect drift | search
+text: Running with --check on a schedule tells you when someone changed a server by hand: any changed line is drift from your code.
+cmd: ansible-playbook site.yml --check | grep -E 'changed=|failed='
+
+= ans-webserver-project | Project: deploy Apache (httpd) on two servers | 3 | rocket | One playbook that works on Debian-family and RHEL-family hosts: install, configure, start, open the firewall and verify.
+> Goal and layout | target
+text: Install Apache on two servers, publish a page that shows each server's name, and verify it from the control node. The package is apache2 on Debian-family and httpd on RHEL-family, so the playbook will choose by OS family.
+cmd: mkdir -p ~/ansible-lab/webproject/templates && cd ~/ansible-lab/webproject
+> Inventory and variables | table
+text: Two hosts in a web group. The default package and service names go in group_vars and are changed per OS in the play.
+cmd: cat > inventory.ini <<'EOF'\n[web]\nweb1 ansible_host=10.0.1.11\nweb2 ansible_host=10.0.1.12\n\n[web:vars]\nansible_user=ubuntu\nEOF
+cmd: ansible web -i inventory.ini -m ansible.builtin.ping
+> The page template | code
+text: A tiny template shows which server answered, which is handy later for load balancing.
+cmd: cat > templates/index.html.j2 <<'EOF'\n<h1>Served by {{ inventory_hostname }}</h1>\n<p>OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}</p>\nEOF
+> The playbook | doc
+text: Variables choose package and service by OS family. The service module starts it, the template module writes the page and uri checks the answer from the control node.
+cmd: cat > site.yml <<'EOF'\n- name: Deploy Apache\n  hosts: web\n  become: true\n  vars:\n    web_pkg: "{{ 'httpd' if ansible_facts['os_family'] == 'RedHat' else 'apache2' }}"\n  tasks:\n    - name: Install Apache\n      ansible.builtin.package:\n        name: "{{ web_pkg }}"\n        state: present\n    - name: Write the home page\n      ansible.builtin.template:\n        src: index.html.j2\n        dest: /var/www/html/index.html\n        mode: "0644"\n    - name: Start and enable Apache\n      ansible.builtin.service:\n        name: "{{ web_pkg }}"\n        state: started\n        enabled: true\n    - name: Check the site answers\n      ansible.builtin.uri:\n        url: "http://{{ ansible_host | default(inventory_hostname) }}/"\n        status_code: 200\n      delegate_to: localhost\n      become: false\nEOF
+> Dry run, then run | rocket
+text: Check the syntax, preview the changes and apply. Open the firewall port too if the hosts have one (see the next step).
+cmd: ansible-playbook -i inventory.ini site.yml --syntax-check
+cmd: ansible-playbook -i inventory.ini site.yml --check --diff
+cmd: ansible-playbook -i inventory.ini site.yml
+> Open the firewall | firewall
+text: UFW on Ubuntu or firewalld on RHEL. Both modules are idempotent. Add the task for the family you use. The ansible.posix collection provides the firewalld module.
+cmd: ansible web -i inventory.ini -b -m community.general.ufw -a "rule=allow port=80 proto=tcp"
+cmd: ansible web -i inventory.ini -b -m ansible.posix.firewalld -a "service=http permanent=true state=enabled immediate=true"
+note: community.general and ansible.posix are collections. Install them with ansible-galaxy collection install community.general ansible.posix if your install does not include them.
+> Verify and rerun | check
+text: Fetch the page from each server and run the playbook again. The second run must show changed=0.
+cmd: curl -s http://10.0.1.11/
+cmd: curl -s http://10.0.1.12/
+cmd: ansible-playbook -i inventory.ini site.yml | tail -n 4
+
+= ans-docker-project | Project: install Docker Engine and run a container | 3 | cube | Follow Docker's documented Ubuntu steps as a playbook: key, repository, packages, service and hello-world.
+> Plan | target
+text: These steps follow the official Docker Engine installation guide for Ubuntu: add Docker's signing key and apt repository, install the packages, start the service and run the hello-world image. Test on a throwaway server first.
+cmd: mkdir -p ~/ansible-lab/docker && cd ~/ansible-lab/docker
+cmd: printf '[docker_hosts]\nserver1 ansible_host=203.0.113.10 ansible_user=ubuntu\n' > inventory.ini
+> Prerequisites and the signing key | key
+text: Create the keyring directory, then download Docker's GPG key into it. This is the Ansible form of the documented install, curl and chmod commands.
+cmd: cat > docker.yml <<'EOF'\n- name: Install Docker Engine\n  hosts: docker_hosts\n  become: true\n  tasks:\n    - name: Install prerequisites\n      ansible.builtin.apt:\n        name:\n          - ca-certificates\n          - curl\n        state: present\n        update_cache: true\n    - name: Create the keyring directory\n      ansible.builtin.file:\n        path: /etc/apt/keyrings\n        state: directory\n        mode: "0755"\n    - name: Download Docker's GPG key\n      ansible.builtin.get_url:\n        url: https://download.docker.com/linux/ubuntu/gpg\n        dest: /etc/apt/keyrings/docker.asc\n        mode: "0644"\n    - name: Add the Docker apt repository\n      ansible.builtin.deb822_repository:\n        name: docker\n        types: [deb]\n        uris: https://download.docker.com/linux/ubuntu\n        suites: ["{{ ansible_facts['distribution_release'] }}"]\n        components: [stable]\n        signed_by: /etc/apt/keyrings/docker.asc\n    - name: Install Docker packages\n      ansible.builtin.apt:\n        name:\n          - docker-ce\n          - docker-ce-cli\n          - containerd.io\n          - docker-buildx-plugin\n          - docker-compose-plugin\n        state: present\n        update_cache: true\n    - name: Enable and start Docker\n      ansible.builtin.service:\n        name: docker\n        state: started\n        enabled: true\n    - name: Run the hello-world image\n      ansible.builtin.command: docker run --rm hello-world\n      changed_when: false\nEOF
+note: deb822_repository needs ansible-core 2.15 or newer on the control node. Use apt_repository on older versions.
+> Check and run | rocket
+text: Syntax check, a preview (the repository and package steps cannot fully predict in check mode) and then apply.
+cmd: ansible-playbook -i inventory.ini docker.yml --syntax-check
+cmd: ansible-playbook -i inventory.ini docker.yml
+> Verify on the server | check
+text: Confirm the engine version and that the service is active.
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.command -a "docker --version"
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.command -a "systemctl is-active docker"
+> Run a real container | play
+text: Start Nginx in a container, publish it on port 8080 and check it. The community.docker collection offers a docker_container module if you prefer YAML over shell.
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.command -a "docker run -d --name web -p 8080:80 nginx:stable"
+cmd: curl -sI http://203.0.113.10:8080 | head -n 1
+> Allow a user to run docker | users
+text: Members of the docker group can control the engine without sudo. That is effectively root access on the host, so grant it carefully.
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.user -a "name=ubuntu groups=docker append=true"
+risk: 1
+> Clean up | trash
+text: Remove the test container and, if this was a throwaway server, the image.
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.command -a "docker rm -f web"
+cmd: ansible docker_hosts -i inventory.ini -b -m ansible.builtin.command -a "docker image prune -af"
+risk: 1
+
+= ans-users-hardening | Project: users, keys and SSH hardening | 3 | shield | Create an admin user with a key, then disable root and password logins safely with validation and a handler.
+> Plan and the lockout warning | warn
+text: You will create a user, install their public key, give sudo and then tighten sshd. The order matters: confirm key login works before turning off passwords, and keep one session open while you test.
+risk: 1
+> Create the user and key | user
+text: The user module creates the account. authorized_key (from the ansible.posix collection) installs the public key. The lookup reads the key file from your control node.
+cmd: ansible-galaxy collection install ansible.posix
+cmd: cat > users.yml <<'EOF'\n- name: Admin user\n  hosts: all\n  become: true\n  tasks:\n    - name: Create the user\n      ansible.builtin.user:\n        name: opsadmin\n        shell: /bin/bash\n        groups: sudo\n        append: true\n    - name: Install the public key\n      ansible.posix.authorized_key:\n        user: opsadmin\n        key: "{{ lookup('ansible.builtin.file', '~/.ssh/id_ed25519.pub') }}"\nEOF
+cmd: ansible-playbook users.yml
+> Test the new login | key
+text: Before changing sshd, prove the key works from a second terminal.
+cmd: ssh opsadmin@web1.example.com 'sudo -n true && echo "key login and sudo OK"'
+> Harden sshd with validation | lock
+text: lineinfile edits one setting. validate runs sshd -t against the new file first, so a typo cannot break the service. The handler reloads sshd only when something changed.
+cmd: cat > harden.yml <<'EOF'\n- name: Harden sshd\n  hosts: all\n  become: true\n  tasks:\n    - name: Disable root login\n      ansible.builtin.lineinfile:\n        path: /etc/ssh/sshd_config\n        regexp: '^#?PermitRootLogin'\n        line: PermitRootLogin no\n        validate: /usr/sbin/sshd -t -f %s\n      notify: Reload sshd\n    - name: Disable password login\n      ansible.builtin.lineinfile:\n        path: /etc/ssh/sshd_config\n        regexp: '^#?PasswordAuthentication'\n        line: PasswordAuthentication no\n        validate: /usr/sbin/sshd -t -f %s\n      notify: Reload sshd\n  handlers:\n    - name: Reload sshd\n      ansible.builtin.service:\n        name: ssh\n        state: reloaded\nEOF
+note: The service is called ssh on Debian and Ubuntu and sshd on RHEL-family systems. Settings in files under /etc/ssh/sshd_config.d can override the main file.
+risk: 1
+> Run and test from a second session | rocket
+text: Run on one host first with --limit, then test a fresh login before touching the others.
+cmd: ansible-playbook harden.yml --limit web1.example.com --check --diff
+cmd: ansible-playbook harden.yml --limit web1.example.com
+cmd: ssh opsadmin@web1.example.com hostname
+risk: 1
+> Prove the final state | check
+text: Read the effective settings back with sshd -T and rerun to confirm idempotence.
+cmd: ansible web1.example.com -b -m ansible.builtin.command -a "sshd -T" | grep -E 'permitrootlogin|passwordauthentication'
+cmd: ansible-playbook harden.yml --limit web1.example.com
+
+= ans-rolling-update | Rolling updates, error handling and block/rescue | 3 | swap | Update servers one at a time, stop on trouble and clean up after a failure.
+> Why roll | swap
+text: Updating every server at once risks taking the whole service down. serial updates a few hosts at a time and stops if the batch fails.
+viz: Control node>web1:update batch 1 ; web1>Control node:ok ; Control node>web2:update batch 2 ; web2>Control node:ok
+> serial and max_fail_percentage | layers
+text: serial: 1 updates one host per batch. max_fail_percentage: 0 aborts the play if any host in a batch fails, protecting the hosts that have not started.
+cmd: cat > rolling.yml <<'EOF'\n- name: Rolling restart\n  hosts: web\n  become: true\n  serial: 1\n  max_fail_percentage: 0\n  tasks:\n    - name: Take the host out of rotation (placeholder)\n      ansible.builtin.debug:\n        msg: "drain {{ inventory_hostname }} from the load balancer here"\n    - name: Restart Apache\n      ansible.builtin.service:\n        name: apache2\n        state: restarted\n    - name: Wait for port 80\n      ansible.builtin.wait_for:\n        port: 80\n        timeout: 30\n    - name: Put the host back (placeholder)\n      ansible.builtin.debug:\n        msg: "return {{ inventory_hostname }} to the load balancer here"\nEOF
+> Run it and watch the batches | play
+text: Each host finishes the whole task list before the next host starts.
+cmd: ansible-playbook rolling.yml
+> block, rescue and always | shield
+text: block groups tasks. If one fails, rescue runs. always runs in every case. This is Ansible's try, catch and finally.
+cmd: cat > block-demo.yml <<'EOF'\n- name: Safe change\n  hosts: web\n  become: true\n  tasks:\n    - name: Change with rollback\n      block:\n        - name: Apply new config\n          ansible.builtin.copy:\n            src: new.conf\n            dest: /etc/myapp.conf\n            backup: true\n        - name: Restart the app\n          ansible.builtin.service:\n            name: myapp\n            state: restarted\n      rescue:\n        - name: Report the failure\n          ansible.builtin.debug:\n            msg: "restart failed on {{ inventory_hostname }}"\n      always:\n        - name: Record the attempt\n          ansible.builtin.debug:\n            msg: "finished on {{ inventory_hostname }}"\nEOF
+> Stop everything on the first failure | stop
+text: any_errors_fatal: true stops the play for every host as soon as one host fails. Use it for steps that must succeed everywhere or nowhere.
+cmd: printf '  any_errors_fatal: true\n' > any-errors.snippet
+note: Add the line at play level, next to hosts and become.
+
+= ans-tags-limit-debug | Run less, debug more: tags, limit and verbosity | 2 | search | List what will run, narrow it with limit and tags, step through, and read verbose output.
+> List before you run | eye
+text: These options run nothing. They show which hosts, tasks and tags a playbook would use.
+cmd: ansible-playbook site.yml --list-hosts
+cmd: ansible-playbook site.yml --list-tasks
+cmd: ansible-playbook site.yml --list-tags
+> Limit to some hosts | filter
+text: --limit narrows the play to a subset of its hosts. It is the safe way to try a change on one server first.
+cmd: ansible-playbook site.yml --limit web1.example.com
+cmd: ansible-playbook site.yml --limit 'web:!web2.example.com'
+> Run only some tasks with tags | tag
+text: Tag tasks in the playbook with tags: [name]. Then run or skip them by tag.
+cmd: ansible-playbook site.yml --tags packages
+cmd: ansible-playbook site.yml --skip-tags config
+> Start at a task or go step by step | play
+text: --start-at-task resumes at a named task. --step asks before each task, which is useful while learning.
+cmd: ansible-playbook site.yml --start-at-task "Start and enable Apache"
+cmd: ansible-playbook site.yml --step
+> Verbosity levels | bug
+text: -v shows task results, -vv shows task input, -vvv shows connection details and -vvvv adds more SSH debugging. Increase one level at a time.
+cmd: ansible-playbook site.yml -v
+cmd: ansible-playbook site.yml -vvv
+> The debug module | search
+text: Print variables or messages inside the play. Use var to print a variable and msg to print text.
+cmd: ansible web -m ansible.builtin.debug -a "var=ansible_host"
+> Lint your work | check
+text: ansible-lint checks playbooks against best practice, for example fully qualified module names and idempotence problems.
+cmd: ansible-lint site.yml
+cmd: yamllint .
+
+= ans-pull-cron | Pull mode: ansible-pull on a schedule | 3 | download | Let each server fetch its own playbook from Git and apply it, instead of a control node pushing to every host.
+> When pull mode helps | globe
+text: Push mode needs the control node to reach every host. In pull mode each server runs ansible-pull itself, so it works for auto-scaled machines, laptops and hosts behind NAT.
+cmd: ansible --version
+cmd: ansible-pull --help | head -n 4
+note: The trade-off: there is no central run, so you need logs and monitoring to know that every host actually applied the change.
+> A playbook in a repository | folder
+text: Pull mode needs the playbook in Git. A local.yml in the repo root is the default file ansible-pull looks for, and it targets localhost.
+cmd: mkdir -p ~/pull-demo && cd ~/pull-demo
+cmd: printf -- '- hosts: localhost\n  connection: local\n  tasks:\n    - name: Write a marker file\n      ansible.builtin.copy:\n        content: "managed by ansible-pull\\n"\n        dest: /tmp/pull-marker.txt\n' > local.yml
+cmd: git init -q && git add local.yml && git commit -qm "Add local.yml"
+> Run it once | play
+text: -U gives the repository URL, -d the checkout folder, and -C the branch. A local path works for a test. Re-running when nothing changed reports ok, not changed.
+cmd: ansible-pull -U ~/pull-demo -d /tmp/pull-checkout local.yml
+cmd: cat /tmp/pull-marker.txt
+out: $ ansible-pull -U ~/pull-demo -d /tmp/pull-checkout local.yml\nPLAY RECAP *****\nlocalhost : ok=2 changed=1 unreachable=0 failed=0
+> Run it on a schedule | wf-cron
+text: Use a cron entry or a systemd timer. --only-if-changed skips the run when the repository has no new commits, and a random sleep spreads the load.
+cmd: echo '*/15 * * * * root ansible-pull -U https://git.example.com/ops/config.git -d /var/lib/ansible/pull --only-if-changed local.yml >> /var/log/ansible-pull.log 2>&1' | sudo tee /etc/cron.d/ansible-pull
+cmd: sudo systemctl status cron --no-pager | head -n 3
+> Check the result | eye
+text: Read the log for failures and add an alert when the last run is older than expected. Keep the repository read-only for the servers, using a deploy key.
+cmd: tail -n 5 /var/log/ansible-pull.log
+cmd: stat -c '%y' /tmp/pull-marker.txt
+
+= ans-dynamic-inventory | Dynamic inventory for AWS EC2 | 3 | cloud | Let Ansible discover instances from AWS by tag instead of keeping a host list by hand.
+> Why dynamic inventory | cloud
+text: In the cloud, servers appear and disappear. A static file goes stale. An inventory plugin asks the provider for the current list each time you run.
+cmd: ansible-galaxy collection install amazon.aws
+cmd: python3 -m pip install --user boto3 botocore
+> Describe the plugin | doc
+text: The file name must end in aws_ec2.yml. It names the regions, which tag filters to apply, and how to group the instances.
+cmd: printf 'plugin: amazon.aws.aws_ec2\nregions:\n  - ap-south-1\nfilters:\n  tag:Env: prod\n  instance-state-name: running\nkeyed_groups:\n  - key: tags.Role\n    prefix: role\nhostnames:\n  - private-ip-address\n' > aws_ec2.yml
+cmd: cat aws_ec2.yml
+> List and inspect the result | wf-fact
+text: ansible-inventory shows the groups the plugin built. A tag Role=web becomes the group role_web. Credentials come from the usual AWS profile or environment variables.
+cmd: ansible-inventory -i aws_ec2.yml --graph
+cmd: ansible-inventory -i aws_ec2.yml --host 10.0.10.15
+out: $ ansible-inventory -i aws_ec2.yml --graph\n@all:\n  |--@role_web:\n  |  |--10.0.10.15\n  |  |--10.0.11.22\n  |--@role_db:\n  |  |--10.0.20.8
+> Target a group | wf-inventory
+text: Use the generated group exactly like a static one. Limit to a single host while you test.
+cmd: ansible role_web -i aws_ec2.yml -m ping
+cmd: ansible-playbook -i aws_ec2.yml site.yml --limit role_web --check
+> Make it fast and safe | gauge
+text: Turn on caching so repeated runs do not call the API every time, and give the plugin a least-privilege IAM role that can only describe instances.
+cmd: printf 'cache: true\ncache_plugin: jsonfile\ncache_connection: /tmp/aws_inv_cache\ncache_timeout: 300\n' >> aws_ec2.yml
+note: Never put access keys in the inventory file. Use an instance profile, SSO or environment variables.
+
+= ans-async-retry | Long tasks: async, poll, until and retries | 3 | retry | Wait for a service to come up, retry flaky steps, and run a slow job in the background.
+> A task that must wait | clock
+text: After a restart a service needs a moment. A fixed pause is wasteful. until repeats a task until a condition is true, up to retries times with a delay between.
+cmd: printf -- '- hosts: web\n  tasks:\n    - name: Wait until the site answers\n      ansible.builtin.uri:\n        url: http://localhost/\n        status_code: 200\n      register: r\n      until: r.status == 200\n      retries: 10\n      delay: 3\n' > wait.yml
+cmd: ansible-playbook wait.yml --check
+> Wait for a port | plug
+text: wait_for is made for this. It polls a port and fails with a clear timeout message, which is better than a generic connection error later.
+cmd: printf -- '- hosts: web\n  tasks:\n    - ansible.builtin.wait_for:\n        port: 80\n        timeout: 60\n' > port.yml
+cmd: ansible-playbook port.yml
+> Run a slow job in the background | play
+text: async says the task may run up to that many seconds. poll: 0 means "do not wait", so Ansible fires and moves on. Save the job id and check it later with async_status.
+cmd: printf -- '- hosts: web\n  tasks:\n    - ansible.builtin.command: /usr/local/bin/long-backup.sh\n      async: 3600\n      poll: 0\n      register: job\n    - ansible.builtin.async_status:\n        jid: "{{ job.ansible_job_id }}"\n      register: res\n      until: res.finished\n      retries: 60\n      delay: 30\n' > async.yml
+cmd: ansible-playbook async.yml --syntax-check
+> Choose what counts as failure | warn
+text: failed_when and changed_when decide the result yourself. A command that prints a warning but works can be told not to fail, and a read-only command should never report changed.
+cmd: printf -- '- hosts: web\n  tasks:\n    - ansible.builtin.command: grep -c error /var/log/app.log\n      register: c\n      changed_when: false\n      failed_when: c.rc > 1\n' > rc.yml
+cmd: ansible-playbook rc.yml --syntax-check
+note: Use ignore_errors sparingly. It hides real problems; prefer failed_when with a precise rule.
+
+= ans-molecule-test | Test a role with Molecule | 4 | flask | Create a role, run it in a throwaway container, check it with a verify step, and run the loop in CI.
+> Install the tools | download
+text: Molecule creates a test instance, applies your role, checks it is idempotent and runs verification. Containers make that fast. You need Docker or Podman on the machine.
+cmd: python3 -m pip install --user molecule molecule-plugins[docker] ansible-lint
+cmd: molecule --version
+> Scaffold a role with a scenario | folder
+text: ansible-galaxy init makes the role folders. molecule init scenario adds molecule/default with a platform file, a converge playbook and a verify playbook.
+cmd: ansible-galaxy role init webtest
+cmd: cd webtest
+cmd: molecule init scenario default --driver-name docker
+cmd: ls molecule/default
+> Write the role and the check | edit
+text: The role installs and starts nginx. verify.yml asserts what must be true afterwards. Tests state the expected result, not the steps.
+cmd: printf -- '- name: Install nginx\n  ansible.builtin.package:\n    name: nginx\n    state: present\n' > tasks/main.yml
+cmd: printf -- '- hosts: all\n  tasks:\n    - ansible.builtin.package_facts:\n    - ansible.builtin.assert:\n        that: "\x27nginx\x27 in ansible_facts.packages"\n' > molecule/default/verify.yml
+> Run the whole loop | wf-loop
+text: molecule test creates the container, converges, runs a second time to prove idempotence, verifies, then destroys everything. During development use converge and verify to stay fast.
+cmd: molecule test
+cmd: molecule converge && molecule verify
+out: $ molecule test\nINFO     Running default > idempotence\nINFO     Idempotence completed successfully.\nINFO     Running default > verify\nINFO     Verifier completed successfully.
+> Lint and run it in CI | gate
+text: Run ansible-lint and molecule test on every pull request so a role cannot be merged broken.
+cmd: ansible-lint .
+cmd: printf 'name: role-test\non: [pull_request]\njobs:\n  molecule:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pip install molecule molecule-plugins[docker] ansible-lint\n      - run: molecule test\n' > ../molecule-ci.yml
+note: A pipeline that runs molecule test is the best evidence that a role is idempotent.
+
+= ans-kubernetes-k8s | Manage Kubernetes objects with kubernetes.core.k8s | 4 | helm | Apply a namespace, a deployment and a service from a playbook, wait for readiness and clean up.
+> Prepare the collection and access | download
+text: The collection talks to the cluster API with the Python kubernetes client, using your kubeconfig. Check access first with kubectl.
+cmd: ansible-galaxy collection install kubernetes.core
+cmd: python3 -m pip install --user kubernetes
+cmd: kubectl config current-context
+cmd: kubectl get nodes
+> Create a namespace | plus
+text: The k8s module is declarative: state present creates or updates, absent deletes. Run it twice and the second run reports ok.
+cmd: printf -- '- hosts: localhost\n  gather_facts: false\n  tasks:\n    - name: Namespace\n      kubernetes.core.k8s:\n        state: present\n        definition:\n          apiVersion: v1\n          kind: Namespace\n          metadata:\n            name: demo\n' > k8s.yml
+cmd: ansible-playbook k8s.yml
+> Deploy an application | rocket
+text: Put the manifest in a template and fill in image and replica count from variables. wait makes the task finish only when the Deployment is available, so later tasks can rely on it.
+cmd: printf -- '    - name: Deployment\n      kubernetes.core.k8s:\n        state: present\n        wait: true\n        wait_timeout: 120\n        definition:\n          apiVersion: apps/v1\n          kind: Deployment\n          metadata: {name: web, namespace: demo}\n          spec:\n            replicas: 2\n            selector: {matchLabels: {app: web}}\n            template:\n              metadata: {labels: {app: web}}\n              spec:\n                containers:\n                  - {name: web, image: nginx:1.27}\n' >> k8s.yml
+cmd: ansible-playbook k8s.yml --check --diff
+> Read state back | eye
+text: k8s_info returns the live object so you can assert on it or print a field.
+cmd: kubectl -n demo get deploy web
+cmd: kubectl -n demo get pods -l app=web
+out: $ kubectl -n demo get deploy web\nNAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    2/2     2            2           41s
+> Update and clean up | trash
+text: Change the image tag in the variable and run again; Kubernetes rolls the pods. Delete with state absent, namespace last.
+cmd: kubectl -n demo rollout status deploy/web
+cmd: kubectl delete namespace demo
+risk: 1
+note: Test against a development cluster. Check the context before every run.

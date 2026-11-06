@@ -1,0 +1,97 @@
+# Q&A for the Hello Srinivas Git journey.
+
+= hello-first-commit
+q: In which situation do we use this?
+a: Whenever a folder of work needs history: notes, scripts, config. Run git init once, then add and commit after each meaningful change.
+q: What are the three places a file can be?
+a: The working folder (what you edit), the staging area (what the next commit will contain) and the repository (saved commits).
+q: What comes next?
+a: Module 2 sends these commits to a server so others can get them.
+
+= hello-remote-push
+q: In which situation do we use this?
+a: When work must be backed up or shared: a new project, a new laptop, or before asking someone to review.
+q: GitHub, GitLab or Bitbucket: do the commands differ?
+a: No. Git is the same everywhere; only the website around it differs. You change only the address in git remote add.
+q: What comes next?
+a: Module 3 shows how to inspect and undo changes before they are committed.
+
+= hello-edit-diff-restore
+q: In which situation do we use this?
+a: Before every commit, to see exactly what changed, and whenever you edited the wrong thing and want it back.
+q: Which command moves which box?
+a: add copies working to staging, restore --staged undoes that, restore resets the working file from the staging area.
+q: What comes next?
+a: Module 4 undoes things that are already committed.
+
+= hello-head-reset
+q: In which situation do we use this?
+a: A commit was wrong, too early or too big and you want to redo it, or you need to understand what HEAD actually does.
+q: Soft, mixed or hard?
+a: soft moves only HEAD, mixed also clears staging, hard also overwrites your files. Hard can destroy uncommitted work.
+q: What comes next?
+a: Module 5 uses branches so you rarely need to undo in the first place.
+
+= hello-branch-merge
+q: In which situation do we use this?
+a: For any change you are unsure about: a feature, an experiment, a fix. main stays safe while you work.
+q: Fast-forward or merge commit?
+a: Fast-forward happens when the target has no new commits. A merge commit appears when both sides moved.
+q: What comes next?
+a: Module 6 handles the case where both sides edit the same line.
+
+= hello-merge-conflict
+q: In which situation do we use this?
+a: Two people, or two branches, changed the same lines. Git refuses to guess and asks you to decide.
+q: What goes wrong most often?
+a: Committing with the <<<<<<< markers still in the file. Search for them before running git add.
+q: What comes next?
+a: Module 7 shows how to avoid many merges by rebasing.
+
+= hello-rebase
+q: In which situation do we use this?
+a: Your branch is behind main and you want a straight history, or you want to squash noisy commits before review.
+q: When must I not rebase?
+a: Never on commits that others already pulled. Rebase gives commits new hashes and breaks their copies.
+q: What comes next?
+a: Module 8 puts several people on one remote.
+
+= hello-fetch-pull-team
+q: In which situation do we use this?
+a: Several people push to one repository. The daily loop is fetch or pull, commit, push.
+q: Why was my push rejected?
+a: Someone pushed first, so your copy is behind. Pull with --rebase, then push again.
+q: What comes next?
+a: Module 9 covers parking work and marking releases.
+
+= hello-stash-tags
+q: In which situation do we use this?
+a: Stash when you must switch task or pull while your work is unfinished. Tag when a version is released.
+q: Does a normal push send tags?
+a: No. Push a tag by name or use --tags.
+q: What comes next?
+a: Module 10 goes back in time to old commits.
+
+= hello-detached-head
+q: In which situation do we use this?
+a: To see the project as it was at an old commit, or to find which commit broke something.
+q: What is a detached HEAD?
+a: HEAD points at a commit, not a branch. New commits there belong to no branch and can be lost, so create a branch if you want to keep them.
+q: What comes next?
+a: Module 11 covers moving and renaming files.
+
+= hello-move-rename-delete
+q: In which situation do we use this?
+a: Reorganising a project: renaming files, moving them into folders, removing what is no longer needed.
+q: Does Git track renames?
+a: Git stores snapshots and detects renames by comparing content. Use git mv and log --follow to keep the trail clear.
+q: What comes next?
+a: Module 12 puts everything together in the team flow.
+
+= hello-pr-flow
+q: In which situation do we use this?
+a: Any team using GitHub, GitLab or Bitbucket: branch, push, review, merge, clean up.
+q: Why delete the branch after merging?
+a: The commits are safe in main. Old branches clutter the list and confuse everyone.
+q: What comes next?
+a: Go deeper in the Git topic: bisect, worktrees, hooks, submodules and recovery.

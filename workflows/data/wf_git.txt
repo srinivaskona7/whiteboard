@@ -1,0 +1,1167 @@
+@topic git | Git | #F05133 | branch | Version control from Hello World to branching, remotes, recovery and hooks. Every command here uses only local folders, so you can run all of it.
+
+= git-first-repo | Your first repo: from Hello World to a commit | 1 | commit | Create hello.txt, understand the file, then init, add, commit, status and log, watching each area change.
+> Create a folder for the project | folder
+text: A Git repository is an ordinary folder that Git watches. Make one and move into it.
+cmd: mkdir -p ~/git-lab/hello-git
+cmd: cd ~/git-lab/hello-git
+cmd: pwd
+> Create hello.txt with "Hello World" | edit
+text: echo prints text and the > symbol sends it into a file, creating it. Git does not know about this file yet.
+cmd: echo "Hello World" > hello.txt
+cmd: ls
+cmd: cat hello.txt
+fx: new hello.txt
+> Understand the file syntax | eye
+text: A .txt file is plain text: characters grouped into lines, each line ending with a newline character. cat -e shows that hidden end of line as a $ sign. wc -l counts lines and wc -c counts bytes: 11 visible characters plus the newline make 12.
+cmd: cat -e hello.txt
+cmd: wc -l hello.txt
+cmd: wc -c hello.txt
+> git init: start tracking | gear
+text: git init creates a hidden .git folder. That folder is the repository: it holds every commit, branch and setting. Delete .git and the history is gone, but your files stay.
+cmd: git init
+cmd: ls -a
+fx: init
+> git status: what does Git see? | search
+text: status compares three things: your folder, the staging area and the last commit. hello.txt is listed as untracked, meaning it exists but Git is not recording it yet.
+cmd: git status
+> git add: stage the file | plus
+text: add copies the current content of hello.txt into the staging area, a waiting room for the next commit. Run status again and the file moves to "Changes to be committed".
+cmd: git add hello.txt
+cmd: git status
+fx: stage hello.txt
+> git commit: save a snapshot | save
+text: commit turns everything in the staging area into a permanent snapshot with a message. -m supplies the message so no editor opens. Write messages that finish the sentence "This commit will...".
+cmd: git commit -m "Add hello.txt"
+fx: commit "Add hello.txt"
+> git log: read the history | doc
+text: log lists commits, newest first. Each has a unique ID (a hash), an author, a date and the message. --oneline shows a short form.
+cmd: git log --oneline
+cmd: git log
+> Change the file and look at the difference | diff
+text: Edit the file again. status now says "modified" and diff shows exactly what changed: lines starting with + were added.
+cmd: echo "Hello Git" >> hello.txt
+cmd: git status --short
+cmd: git diff
+fx: edit hello.txt
+> Complete the cycle: add, commit, log | retry
+text: The everyday loop is edit, add, commit. Each pass adds one more snapshot to the history, and status ends clean.
+cmd: git add hello.txt
+cmd: git commit -m "Add greeting line"
+cmd: git log --oneline
+cmd: git status
+fx: stage hello.txt ; commit "Add greeting line"
+
+= git-three-areas | Working directory, staging area, repository | 1 | layers | The mental model behind every Git command: three places a change can live and the commands that move it between them.
+> Start with one commit | commit
+text: Make a repo with a single committed file so there is something to change.
+cmd: mkdir -p ~/git-lab/areas && cd ~/git-lab/areas
+cmd: git init
+cmd: echo "v1" > notes.txt
+cmd: git add notes.txt
+cmd: git commit -m "Start notes"
+fx: init ; new notes.txt ; stage notes.txt ; commit "Start notes"
+> Edit the file: only the working directory changes | edit
+text: Your edit exists only in the working directory. Nothing is staged and nothing is committed. git diff compares the working directory with the staging area.
+cmd: echo "v2" >> notes.txt
+cmd: git status --short
+cmd: git diff
+fx: edit notes.txt
+> git add: copy the change to the staging area | plus
+text: Now the change is staged. git diff shows nothing, because the working directory matches the staging area. git diff --staged compares the staging area with the last commit.
+cmd: git add notes.txt
+cmd: git diff
+cmd: git diff --staged
+fx: stage notes.txt
+> Edit again: the same file in two places | layers
+text: Editing after git add gives the file two versions. The staging area still holds v2, while the working directory has v3. The two letters in the short status show it: M in both columns.
+cmd: echo "v3" >> notes.txt
+cmd: git status --short
+fx: edit notes.txt
+> Commit saves only what is staged | save
+text: Commit snapshots the staging area, not your folder. That is why v3 is still waiting as an unstaged change afterwards.
+cmd: git commit -m "Add v2"
+cmd: git status --short
+cmd: git log --oneline
+fx: commit "Add v2"
+> Stage and commit the rest | check
+text: git add -A stages every change in the project. Commit again and the working directory, staging area and repository all agree.
+cmd: git add -A
+cmd: git commit -m "Add v3"
+cmd: git status
+fx: stage notes.txt ; commit "Add v3"
+
+= git-config-identity | Configure Git: identity, defaults and aliases | 1 | sliders | Tell Git who you are, set sensible defaults, add shortcuts and learn the three configuration levels.
+> Set your name and email | user
+text: Every commit records an author. Set it once with --global. Use the email you use on your Git host.
+cmd: git config --global user.name "Alice Dev"
+cmd: git config --global user.email "alice@example.com"
+cmd: git config --global user.name
+> Choose defaults | sliders
+text: init.defaultBranch names the first branch of new repositories. pull.rebase false makes git pull merge, so its behaviour is explicit instead of a hint message.
+cmd: git config --global init.defaultBranch main
+cmd: git config --global pull.rebase false
+cmd: git config --global --list
+> Add aliases | tag
+text: An alias is a shortcut stored in the configuration. Here st is a short status and lg is a compact history graph.
+cmd: git config --global alias.st "status --short"
+cmd: git config --global alias.lg "log --oneline --graph --decorate --all"
+cmd: mkdir -p ~/git-lab/alias && cd ~/git-lab/alias && git init
+cmd: echo hi > a.txt
+cmd: git st
+> Three levels of configuration | layers
+text: system applies to every user, global to you, and local to one repository. The most specific level wins. Use --show-scope to see where a value comes from.
+cmd: git config --local user.email "alice@work.example"
+cmd: git config user.email
+cmd: git config --show-scope user.email
+> Edit and unset a value | edit
+text: Values live in plain text files: ~/.gitconfig for global and .git/config for local. Remove a value you no longer want with --unset.
+cmd: git config --local --unset user.email
+cmd: git config user.email
+cmd: cat .git/config
+
+= git-status-diff | Read status and diff like a pro | 1 | diff | Modified, new, deleted and untracked files in the long and short status, and the four useful forms of diff.
+> A repo with two files | folder
+text: Create two committed files so there is something to change.
+cmd: mkdir -p ~/git-lab/sd && cd ~/git-lab/sd
+cmd: git init
+cmd: echo "alpha" > a.txt
+cmd: echo "beta" > b.txt
+cmd: git add .
+cmd: git commit -m "Add a and b"
+fx: init ; new a.txt ; new b.txt ; stage a.txt ; stage b.txt ; commit "Add a and b"
+> Modify one file, delete one, add one | edit
+text: Three kinds of change at once: a.txt is modified, b.txt is deleted and c.txt is brand new.
+cmd: echo "alpha two" >> a.txt
+cmd: rm b.txt
+cmd: echo "gamma" > c.txt
+cmd: git status
+fx: edit a.txt ; del b.txt ; new c.txt
+> The short status | table
+text: Two columns before each name: the left is the staging area and the right is the working directory. M modified, D deleted and ?? untracked. A blank means no change in that column.
+cmd: git status --short
+> git diff shows the content change | diff
+text: diff lists changed lines for tracked files only. Lines starting with - were removed, + were added. The untracked c.txt does not appear.
+cmd: git diff
+> A summary instead of the full patch | chart
+text: --stat shows files and the number of changed lines and --name-only lists just the names, handy for scripts.
+cmd: git diff --stat
+cmd: git diff --name-only
+> Stage some changes and compare again | plus
+text: After staging a.txt, plain diff no longer shows it. Use --staged for what the next commit will contain.
+cmd: git add a.txt
+cmd: git diff --name-only
+cmd: git diff --staged
+fx: stage a.txt
+
+= git-undo-changes | Undo mistakes safely | 2 | undo | Discard edits, unstage files, undo a commit with revert and move the branch back with reset --soft.
+> A repo with one good commit | commit
+text: Start from a clean state with one commit, so each undo has a known target.
+cmd: mkdir -p ~/git-lab/undo && cd ~/git-lab/undo
+cmd: git init
+cmd: echo "good line" > app.txt
+cmd: git add app.txt
+cmd: git commit -m "Add app.txt"
+fx: init ; new app.txt ; stage app.txt ; commit "Add app.txt"
+> Throw away an uncommitted edit | trash
+text: git restore puts the file back to the last committed (or staged) version. The edit is gone for good because Git never saved it.
+cmd: echo "oops" >> app.txt
+cmd: cat app.txt
+cmd: git restore app.txt
+cmd: cat app.txt
+risk: 1
+fx: edit app.txt ; restore app.txt
+> Unstage a file | minus
+text: git restore --staged removes a file from the staging area but keeps your edit in the working directory.
+cmd: echo "not ready" >> app.txt
+cmd: git add app.txt
+cmd: git status --short
+cmd: git restore --staged app.txt
+cmd: git status --short
+fx: edit app.txt ; stage app.txt ; unstage app.txt
+> Clean up the leftover edit | trash
+text: The edit is still in the working directory. Discard it to get back to a clean state.
+cmd: git restore app.txt
+cmd: git status --short
+risk: 1
+fx: restore app.txt
+> Undo a commit with revert | undo
+text: revert makes a new commit that cancels an old one. History is kept, so it is safe even after you have shared the commit.
+cmd: echo "bad change" >> app.txt
+cmd: git commit -am "Add bad change"
+cmd: git revert --no-edit HEAD
+cmd: git log --oneline
+fx: edit app.txt ; stage app.txt ; commit "Add bad change" ; revert "Revert: Add bad change"
+> Undo a commit that is not shared: reset --soft | up
+text: reset --soft moves the branch back one commit and leaves the changes staged, ready to commit again with a better message. Only do this for commits nobody else has.
+cmd: echo "small step" >> app.txt
+cmd: git commit -am "Too early commit"
+cmd: git reset --soft HEAD~1
+cmd: git status --short
+cmd: git commit -m "Add small step properly"
+cmd: git log --oneline
+fx: edit app.txt ; stage app.txt ; commit "Too early commit" ; reset soft 1 ; commit "Add small step properly"
+> The safety net: reflog | search
+text: reflog records every place HEAD has pointed, including commits you thought were lost. It is how you recover from most mistakes.
+cmd: git reflog -n 6
+
+= git-gitignore | Keep junk out with .gitignore | 1 | ban | Ignore logs and build output, find out why a file is ignored and stop tracking a file that was committed by mistake.
+> A project with files you do not want | folder
+text: A script plus a log file and a build folder. Git lists all three as untracked.
+cmd: mkdir -p ~/git-lab/ignore/build && cd ~/git-lab/ignore
+cmd: git init
+cmd: echo "print('hi')" > app.py
+cmd: echo "debug line" > debug.log
+cmd: echo "binary" > build/app.bin
+cmd: git status --short
+fx: init ; new app.py ; new debug.log ; new build/app.bin
+> Create .gitignore | edit
+text: One pattern per line. *.log matches any file ending in .log and a trailing slash matches a folder. Now only the useful files remain untracked.
+cmd: echo "*.log" > .gitignore
+cmd: echo "build/" >> .gitignore
+cmd: cat .gitignore
+cmd: git status --short
+fx: new .gitignore ; del debug.log ; del build/app.bin
+> Ask why a file is ignored | search
+text: check-ignore -v prints the exact rule and line that matched. It is the fastest way to debug an ignore pattern.
+cmd: git check-ignore -v debug.log build/app.bin
+> Commit the right files | save
+text: Commit the source and the .gitignore itself, so everyone shares the same rules.
+cmd: git add .gitignore app.py
+cmd: git commit -m "Add app and gitignore"
+cmd: git status --short
+fx: stage .gitignore ; stage app.py ; commit "Add app and gitignore"
+> Fix a file that is already tracked | warn
+text: Ignore rules only affect untracked files. If you committed .env by mistake, adding it to .gitignore is not enough. git rm --cached stops tracking it but keeps your local copy.
+cmd: echo "SECRET=1" > .env
+cmd: git add -f .env
+cmd: git commit -m "Oops: add .env"
+cmd: echo ".env" >> .gitignore
+cmd: git rm --cached .env
+cmd: git commit -am "Stop tracking .env"
+cmd: git status --short
+note: The secret is still in the older commit. If it was ever pushed, treat it as leaked and rotate it.
+fx: new .env ; stage .env ; commit "Oops: add .env" ; edit .gitignore ; del .env ; stage .gitignore ; commit "Stop tracking .env"
+
+= git-branching | Branching: work on a copy without breaking main | 1 | branch | Create, switch, compare and delete branches, and see that each branch has its own files.
+> Start with one commit on main | commit
+text: A branch is just a movable label on a commit. Create a repo with one commit.
+cmd: mkdir -p ~/git-lab/branching && cd ~/git-lab/branching
+cmd: git init
+cmd: echo "home page" > index.txt
+cmd: git add index.txt
+cmd: git commit -m "Add home page"
+fx: init ; new index.txt ; stage index.txt ; commit "Add home page"
+> Create a branch and switch to it | branch
+text: switch -c creates a branch and moves to it in one step. The star marks the branch you are on.
+cmd: git switch -c feature/login
+cmd: git branch
+fx: switch feature/login
+> Commit on the branch | save
+text: This commit belongs to feature/login only. main has not moved.
+cmd: echo "login page" > login.txt
+cmd: git add login.txt
+cmd: git commit -m "Add login page"
+cmd: git log --oneline --graph --all
+fx: new login.txt ; stage login.txt ; commit "Add login page"
+> Switch back: your files change | swap
+text: Git rewrites your working directory to match the branch. On main the login file does not exist. Switch back and it returns.
+cmd: git switch main
+cmd: ls
+cmd: git switch feature/login
+cmd: ls
+fx: switch main ; switch feature/login
+> Compare the branches | diff
+text: main..feature/login lists the commits on the feature branch that main does not have yet.
+cmd: git branch -v
+cmd: git log main..feature/login --oneline
+> Rename, merge and delete | trash
+text: -d deletes a branch only when its work is merged, and refuses otherwise. That refusal is a safety feature. Merge first, then delete.
+cmd: git branch -m feature/login feature/sign-in
+cmd: git switch main
+cmd: git branch -d feature/sign-in
+cmd: git merge feature/sign-in
+cmd: git branch -d feature/sign-in
+note: git branch -D deletes without checking. Use it only when you are sure the work is not needed.
+fx: switch main ; merge feature/sign-in
+
+= git-merge | Merging: fast-forward and merge commits | 2 | merge | See the two kinds of merge: a simple fast-forward and a true merge commit with two parents.
+> Set up the base | commit
+text: One commit on main to start from.
+cmd: mkdir -p ~/git-lab/merge && cd ~/git-lab/merge
+cmd: git init
+cmd: echo "base" > base.txt
+cmd: git add base.txt
+cmd: git commit -m "Add base"
+fx: init ; new base.txt ; stage base.txt ; commit "Add base"
+> A branch that main has not left behind | branch
+text: Create feature-a and commit once. Because main did not change meanwhile, main can simply catch up.
+cmd: git switch -c feature-a
+cmd: echo "a" > a.txt
+cmd: git add a.txt
+cmd: git commit -m "Add a"
+cmd: git switch main
+fx: switch feature-a ; new a.txt ; stage a.txt ; commit "Add a" ; switch main
+> Fast-forward merge | up
+text: No new commit is needed. Git just moves the main label forward to the same commit as feature-a. History stays a straight line.
+cmd: git merge feature-a
+cmd: git log --oneline --graph
+fx: merge feature-a
+> Make the branches diverge | swap
+text: Now give feature-b one commit and main a different one. Neither branch contains the other's work.
+cmd: git switch -c feature-b
+cmd: echo "b" > b.txt
+cmd: git add b.txt
+cmd: git commit -m "Add b"
+cmd: git switch main
+cmd: echo "main change" > main.txt
+cmd: git add main.txt
+cmd: git commit -m "Add main change"
+fx: switch feature-b ; new b.txt ; stage b.txt ; commit "Add b" ; switch main ; new main.txt ; stage main.txt ; commit "Add main change"
+> A true merge creates a merge commit | merge
+text: Git combines the two lines of work into a new commit that has two parents. -m gives it a message so no editor opens.
+cmd: git merge feature-b -m "Merge feature-b"
+cmd: git log --oneline --graph
+fx: merge feature-b
+> Read the graph | eye
+text: The graph shows the fork and the join. Use --parents to see the two parent hashes of the merge commit, and -m with show to see changes against each parent.
+cmd: git log --oneline --graph --all
+cmd: git show --no-patch --pretty=%P HEAD
+
+= git-merge-conflict | Resolve a merge conflict | 2 | warn | Make two branches edit the same line, read the conflict markers, choose the result and finish the merge.
+> A shared starting file | commit
+text: One file with one line, committed on main.
+cmd: mkdir -p ~/git-lab/conflict && cd ~/git-lab/conflict
+cmd: git init
+cmd: echo "greeting: hello" > app.txt
+cmd: git add app.txt
+cmd: git commit -m "Add greeting"
+fx: init ; new app.txt ; stage app.txt ; commit "Add greeting"
+> Change the line on a branch | branch
+text: On feature, rewrite the line one way.
+cmd: git switch -c feature
+cmd: echo "greeting: hello team" > app.txt
+cmd: git commit -am "Greet the team"
+fx: switch feature ; edit app.txt ; stage app.txt ; commit "Greet the team"
+> Change the same line on main | swap
+text: On main, rewrite the same line a different way. Git cannot know which one you want.
+cmd: git switch main
+cmd: echo "greeting: hello world" > app.txt
+cmd: git commit -am "Greet the world"
+fx: switch main ; edit app.txt ; stage app.txt ; commit "Greet the world"
+> Merge: Git stops and reports a conflict | warn
+text: The merge pauses with the file marked UU, unmerged on both sides. Nothing is lost. You are in the middle of a merge and can still cancel it with git merge --abort.
+cmd: git merge feature
+cmd: git status --short
+fx: conflict app.txt
+> Read the conflict markers | eye
+text: Git wrote both versions into the file. Between <<<<<<< and ======= is your side (HEAD), and between ======= and >>>>>>> is the other branch. Edit the file to the final text and delete all three marker lines.
+cmd: cat app.txt
+> Resolve, stage and finish the merge | check
+text: Write the result you want, mark the file resolved with git add, then commit to complete the merge.
+cmd: echo "greeting: hello team and world" > app.txt
+cmd: git add app.txt
+cmd: git commit -m "Merge feature: combine greetings"
+cmd: git log --oneline --graph
+fx: resolve app.txt ; merge feature
+
+= git-rebase | Rebase: a straight line of history | 3 | retry | Move a branch on top of the latest main, compare it with merging and learn when never to rebase.
+> Base commit | commit
+text: Start with one commit on main.
+cmd: mkdir -p ~/git-lab/rebase && cd ~/git-lab/rebase
+cmd: git init
+cmd: echo "base" > base.txt
+cmd: git add base.txt
+cmd: git commit -m "Add base"
+fx: init ; new base.txt ; stage base.txt ; commit "Add base"
+> Two commits on a feature branch | branch
+text: The feature work starts from the base commit.
+cmd: git switch -c feature
+cmd: echo "one" > f1.txt
+cmd: git add f1.txt
+cmd: git commit -m "Feature part 1"
+cmd: echo "two" > f2.txt
+cmd: git add f2.txt
+cmd: git commit -m "Feature part 2"
+fx: switch feature ; new f1.txt ; stage f1.txt ; commit "Feature part 1" ; new f2.txt ; stage f2.txt ; commit "Feature part 2"
+> main moves on | swap
+text: Meanwhile someone adds a commit to main, so the branches have diverged.
+cmd: git switch main
+cmd: echo "hotfix" > hotfix.txt
+cmd: git add hotfix.txt
+cmd: git commit -m "Add hotfix"
+cmd: git log --oneline --graph --all
+fx: switch main ; new hotfix.txt ; stage hotfix.txt ; commit "Add hotfix"
+> Rebase feature onto main | retry
+text: Rebase replays your feature commits on top of the latest main. They get new IDs because their parent changed. The history becomes a straight line with no merge commit.
+cmd: git switch feature
+cmd: git rebase main
+cmd: git log --oneline --graph --all
+fx: switch feature ; rebase main
+> Fast-forward main | up
+text: Now main is an ancestor of feature, so merging is a plain fast-forward.
+cmd: git switch main
+cmd: git merge feature
+cmd: git log --oneline --graph
+fx: switch main ; merge feature
+> The golden rule | shield
+text: Rebase rewrites commits. Only rebase work that is still local to you. Never rebase commits that others have pulled, because their copies will no longer match yours. If you must update a branch you already pushed, use git push --force-with-lease and tell the team.
+note: When in doubt, merge. It never rewrites history.
+
+= git-remote-push | Work with a remote: push, clone and pull | 2 | cloud | Use a bare repository as a stand-in for GitHub: add a remote, push, clone as a teammate and pull their change.
+> Create the "server" repository | server
+text: A bare repository has no working files, just the history. It is what a Git host stores. Here it is only a folder, so everything runs locally.
+cmd: mkdir -p ~/git-lab/remote && cd ~/git-lab/remote
+cmd: git init --bare origin.git
+> Your local project with a commit | commit
+text: Make an ordinary repo and commit a README.
+cmd: mkdir -p ~/git-lab/project && cd ~/git-lab/project
+cmd: git init
+cmd: echo "# Project" > README.md
+cmd: git add README.md
+cmd: git commit -m "Add README"
+fx: init ; new README.md ; stage README.md ; commit "Add README"
+> Add the remote and push | upload
+text: A remote is a named URL. origin is the conventional name. push -u uploads main and remembers it as the default upstream.
+cmd: git remote add origin ~/git-lab/remote/origin.git
+cmd: git remote -v
+cmd: git push -u origin main
+fx: push
+> Clone as a teammate | users
+text: clone copies the whole history and sets origin automatically.
+cmd: git clone ~/git-lab/remote/origin.git ~/git-lab/teammate
+cmd: cd ~/git-lab/teammate
+cmd: git log --oneline
+cmd: git branch -vv
+> The teammate pushes a change | upload
+text: They edit, commit and push, with no extra arguments needed this time.
+cmd: echo "More docs" >> README.md
+cmd: git commit -am "Update README"
+cmd: git push
+> Fetch and pull their change | download
+text: fetch downloads new commits without touching your files. status then says you are behind. pull --ff-only brings your branch up to date and refuses to create a surprise merge.
+cmd: cd ~/git-lab/project
+cmd: git fetch
+cmd: git status -sb
+cmd: git pull --ff-only
+cmd: git log --oneline
+
+= git-collaborate | Project: two teammates, one remote | 3 | users | Simulate Alice and Bob: a rejected push, pull --rebase and a clean shared history.
+> Build the shared setup | server
+text: A bare remote, Alice's first push and Bob's clone. Two working folders stand in for two people's machines.
+cmd: mkdir -p ~/git-lab/team && cd ~/git-lab/team
+cmd: git init --bare origin.git
+cmd: git clone origin.git alice
+cmd: cd alice && echo "# Team project" > README.md
+cmd: git add README.md && git commit -m "Initial commit"
+cmd: git push -u origin main
+cmd: cd .. && git clone origin.git bob
+> Bob pushes first | upload
+text: Bob adds a file and pushes. The remote now has a commit Alice does not.
+cmd: cd ~/git-lab/team/bob
+cmd: echo "bob" > bob.txt
+cmd: git add bob.txt && git commit -m "Bob adds a file"
+cmd: git push
+> Alice commits and her push is rejected | warn
+text: Alice made her own commit from the old state. Git refuses the push because it would erase Bob's work. This is normal, not an error to fear.
+cmd: cd ~/git-lab/team/alice
+cmd: echo "alice" > alice.txt
+cmd: git add alice.txt && git commit -m "Alice adds a file"
+cmd: git push
+> Bring in Bob's work with pull --rebase | retry
+text: pull --rebase fetches Bob's commit and replays Alice's on top, giving a straight line without an extra merge commit.
+cmd: git pull --rebase
+cmd: git log --oneline --graph
+> Push again | upload
+text: Alice's history now contains Bob's, so the push is accepted.
+cmd: git push
+cmd: git status -sb
+> Bob updates and sees everything | download
+text: Bob pulls and has both files. Fetch often, and pull before you start new work.
+cmd: cd ~/git-lab/team/bob
+cmd: git pull --ff-only
+cmd: ls
+cmd: git log --oneline
+
+= git-stash | Stash work in progress | 2 | package | Park half-finished changes, do something urgent, then bring them back.
+> A repo with a committed file | commit
+text: Start with one committed file.
+cmd: mkdir -p ~/git-lab/stash && cd ~/git-lab/stash
+cmd: git init
+cmd: echo "search v1" > search.txt
+cmd: git add search.txt
+cmd: git commit -m "Add search"
+fx: init ; new search.txt ; stage search.txt ; commit "Add search"
+> Half-finished work | edit
+text: You are mid-change: a modified tracked file and a brand new untracked one.
+cmd: echo "search v2 (unfinished)" >> search.txt
+cmd: echo "draft" > ideas.txt
+cmd: git status --short
+fx: edit search.txt ; new ideas.txt
+> Stash it | package
+text: stash push saves your changes and restores a clean working directory. -u includes untracked files and -m gives the stash a label.
+cmd: git stash push -u -m "wip: search page"
+cmd: git status --short
+cmd: git stash list
+fx: stash
+> Do the urgent thing | bolt
+text: With a clean directory, make the hotfix and commit it.
+cmd: echo "hotfix" > hotfix.txt
+cmd: git add hotfix.txt
+cmd: git commit -m "Urgent hotfix"
+fx: new hotfix.txt ; stage hotfix.txt ; commit "Urgent hotfix"
+> Bring your work back | download
+text: pop re-applies the newest stash and removes it from the list. apply re-applies it but keeps it, which is useful for trying the same changes on several branches.
+cmd: git stash pop
+cmd: git status --short
+cmd: git stash list
+fx: pop
+> apply, list and drop | table
+text: Stash a second time, apply it without removing it, then drop it by hand.
+cmd: git stash push -m "second try"
+cmd: git stash apply
+cmd: git stash list
+cmd: git stash drop
+risk: 1
+
+= git-tags-releases | Tags and releases | 2 | tag | Mark versions with annotated tags, find them again, check one out and share tags with a remote.
+> A project with three commits | commit
+text: Build a tiny history with a loop.
+cmd: mkdir -p ~/git-lab/tags && cd ~/git-lab/tags
+cmd: git init
+cmd: for i in 1 2 3; do echo "feature $i" >> app.txt; git add app.txt; git commit -m "Add feature $i"; done
+cmd: git log --oneline
+fx: init ; new app.txt ; stage app.txt ; commit "Add feature 1" ; edit app.txt ; stage app.txt ; commit "Add feature 2" ; edit app.txt ; stage app.txt ; commit "Add feature 3"
+> Create an annotated tag | tag
+text: A tag is a permanent name for one commit, ideal for releases. An annotated tag (-a) also stores who tagged it, when and a message.
+cmd: git tag -a v1.0.0 -m "First release"
+cmd: git tag -n
+fx: tag v1.0.0
+> Tag an older commit | clock
+text: Give a commit ID or HEAD~1 at the end to tag something that is not the latest commit.
+cmd: git tag -a v0.9.0 -m "Beta" HEAD~1
+cmd: git tag --list "v*"
+> Find the nearest tag | search
+text: describe names a commit relative to the closest tag, which is how many build systems create version numbers.
+cmd: git describe --tags
+cmd: git show v1.0.0 --no-patch --pretty=%s
+> Share tags with a remote | upload
+text: Tags are not pushed by default. Push one tag by name, or all with --tags.
+cmd: git init --bare ../tags-origin.git
+cmd: git remote add origin ../tags-origin.git
+cmd: git push origin main
+cmd: git push origin v1.0.0
+cmd: git ls-remote --tags origin
+fx: push
+> Look at an old release | eye
+text: Checking out a tag puts you in a "detached HEAD": you can look around, but new commits would belong to no branch. Return to main when done.
+cmd: git switch --detach v0.9.0
+cmd: git status
+cmd: git switch main
+> Delete a tag | trash
+text: Delete locally with -d. Removing it from the remote needs an explicit push.
+cmd: git tag -d v0.9.0
+cmd: git tag
+risk: 1
+
+= git-history-search | Search and understand history | 2 | search | Graph, patches, pickaxe search, blame, grep and summaries to answer "who changed this and why?".
+> A repo with some history | commit
+text: Make five commits, each adding a line.
+cmd: mkdir -p ~/git-lab/hist && cd ~/git-lab/hist
+cmd: git init
+cmd: for i in 1 2 3 4 5; do echo "line $i" >> log.txt; git add log.txt; git commit -m "Add line $i"; done
+> Browse the graph | eye
+text: --oneline with --graph and --decorate shows commits, branches and tags in one compact view.
+cmd: git log --oneline --graph --decorate
+cmd: git log -3 --oneline
+> See what a commit changed | diff
+text: show prints one commit with its patch. --stat summarises the files. log -p shows patches for a range.
+cmd: git show HEAD --stat
+cmd: git log -p -1
+> Find the commit that introduced text | search
+text: -S (the pickaxe) finds commits where the number of occurrences of a string changed. --grep searches the commit messages.
+cmd: git log -S"line 3" --oneline
+cmd: git log --grep="line 4" --oneline
+> Who wrote each line? | users
+text: blame annotates every line with the commit and author that last changed it.
+cmd: git blame log.txt
+> Search the current files and summarise | chart
+text: git grep searches tracked files fast. shortlog -sn counts commits per author.
+cmd: git grep -n "line"
+cmd: git shortlog -sn
+cmd: git log --author="Alice" --oneline
+
+= git-amend-cleanup | Fix the last commit | 2 | edit | Correct a bad message, add a forgotten file and know when rewriting is safe.
+> A commit with a typo | commit
+text: Make a commit with a mistake in its message.
+cmd: mkdir -p ~/git-lab/amend && cd ~/git-lab/amend
+cmd: git init
+cmd: echo "hello" > greeting.txt
+cmd: git add greeting.txt
+cmd: git commit -m "Ad greting file"
+cmd: git log --oneline
+fx: init ; new greeting.txt ; stage greeting.txt ; commit "Ad greting file"
+> Fix the message | edit
+text: commit --amend replaces the last commit. The new commit gets a different ID.
+cmd: git commit --amend -m "Add greeting file"
+cmd: git log --oneline
+fx: amend "Add greeting file"
+> Add a forgotten file | plus
+text: Stage the missing file and amend with --no-edit to keep the message.
+cmd: echo "bye" > farewell.txt
+cmd: git add farewell.txt
+cmd: git commit --amend --no-edit
+cmd: git show --stat --oneline HEAD
+fx: new farewell.txt ; stage farewell.txt ; amend "Add greeting file"
+> Check the result | check
+text: One clean commit with both files and the right message.
+cmd: git log --oneline
+cmd: git status
+> The safety rule | shield
+text: Amending rewrites history. It is fine for a commit that only exists on your machine. If you already pushed it, a teammate may have it, so make a new commit instead. If you must, push with --force-with-lease, which refuses to overwrite work you have not seen.
+risk: 1
+
+= git-cherry-pick-revert | Cherry-pick a fix, revert a mistake | 3 | merge | Copy one commit to another branch and cancel a commit without rewriting history.
+> Main and a release branch | branch
+text: Create main with a commit and a release branch cut from it.
+cmd: mkdir -p ~/git-lab/pick && cd ~/git-lab/pick
+cmd: git init
+cmd: echo "v1" > app.txt
+cmd: git add app.txt
+cmd: git commit -m "Release 1 code"
+cmd: git branch release
+fx: init ; new app.txt ; stage app.txt ; commit "Release 1 code" ; branch release
+> A fix lands on main | bolt
+text: A bug fix is committed on main, which has moved on from the release branch.
+cmd: echo "fixed" > fix.txt
+cmd: git add fix.txt
+cmd: git commit -m "Fix important bug"
+fx: new fix.txt ; stage fix.txt ; commit "Fix important bug"
+> Cherry-pick the fix onto release | merge
+text: cherry-pick copies one commit onto the current branch as a new commit with the same change. Use it to backport fixes without merging everything else.
+cmd: git switch release
+cmd: git cherry-pick main
+cmd: git log --oneline --all --graph
+fx: switch release ; pick "Fix important bug"
+> Cancel a commit with revert | undo
+text: revert adds a commit that undoes another. It is the safe way to remove a change that has already been shared.
+cmd: git revert --no-edit HEAD
+cmd: git log --oneline
+fx: revert "Revert: Fix important bug"
+> Compare the branches | diff
+text: See which commits each branch has and how the files differ.
+cmd: git log main..release --oneline
+cmd: git diff main release --stat
+
+= git-reset-reflog | Reset modes and recovering "lost" commits | 3 | clock | Compare reset --soft, --mixed and --hard, then bring a commit back from the reflog.
+> Three commits | commit
+text: Create a history to experiment with.
+cmd: mkdir -p ~/git-lab/reset && cd ~/git-lab/reset
+cmd: git init
+cmd: for n in one two three; do echo "$n" >> f.txt; git add f.txt; git commit -m "Commit $n"; done
+cmd: git log --oneline
+fx: init ; new f.txt ; stage f.txt ; commit "Commit one" ; edit f.txt ; stage f.txt ; commit "Commit two" ; edit f.txt ; stage f.txt ; commit "Commit three"
+> reset --soft: move the branch only | up
+text: The branch moves back one commit. Your files and the staging area keep the changes from the removed commit, so everything is staged and ready.
+cmd: git reset --soft HEAD~1
+cmd: git status --short
+cmd: git log --oneline
+fx: reset soft 1 ; stage f.txt
+> reset --mixed: also clear the staging area | minus
+text: Mixed is the default. The branch moves back and the staging area is reset, but your edits stay in the working directory as unstaged changes.
+cmd: git reset --mixed HEAD~1
+cmd: git status --short
+cmd: git log --oneline
+fx: reset mixed 1
+> reset --hard: discard everything | trash
+text: Hard also overwrites your working directory. Uncommitted changes are lost for good. Only the commits remain recoverable, through the reflog.
+cmd: git reset --hard
+cmd: git status --short
+cmd: cat f.txt
+risk: 1
+fx: reset hard 0
+> Recover with the reflog | search
+text: The reflog lists where HEAD has been. Find the line for "Commit three" and reset to it. The sub-command below picks that commit's ID for you.
+cmd: git reflog
+cmd: git reset --hard $(git reflog | grep "commit: Commit three" | head -n 1 | cut -d' ' -f1)
+cmd: git log --oneline
+risk: 1
+note: Reflog entries expire after months, so recovery works best soon after the mistake.
+
+= git-feature-workflow | Project: ship a feature end to end | 3 | rocket | Branch, commit, push, review, merge with a merge commit and clean up, the way most teams work.
+> Shared repo and a local clone | server
+text: A bare remote with an initial commit on main, and your clone of it.
+cmd: mkdir -p ~/git-lab/flow && cd ~/git-lab/flow
+cmd: git init --bare origin.git
+cmd: git clone origin.git app && cd app
+cmd: echo "# App" > README.md
+cmd: git add README.md && git commit -m "Initial commit"
+cmd: git push -u origin main
+fx: init ; new README.md ; stage README.md ; commit "Initial commit" ; push
+> Create a feature branch | branch
+text: Never work on main directly. Branch from an up-to-date main with a descriptive name.
+cmd: git pull --ff-only
+cmd: git switch -c feature/greeting
+fx: switch feature/greeting
+> Make small, focused commits | save
+text: Each commit does one thing and has a message that explains it.
+cmd: echo "Hello" > greeting.txt
+cmd: git add greeting.txt && git commit -m "Add greeting"
+cmd: echo "Goodbye" >> greeting.txt
+cmd: git commit -am "Add farewell"
+fx: new greeting.txt ; stage greeting.txt ; commit "Add greeting" ; edit greeting.txt ; stage greeting.txt ; commit "Add farewell"
+> Push the branch | upload
+text: Publishing the branch lets teammates see it. On GitHub or GitLab this is the moment you open a pull request.
+cmd: git push -u origin feature/greeting
+fx: push
+> Review before merging | eye
+text: This is what a reviewer reads: the commits and the combined change compared with main.
+cmd: git log origin/main..feature/greeting --oneline
+cmd: git diff origin/main...feature/greeting --stat
+> Merge with a merge commit | merge
+text: --no-ff always records a merge commit, so the history shows that a feature existed. Then publish main.
+cmd: git switch main
+cmd: git merge --no-ff feature/greeting -m "Merge feature/greeting"
+cmd: git push
+cmd: git log --oneline --graph
+fx: switch main ; merge feature/greeting ; push
+> Clean up | trash
+text: Delete the merged branch locally and on the remote, and drop stale remote-tracking references.
+cmd: git branch -d feature/greeting
+cmd: git push origin --delete feature/greeting
+cmd: git fetch --prune
+cmd: git branch -a
+
+= git-hooks | Project: automate checks with hooks | 3 | shield | Block commits that contain secrets or badly formed messages, then share the hooks with the team.
+> A repo with one commit | commit
+text: Start a fresh repository.
+cmd: mkdir -p ~/git-lab/hooks && cd ~/git-lab/hooks
+cmd: git init
+cmd: echo "app" > app.txt
+cmd: git add app.txt
+cmd: git commit -m "Add app"
+fx: init ; new app.txt ; stage app.txt ; commit "Add app"
+> Write a pre-commit hook | edit
+text: Hooks are scripts in .git/hooks that Git runs at certain moments. A hook that exits with a non-zero status stops the action. This one blocks staged changes that contain SECRET=.
+cmd: cat > .git/hooks/pre-commit <<'EOF'\n#!/bin/sh\nif git diff --cached | grep -q "SECRET="; then\n  echo "Blocked: possible secret in staged changes" >&2\n  exit 1\nfi\nEOF
+cmd: chmod +x .git/hooks/pre-commit
+> See it block a commit | ban
+text: Stage a file that looks like it has a secret and try to commit it. The hook refuses.
+cmd: echo "SECRET=abc123" > config.env
+cmd: git add config.env
+cmd: git commit -m "Add config"
+cmd: git status --short
+> Fix it and commit | check
+text: Take the secret out, restage and the commit goes through.
+cmd: echo "SECRET_FROM_ENV=true" > config.env
+cmd: git add config.env
+cmd: git commit -m "Add config without secret"
+cmd: git log --oneline
+fx: new config.env ; stage config.env ; commit "Add config without secret"
+> Enforce a commit message style | tag
+text: commit-msg receives the path of the message file as its first argument. This one demands a prefix such as feat: or fix:.
+cmd: cat > .git/hooks/commit-msg <<'EOF'\n#!/bin/sh\nif ! grep -qE '^(feat|fix|docs|chore): ' "$1"; then\n  echo "Start the message with feat:, fix:, docs: or chore:" >&2\n  exit 1\nfi\nEOF
+cmd: chmod +x .git/hooks/commit-msg
+cmd: echo "x" >> app.txt
+cmd: git commit -am "update stuff"
+cmd: git commit -am "chore: update app"
+> Share hooks with the team | users
+text: Files in .git are not versioned. Put hooks in a normal folder and point Git at it with core.hooksPath, then commit that folder. --no-verify skips hooks, so use it only knowingly.
+cmd: mkdir .githooks
+cmd: cp .git/hooks/pre-commit .git/hooks/commit-msg .githooks/
+cmd: git config core.hooksPath .githooks
+cmd: git config core.hooksPath
+note: Hooks can be bypassed on purpose, so also enforce important rules on the server side or in CI.
+
+= git-bisect | Find the commit that broke it with git bisect | 3 | search | Binary-search a history for the first bad commit, by hand and then fully automatically.
+> Build a history with a hidden bug | folder
+text: Create eight commits. From "feature 5" onward a file called flag.txt exists, and that file is our stand-in for a bug. Nobody told Git which commit did it.
+cmd: mkdir -p ~/git-lab/bisect
+cmd: cd ~/git-lab/bisect
+cmd: git init -q
+cmd: for i in 1 2 3 4 5 6 7 8; do echo "feature $i" >> app.txt; if [ $i -ge 5 ]; then echo broken > flag.txt; fi; git add .; git commit -qm "Add feature $i"; done
+cmd: git log --oneline
+> Tell Git one good and one bad commit | wf-bisect
+text: bisect needs two points: a commit you know is bad (usually HEAD) and one you know is good. Git then checks out the middle commit for you to test. Eight commits need at most three tests.
+cmd: test -f flag.txt && echo "BAD: flag.txt exists" || echo "GOOD"
+cmd: git bisect start
+cmd: git bisect bad
+cmd: git bisect good HEAD~7
+> Test, mark, repeat | wf-bisect
+text: Run your check and tell Git the result with git bisect good or git bisect bad. The same one-line check below does both; run it until Git announces the first bad commit. Each answer halves the search.
+cmd: if test -f flag.txt; then git bisect bad; else git bisect good; fi
+cmd: if test -f flag.txt; then git bisect bad; else git bisect good; fi
+cmd: if test -f flag.txt; then git bisect bad; else git bisect good; fi
+note: Doubling the history adds only one more step, so 1,000 commits need about 10 tests.
+> Read the log and go back | wf-reflog
+text: bisect log records every answer so you can replay it. reset returns you to the branch you started on. Always reset when you finish, or you stay on a detached HEAD.
+cmd: git bisect log
+cmd: git bisect reset
+cmd: git status
+> Automate it with git bisect run | play
+text: Give bisect a command that exits 0 for good and non-zero for bad and it does everything alone. Any script works: a test suite, a build, a curl check.
+cmd: git bisect start HEAD HEAD~7
+cmd: git bisect run sh -c '! test -f flag.txt'
+cmd: git bisect reset
+> Inspect the culprit | eye
+text: Once you know the commit, read it. Here we ask which commit first added flag.txt.
+cmd: git log --oneline --diff-filter=A -- flag.txt
+note: A commit that touches many things is hard to bisect usefully. Small, focused commits make bisect precise.
+
+= git-worktree | Two branches at once with git worktree | 2 | branch | Check out a second branch in its own folder so a hotfix never disturbs your half-finished work.
+> Start with a repository | folder
+text: One project with a main branch and a single commit. Normally switching branches would replace the files in this folder.
+cmd: mkdir -p ~/git-lab/wt/app
+cmd: cd ~/git-lab/wt/app
+cmd: git init -q
+cmd: echo "version 1" > app.txt
+cmd: git add app.txt
+cmd: git commit -qm "Version 1"
+> Add a worktree for a hotfix | wf-worktree
+text: git worktree add creates a new folder with another branch checked out. Both folders share one .git database, so nothing is cloned or duplicated.
+cmd: git worktree add ../hotfix -b hotfix
+cmd: git worktree list
+cmd: ls ~/git-lab/wt
+> Work in both places | edit
+text: Commit in the hotfix folder while the main folder stays exactly as it was. No stash, no branch switching.
+cmd: cd ../hotfix
+cmd: echo "urgent fix" > fix.txt
+cmd: git add fix.txt
+cmd: git commit -qm "Fix the urgent bug"
+cmd: git log --oneline --graph --all
+cmd: cd ../app
+> Merge and remove the worktree | merge
+text: Bring the fix into main, then delete the extra folder. Git refuses to remove a worktree that has uncommitted changes, which protects your work.
+cmd: git merge hotfix
+cmd: git worktree remove ../hotfix
+cmd: git branch -d hotfix
+cmd: git worktree list
+> Clean up stale entries | trash
+text: If you delete a worktree folder by hand, Git still lists it. prune removes entries whose folder is gone.
+cmd: git worktree add ../scratch -b scratch
+cmd: rm -rf ../scratch
+cmd: git worktree list
+cmd: git worktree prune
+cmd: git worktree list
+note: A branch can be checked out in only one worktree at a time.
+
+= git-rebase-interactive | Tidy history with interactive rebase | 3 | merge | Squash noisy work-in-progress commits and reword a message before you share them.
+> Create a messy history | edit
+text: Real work leaves commits like "wip" and "fix typo". They are fine locally but poor history for a team.
+cmd: mkdir -p ~/git-lab/ri
+cmd: cd ~/git-lab/ri
+cmd: git init -q
+cmd: echo "start" > form.txt
+cmd: git add form.txt
+cmd: git commit -qm "Add form"
+cmd: for m in "Add login form" "wip" "fix typo" "more wip"; do echo "$m" >> form.txt; git commit -qam "$m"; done
+cmd: git log --oneline
+> Squash with fixup | wf-squash
+text: rebase -i opens a todo list, oldest commit first. Changing pick to fixup melds a commit into the one above it and discards its message. To keep this lesson scriptable, GIT_SEQUENCE_EDITOR edits the list with sed; normally you edit it by hand in your editor.
+cmd: GIT_SEQUENCE_EDITOR="sed -i.bak -e '2,4s/^pick/fixup/'" git rebase -i HEAD~4
+cmd: git log --oneline
+risk: 1
+note: Rebase rewrites commits and gives them new IDs. Never rebase commits you already pushed and others use.
+> Reword a message | edit
+text: reword keeps the changes but lets you change the message. Here GIT_EDITOR replaces the first line of the message file automatically.
+cmd: GIT_SEQUENCE_EDITOR="sed -i.bak -e '1s/^pick/reword/'" GIT_EDITOR="sed -i.bak -e '1s/.*/Add login form page/'" git rebase -i HEAD~1
+cmd: git log --oneline
+> The other todo commands | menu
+text: pick keeps a commit, reword changes its message, edit stops so you can amend it, squash merges and combines messages, fixup merges and drops the message, drop deletes the commit. You may also reorder the lines to reorder commits.
+> Recover with the reflog | wf-reflog
+text: The old commits still exist. reflog lists where HEAD has been, and reset --hard returns you to a point before the rebase.
+cmd: git reflog | head -n 8
+note: If a rebase goes wrong while it is running, git rebase --abort puts everything back.
+
+= git-submodules | Use another repository inside yours | 3 | package | Pin a library repo at an exact commit with submodules, update it, and clone it back.
+> Create the library repository | folder
+text: A submodule is a separate repository that your project records by commit ID. First make a tiny library to depend on.
+cmd: mkdir -p ~/git-lab/sub/lib
+cmd: cd ~/git-lab/sub/lib
+cmd: git init -q
+cmd: echo "v1" > util.txt
+cmd: git add util.txt
+cmd: git commit -qm "Library v1"
+> Add it to your project | wf-submodule
+text: submodule add clones the library into libs/util and records two things: the URL in .gitmodules and the exact commit in your tree. The -c option allows local-folder URLs, which Git blocks by default for safety.
+cmd: mkdir -p ~/git-lab/sub/app
+cmd: cd ~/git-lab/sub/app
+cmd: git init -q
+cmd: git -c protocol.file.allow=always submodule add "$HOME/git-lab/sub/lib" libs/util
+cmd: cat .gitmodules
+cmd: git status --short
+cmd: git commit -qm "Add util submodule"
+cmd: git ls-files -s libs/util
+note: Mode 160000 marks a submodule entry: a commit ID, not a folder of files.
+> Update the library | upload
+text: The library gets a new commit. Your project still points to the old one until you move the pointer and commit it.
+cmd: cd ../lib
+cmd: echo "v2" >> util.txt
+cmd: git commit -qam "Library v2"
+cmd: cd ../app/libs/util
+cmd: git -c protocol.file.allow=always pull -q
+cmd: cd ../..
+cmd: git status --short
+cmd: git diff --submodule
+cmd: git commit -qam "Bump util to v2"
+> Clone a project with submodules | copy
+text: A plain clone leaves the submodule folder empty. Add --recurse-submodules, or run git submodule update --init afterwards.
+cmd: git -c protocol.file.allow=always clone -q --recurse-submodules "$HOME/git-lab/sub/app" "$HOME/git-lab/sub/copy"
+cmd: cat ~/git-lab/sub/copy/libs/util/util.txt
+cmd: cd ~/git-lab/sub/copy
+cmd: git submodule status
+> Remove a submodule | trash
+text: Removal takes two commands, because the submodule is registered in both .gitmodules and the index.
+cmd: git submodule deinit -f libs/util
+cmd: git rm -qf libs/util
+cmd: git commit -qm "Remove util submodule"
+cmd: ls
+risk: 1
+
+= git-sparse-shallow | Clone less: sparse checkout and shallow clones | 2 | filter | Fetch only recent history or only some folders when a repository is large.
+> Create a repository with several folders | folder
+text: Imagine src, docs and assets are huge. We will clone only part of it.
+cmd: mkdir -p ~/git-lab/big/src ~/git-lab/big/docs ~/git-lab/big/assets
+cmd: cd ~/git-lab/big
+cmd: git init -q
+cmd: for i in 1 2 3 4 5; do echo "code $i" > src/a.txt; echo "doc $i" > docs/readme.txt; echo "asset $i" > assets/logo.txt; git add .; git commit -qm "Release $i"; done
+cmd: git rev-list --count HEAD
+> Shallow clone: recent history only | clock
+text: --depth 1 downloads just the latest commit. It is the usual choice for CI jobs that only need to build. A local clone needs the file:// prefix for --depth to apply.
+cmd: git clone -q --depth 1 "file://$HOME/git-lab/big" ~/git-lab/shallow
+cmd: cd ~/git-lab/shallow
+cmd: git log --oneline
+cmd: git rev-list --count HEAD
+> Deepen when you need more | download
+text: A shallow clone can grow later without starting over.
+cmd: git fetch -q --deepen 2
+cmd: git rev-list --count HEAD
+cmd: git log --oneline
+> Sparse checkout: only some folders | filter
+text: --no-checkout clones without writing files. sparse-checkout set --cone src then limits the working folder to src, plus top-level files.
+cmd: git clone -q --no-checkout "file://$HOME/git-lab/big" ~/git-lab/sparse
+cmd: cd ~/git-lab/sparse
+cmd: git sparse-checkout set --cone src
+cmd: git checkout -q main
+cmd: ls
+cmd: git sparse-checkout list
+> Change the selection | swap
+text: add brings in another folder. disable returns to a full checkout. The full history stays in .git throughout.
+cmd: git sparse-checkout add docs
+cmd: ls
+cmd: git sparse-checkout disable
+cmd: ls
+note: For very large hosted repos add --filter=blob:none to the clone (a partial clone) so file contents download only when needed. Git LFS keeps large binary files outside the normal object store: git lfs track "*.psd".
+
+= git-aliases-tips | Daily shortcuts: aliases, tracking and tidy remotes | 1 | sliders | Save typing with aliases, see what each branch tracks, and clean up deleted remote branches.
+> Set up a repo with a remote | cloud
+text: A bare repository stands in for a server such as GitHub. Clone it, make a first commit and push.
+cmd: mkdir -p ~/git-lab/tips
+cmd: git init -q --bare -b main ~/git-lab/tips/origin.git
+cmd: git clone -q ~/git-lab/tips/origin.git ~/git-lab/tips/work
+cmd: cd ~/git-lab/tips/work
+cmd: echo "hello" > a.txt
+cmd: git add a.txt
+cmd: git commit -qm "First commit"
+cmd: git push -q -u origin main
+> Create aliases | sliders
+text: An alias is a short name for a long command. --global stores it in your user config so every repository gets it.
+cmd: git config --global alias.st "status -sb"
+cmd: git config --global alias.lg "log --oneline --graph --decorate --all"
+cmd: git config --global alias.co switch
+cmd: git st
+cmd: git lg
+cmd: git config --global --get-regexp '^alias\.'
+> See what each branch tracks | eye
+text: A tracking branch knows its remote partner. branch -vv shows it, plus whether you are ahead or behind.
+cmd: git co -c feature
+cmd: echo "work" >> a.txt
+cmd: git commit -qam "Feature work"
+cmd: git push -q -u origin feature
+cmd: git branch -vv
+> Safer pulls | download
+text: pull.rebase true replays your local commits on top of the remote ones instead of creating a merge commit, which keeps history in a straight line. rerere remembers how you resolved a conflict so Git can reuse it.
+cmd: git config --global pull.rebase true
+cmd: git config --global rerere.enabled true
+cmd: git config --global --get pull.rebase
+cmd: git config --global --get rerere.enabled
+> Clean up deleted remote branches | trash
+text: After a branch is deleted on the server, your copy keeps a stale remote-tracking name. fetch --prune removes it.
+cmd: git push -q origin --delete feature
+cmd: git branch -r
+cmd: git fetch --prune
+cmd: git branch -r
+note: Set it once with git config --global fetch.prune true.
+
+= git-objects | Inside .git: blobs, trees and commits | 3 | hash | Hash a file by hand and read the three object types Git stores, so commits stop being magic.
+> Hash a file without saving it | hash
+text: Git names every piece of content by a SHA-1 hash of that content. hash-object computes the name; without -w it stores nothing. The same text always gives the same hash, on any computer.
+cmd: mkdir -p ~/git-lab/obj
+cmd: cd ~/git-lab/obj
+cmd: git init -q
+cmd: echo "hello" > a.txt
+cmd: git hash-object a.txt
+> A blob holds file content | wf-object
+text: git add stores the file as a blob object named by that hash. A blob has no file name and no folder: only the bytes. cat-file -t prints the type and -p prints the content.
+cmd: git add a.txt
+cmd: git cat-file -t $(git hash-object a.txt)
+cmd: git cat-file -p $(git hash-object a.txt)
+> A commit points to a tree | commit
+text: commit creates two more objects. A tree lists names, modes and blob hashes, like a folder. The commit points to that tree and to its parent, and stores author and message.
+cmd: git commit -qm "Add a.txt"
+cmd: git cat-file -t HEAD
+cmd: git cat-file -p HEAD
+cmd: git ls-tree HEAD
+> The same content is stored once | copy
+text: Copy the file under a new name and commit. The tree now has two names, but both point at the same blob hash, so Git stores the bytes only once.
+cmd: cp a.txt b.txt
+cmd: git add b.txt
+cmd: git commit -qm "Add b.txt"
+cmd: git ls-tree HEAD
+cmd: git count-objects -v
+> Look at the objects folder | folder
+text: Each loose object is a compressed file named by its hash: the first two characters are the folder and the rest is the file name. gc later packs them together to save space.
+cmd: find .git/objects -type f | sort | head -n 6
+cmd: git cat-file --batch-check --batch-all-objects
+note: Branches and tags are only small files that hold one commit hash. Look at .git/refs/heads/main.
+
+= git-large-files | Find big files and keep the repository small | 2 | filter | Measure a repository, find the heaviest objects, stop tracking a big file and compact with gc.
+> Create a repo with a big file | wf-lfs
+text: A 20,000 line log stands in for a large asset. It is committed twice, so Git keeps two versions.
+cmd: mkdir -p ~/git-lab/large
+cmd: cd ~/git-lab/large
+cmd: git init -q
+cmd: yes "log line for the demo" | head -n 20000 > data.log
+cmd: git add data.log
+cmd: git commit -qm "Add data.log"
+cmd: echo "more" >> data.log
+cmd: git commit -qam "Update data.log"
+> Measure the repository | gauge
+text: count-objects -vH reports loose objects and their size in human units. Large histories are slow to clone, so measure before you worry.
+cmd: git count-objects -vH
+cmd: git rev-list --count HEAD
+> Find the heaviest objects | search
+text: List every object with its type and size, then sort by size. The path column shows which file the object belongs to.
+cmd: git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3 -n -r | head -n 3
+> Stop tracking and ignore it | ban
+text: rm --cached removes the file from the index but keeps it on disk. Add the pattern to .gitignore so it is not added again. The old versions stay in history.
+cmd: git rm -q --cached data.log
+cmd: echo "*.log" > .gitignore
+cmd: git add .gitignore
+cmd: git commit -qm "Stop tracking data.log"
+cmd: git status --short
+> Compact with gc | package
+text: gc packs loose objects into one pack file and drops unreachable ones. The result is smaller and faster to transfer.
+cmd: git gc -q
+cmd: git count-objects -vH
+note: To keep large binaries out of history from the start use Git LFS (git lfs track "*.psd"). To remove a file from old commits use git filter-repo, then force-push once everyone is warned. That rewrites history.
+
+= git-notes-range-diff | Review a rebase with git range-diff and notes | 3 | diff | Compare two versions of a branch after a rebase, and attach notes to commits without changing them.
+> Build a feature branch | branch
+text: Two commits on a feature branch, then main moves ahead. Now the feature must be rebased.
+cmd: mkdir -p ~/git-lab/rd
+cmd: cd ~/git-lab/rd
+cmd: git init -q
+cmd: echo "base" > base.txt
+cmd: git add base.txt
+cmd: git commit -qm "Base"
+cmd: git switch -qc feature
+cmd: echo "one" > f1.txt
+cmd: git add f1.txt
+cmd: git commit -qm "Feature part 1"
+cmd: echo "two" > f2.txt
+cmd: git add f2.txt
+cmd: git commit -qm "Feature part 2"
+cmd: git switch -q main
+cmd: echo "update" > m.txt
+cmd: git add m.txt
+cmd: git commit -qm "Main update"
+> Keep a copy, then rebase | retry
+text: Rebase gives the feature commits new IDs, so you cannot easily see whether anything changed. Save the old tip as a branch first.
+cmd: git branch old-feature feature
+cmd: git switch -q feature
+cmd: git rebase -q main
+cmd: git log --oneline --graph --all
+> Compare the two versions | diff
+text: range-diff pairs up commits from the old and new series. = means identical content, ! means the patch differs. After a clean rebase every pair shows =.
+cmd: git range-diff main old-feature feature
+> Add a note to a commit | edit
+text: Notes attach extra text to a commit without changing its hash. git log shows them under Notes. Useful for review sign-off or ticket links.
+cmd: git notes add -m "Reviewed by Priya on the team call" HEAD
+cmd: git log -1
+cmd: git notes list
+note: Notes are not pushed by default. Send them with git push origin refs/notes/commits.
+
+= git-patches | Share changes without a server: patches, bundles and archives | 2 | copy | Turn commits into mailable patch files, apply them elsewhere, bundle a whole repo and export a snapshot.
+> Two repositories | folder
+text: src is where work happens and dst is a colleague's copy. dst starts as a clone, then src gets two new commits.
+cmd: mkdir -p ~/git-lab/patch
+cmd: cd ~/git-lab/patch
+cmd: git init -q src
+cmd: cd src
+cmd: echo "base" > app.txt
+cmd: git add app.txt
+cmd: git commit -qm "Base"
+cmd: cd ..
+cmd: git clone -q src dst
+cmd: cd src
+cmd: echo "greeting" > greet.txt
+cmd: git add greet.txt
+cmd: git commit -qm "Add greeting"
+cmd: echo "farewell" > bye.txt
+cmd: git add bye.txt
+cmd: git commit -qm "Add farewell"
+> Export the commits as patches | wf-patch
+text: format-patch writes one numbered file per commit, in the format email programs and code review tools understand. The file holds the message, author and the diff.
+cmd: git format-patch -2 -o ../patches
+cmd: head -n 14 ../patches/0001-Add-greeting.patch
+> Apply them in the other repository | download
+text: apply --check tests a patch without changing anything. am applies it and creates a real commit, keeping author and message.
+cmd: cd ../dst
+cmd: git apply --check ../patches/0001-Add-greeting.patch && echo "patch applies cleanly"
+cmd: git am ../patches/*.patch
+cmd: git log --oneline
+> Bundle the whole repository | package
+text: A bundle is a single file that contains commits and refs, so it can travel on a USB stick and be cloned like a remote. verify checks that it is complete.
+cmd: cd ../src
+cmd: git bundle create ../repo.bundle --all
+cmd: git bundle verify ../repo.bundle
+cmd: git clone -q ../repo.bundle ../from-bundle
+cmd: git -C ../from-bundle log --oneline
+> Export a clean snapshot | upload
+text: archive writes the files of one commit, without the .git folder, as a tar or zip. Use it for releases and hand-offs.
+cmd: git archive --format=tar.gz -o ../snapshot.tar.gz HEAD
+cmd: tar -tzf ../snapshot.tar.gz
+
+= git-force-push-recovery | Recover from a bad force push | 3 | undo | See why a plain push is rejected, use --force-with-lease, and bring back a commit that was overwritten.
+> Set up a shared remote | cloud
+text: A bare repository acts as the server. Push three commits.
+cmd: mkdir -p ~/git-lab/fp
+cmd: git init -q --bare -b main ~/git-lab/fp/origin.git
+cmd: git clone -q ~/git-lab/fp/origin.git ~/git-lab/fp/work
+cmd: cd ~/git-lab/fp/work
+cmd: for i in 1 2 3; do echo "change $i" >> app.txt; git add app.txt; git commit -qm "Change $i"; done
+cmd: git push -q -u origin main
+cmd: git log --oneline
+> Rewrite history locally | edit
+text: A reset throws away the last commit and a new commit takes its place. History now differs from the server's, so a normal push is refused to protect everyone else's work.
+cmd: git reset -q --hard HEAD~1
+cmd: echo "replacement" >> app.txt
+cmd: git commit -qam "Replacement change"
+cmd: git push
+> Force with a safety check | warn
+text: --force-with-lease overwrites the server only if it still matches what you last fetched. If a teammate pushed meanwhile it refuses. Plain --force skips that check.
+cmd: git push --force-with-lease origin main
+cmd: git log --oneline
+risk: 1
+note: Never force-push a shared branch such as main. Protect it on the server so force pushes are blocked.
+> Find the overwritten commit | search
+text: Nothing is deleted at once. Your remote-tracking branch remembers its previous position, and the reflog lists where HEAD has been.
+cmd: git reflog origin/main | head -n 4
+cmd: git rev-parse origin/main@{1}
+> Bring it back on a rescue branch | wf-reflog
+text: Create a branch at the old position so the commit is reachable again, then decide whether to cherry-pick it or restore the branch.
+cmd: git branch rescue origin/main@{1}
+cmd: git log --oneline rescue
+cmd: git log --oneline main
+note: Servers delete unreachable commits during garbage collection, so recover soon.

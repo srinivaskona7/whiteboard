@@ -1,0 +1,161 @@
+# Q&A per workflow: situations, pitfalls, next step. Format: "= id", then q:/a: pairs.
+
+= ans-what-is
+q: In which situation do we use this?
+a: You manage more than a few servers and repeat the same setup by hand. Ansible describes the result once and applies it everywhere.
+q: Why Ansible and not a shell script?
+a: Modules check state first, so rerunning is safe, and there is no agent to install on the managed hosts.
+q: What comes next?
+a: ans-architecture to see how the control node reaches the hosts.
+
+= ans-architecture
+q: In which situation do we use this?
+a: Before you design a setup: where Ansible runs, how it connects, and what it needs on the target.
+q: What does a managed node need?
+a: SSH access and Python. Nothing else is installed permanently.
+q: What comes next?
+a: ans-install-first-ping to prove the connection.
+
+= ans-install-first-ping
+q: In which situation do we use this?
+a: A new control machine, or a new host that must be proven reachable before any automation.
+q: What does "pong" prove?
+a: The ping module logs in and runs Python, which is more than a network ping. It confirms SSH, user and Python.
+q: What comes next?
+a: Fix any failure here first; every later step depends on it.
+
+= ans-inventory-ini
+q: In which situation do we use this?
+a: To name your servers and group them (web, db) so a command or play can target one group.
+q: What is a good group layout?
+a: By role and by environment, with a parent group such as prod:children to combine them.
+q: What comes next?
+a: ans-inventory-yaml when you need variables per group.
+
+= ans-inventory-yaml
+q: In which situation do we use this?
+a: Inventories grow and need per-group or per-host settings such as ports, users and package names.
+q: Where do variables go?
+a: group_vars/groupname.yml for a group and host_vars/hostname.yml for one host, kept next to the inventory.
+q: What comes next?
+a: Check the result with ansible-inventory --list.
+
+= ans-adhoc
+q: In which situation do we use this?
+a: One-off jobs: check uptime on all hosts, restart a service, copy a file, gather facts.
+q: When should I write a playbook instead?
+a: When you will repeat it, need several steps, or want it reviewed and stored in Git.
+q: What comes next?
+a: Use -m with a module name rather than raw shell where you can.
+
+= ans-yaml-basics
+q: In which situation do we use this?
+a: Every playbook, variable file and inventory is YAML, and most early errors are indentation.
+q: What are the usual mistakes?
+a: Tabs instead of spaces, a missing space after a colon, and unquoted values like yes, no or 1.10.
+q: What comes next?
+a: Run yamllint before ansible-playbook.
+
+= ans-first-playbook
+q: In which situation do we use this?
+a: A repeatable task list for hosts: install a package, copy a file, start a service.
+q: What are plays and tasks?
+a: A play maps a host group to tasks; each task calls one module with arguments, in order.
+q: What comes next?
+a: Always run with --check first on real servers.
+
+= ans-variables-facts
+q: In which situation do we use this?
+a: The same playbook must behave differently by host, OS or environment without copying it.
+q: What are facts?
+a: Data Ansible gathers from each host, such as OS family and IP addresses, available as ansible_facts.
+q: What comes next?
+a: Use debug to print a variable while you learn what is available.
+
+= ans-conditionals-loops
+q: In which situation do we use this?
+a: A task should run only on some hosts (when), or repeat for several items such as packages or users (loop).
+q: What is a typical use?
+a: Install apache2 on Debian and httpd on RedHat with a when on ansible_os_family.
+q: What comes next?
+a: Keep conditions simple; complex logic belongs in variables or roles.
+
+= ans-handlers
+q: In which situation do we use this?
+a: A service must restart only when its config file actually changed.
+q: When does a handler run?
+a: Once, at the end of the play, and only if a task that notifies it reported changed.
+q: What comes next?
+a: Use meta: flush_handlers if a restart is needed mid-play.
+
+= ans-templates
+q: In which situation do we use this?
+a: Config files that differ per host or environment: nginx, sshd, application settings.
+q: Why a template and not copy?
+a: A template fills in variables with Jinja2, so one file serves every host.
+q: What comes next?
+a: Add validate: to test a file before it replaces the live one.
+
+= ans-roles
+q: In which situation do we use this?
+a: Playbooks are getting long, or you want to reuse the same setup (say, nginx) across projects.
+q: What does a role contain?
+a: tasks, handlers, templates, defaults, vars and files in a fixed folder layout.
+q: What comes next?
+a: Use ansible-galaxy to share or download roles and collections.
+
+= ans-vault
+q: In which situation do we use this?
+a: Passwords, tokens and keys that must live in the repository without being readable.
+q: What should I never do?
+a: Commit the vault password itself. Keep it in a separate file or secret store that Git ignores.
+q: What comes next?
+a: encrypt_string lets you encrypt single values inside a normal vars file.
+
+= ans-idempotence-check
+q: In which situation do we use this?
+a: Before changing real servers: preview what would change and prove that a second run changes nothing.
+q: What do check and diff do?
+a: --check simulates without changing; --diff shows the exact lines that would change.
+q: What comes next?
+a: A playbook that reports changed again on the second run needs fixing.
+
+= ans-webserver-project
+q: In which situation do we use this?
+a: Standing up the same web server on several hosts: package, page, service, firewall.
+q: How do I confirm it worked?
+a: Use the uri module or curl to request the page and check the status code.
+q: What comes next?
+a: Turn the playbook into a role when you add more services.
+
+= ans-docker-project
+q: In which situation do we use this?
+a: Preparing container hosts consistently: repository, engine, group membership and a test container.
+q: What is the usual snag?
+a: Group membership needs a new login to take effect, so test with a task that runs after a reset_connection.
+q: What comes next?
+a: Manage containers with docker_container once the engine is ready.
+
+= ans-users-hardening
+q: In which situation do we use this?
+a: New servers need admin users, keys and secure SSH settings applied the same way every time.
+q: How do I avoid locking myself out?
+a: Test the new config with validate: sshd -t, keep one existing session open, and run on one host first with serial.
+q: What comes next?
+a: Add a firewall play and automatic updates.
+
+= ans-rolling-update
+q: In which situation do we use this?
+a: Updating a live fleet without taking all of it down at once.
+q: What do serial and max_fail_percentage do?
+a: serial runs a few hosts at a time; max_fail_percentage stops the whole run if too many fail.
+q: What comes next?
+a: Use block/rescue/always for cleanup and a rollback path.
+
+= ans-tags-limit-debug
+q: In which situation do we use this?
+a: A big playbook where you need to run one part, on one host, or see why a task failed.
+q: Which option for which need?
+a: --tags or --skip-tags pick tasks, --limit picks hosts, -v to -vvv increase detail.
+q: What comes next?
+a: Use --list-tasks and --list-hosts to preview what will run.
