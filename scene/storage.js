@@ -89,22 +89,22 @@ export function stripTeacherNotes(scene) {
   return sanitizeSceneForPersistence(scene, { stripNotes: true });
 }
 
-// Tools that every workspace preset keeps on the dock. They are the six a teacher
-// reaches for regardless of mode, so switching preset must never hide them.
+// Tools that every workspace preset keeps on the dock — the drawing essentials
+// a teacher reaches for regardless of mode. Switching preset must never hide them.
 export const REQUIRED_PINNED_TOOLS = [
+  'select',
+  'hand',
   'pen',
-  'highlighter',
   'eraser',
   'sticky',
-  'spotlight',
   'arrow',
-  'vote',
+  'text',
 ];
 
-// Bumped when REQUIRED_PINNED_TOOLS grows. The stamp is derived from the list
+// Bumped when REQUIRED_PINNED_TOOLS changes. The stamp is derived from the list
 // itself, so prefs written before the list changed — including blobs that carry
 // a stale version number — are topped up exactly once.
-export const PINNED_TOOLS_VERSION = 3;
+export const PINNED_TOOLS_VERSION = 4;
 export const PINNED_TOOLS_STAMP = REQUIRED_PINNED_TOOLS.join(',');
 
 export const DEFAULT_PRESET_TOOLS = {
@@ -112,32 +112,24 @@ export const DEFAULT_PRESET_TOOLS = {
     'select',
     'hand',
     'pen',
-    'highlighter',
     'eraser',
     'sticky',
-    'spotlight',
-    'vote',
     'arrow',
-    'laser',
-    'pointer',
-    'question',
+    'text',
   ],
   diagram: [
     'select',
     'hand',
     'pen',
-    'highlighter',
     'eraser',
-    'arrow',
     'sticky',
-    'spotlight',
-    'vote',
+    'arrow',
+    'text',
     'rect',
     'rounded-rect',
     'ellipse',
     'diamond',
     'line',
-    'text',
     'frame',
     'table',
     'code',
@@ -146,15 +138,10 @@ export const DEFAULT_PRESET_TOOLS = {
     'select',
     'hand',
     'pen',
-    'highlighter',
     'eraser',
     'sticky',
-    'spotlight',
-    'vote',
     'arrow',
-    'laser',
-    'pointer',
-    'question',
+    'text',
     'stamp',
   ],
 };

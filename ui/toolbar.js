@@ -8,21 +8,20 @@ import { PALETTE_STROKE_COLORS } from '../render/themes.js';
 import { totalVotes } from '../scene/voting.js';
 import { arrowPresetPreview } from './arrow-preview.js';
 
+/* Pass 1: Simplified dock — drawing essentials only.
+   select, hand, pen, eraser, arrow, text, sticky stay on the dock.
+   Shape variants (highlighter, rect, rounded-rect, ellipse, diamond, line)
+   live behind the Insert (+) menu.
+   Teaching/classroom tools (spotlight, vote, laser, pointer, question)
+   live behind the Teaching menu. */
 export const PRIMARY_TOOL_IDS = [
   'select',
   'hand',
   'pen',
-  'highlighter',
   'eraser',
   'arrow',
   'sticky',
-  'spotlight',
-  'vote',
-  'rect',
   'text',
-  'laser',
-  'pointer',
-  'question',
 ];
 
 export const PRIMARY_TOOLS = TOOL_REGISTRY.filter((t) => PRIMARY_TOOL_IDS.includes(t.id));
@@ -81,14 +80,23 @@ export function initToolbar(app) {
         <div class="wb-dropdown">
           <button type="button" class="wb-btn" id="btn-teaching-menu" aria-haspopup="true" title="Teaching & Classroom Tools">${ICONS.teaching} <span class="wb-hide-md">Teaching ▾</span></button>
           <div class="wb-dropdown-menu wb-hidden" id="menu-teaching">
+            <div class="wb-popover-title">Presentation</div>
             <button type="button" class="wb-menu-item" id="btn-present">${ICONS.present} Presentation Mode (F6)</button>
             <button type="button" class="wb-menu-item" id="btn-reveal-timeline">${ICONS.timeline} Step-by-Step Reveal Timeline</button>
+            <div class="wb-popover-sep"></div>
+            <div class="wb-popover-title">Lens & Pointer</div>
             <button type="button" class="wb-menu-item" id="btn-spotlight">${ICONS.spotlight} Spotlight (F7)</button>
             <button type="button" class="wb-menu-item" id="btn-magnifier">${ICONS.spotlight} Magnifier Lens 2x</button>
-            <button type="button" class="wb-menu-item" id="btn-annotation-mode">${ICONS.annotation} Live Annotation Mode (F8)</button>
+            <button type="button" class="wb-menu-item" id="btn-laser-tool">${ICONS.laser} Laser Pointer (K)</button>
+            <button type="button" class="wb-menu-item" id="btn-pointer-tool">${ICONS.pointer} Point at Component (W)</button>
+            <div class="wb-popover-sep"></div>
+            <div class="wb-popover-title">Classroom</div>
             <button type="button" class="wb-menu-item" id="btn-dot-vote">${ICONS.vote} Dot Voting (Shift+V)</button>
+            <button type="button" class="wb-menu-item" id="btn-question-pin">${ICONS.question} Pin Question to Board (Q)</button>
+            <button type="button" class="wb-menu-item" id="btn-annotation-mode">${ICONS.annotation} Live Annotation Mode (F8)</button>
             <button type="button" class="wb-menu-item" id="btn-timer">${ICONS.timer} Countdown / Stopwatch</button>
             <button type="button" class="wb-menu-item" id="btn-focus-mode">${ICONS.focus} Teaching Focus Mode (F10)</button>
+            <div class="wb-popover-sep"></div>
             <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Pinned Tools…</button>
           </div>
         </div>
@@ -162,6 +170,9 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-reveal-timeline')?.addEventListener('click', () => app.dialogs.openRevealTimelineModal());
     topBar.querySelector('#btn-spotlight')?.addEventListener('click', () => app.toggleSpotlight(false));
     topBar.querySelector('#btn-magnifier')?.addEventListener('click', () => app.toggleSpotlight(true));
+    topBar.querySelector('#btn-laser-tool')?.addEventListener('click', () => app.setTool('laser'));
+    topBar.querySelector('#btn-pointer-tool')?.addEventListener('click', () => app.setTool('pointer'));
+    topBar.querySelector('#btn-question-pin')?.addEventListener('click', () => app.setTool('question'));
     topBar.querySelector('#btn-annotation-mode')?.addEventListener('click', () => app.toggleAnnotationMode());
     topBar.querySelector('#btn-dot-vote')?.addEventListener('click', () => app.votingUI.toggle());
     topBar.querySelector('#btn-focus-mode')?.addEventListener('click', () => app.toggleFocusMode());
@@ -437,6 +448,8 @@ export function initToolbar(app) {
           ? app.getPinnedTools()
           : PRIMARY_TOOL_IDS;
     const pinnedIds = rawPinnedIds.filter((id) => (app.collab ? app.collab.canUseTool(id) : true));
+    // Teaching tools live in the Teaching menu, not the Insert (+) popover.
+    const TEACHING_TOOL_IDS = new Set(['spotlight', 'vote', 'laser', 'pointer', 'question']);
     // Tool, spotlight and brush state are part of the signature so the brush
     // drawer appears/collapses with the active tool instead of lingering.
     const sig = [
@@ -488,7 +501,7 @@ export function initToolbar(app) {
     // appears as a plain pinned button or in the + menu.
     const visibleTools = TOOL_REGISTRY.filter((t) => pinnedSet.has(t.id) && t.id !== 'arrow');
     const advancedTools = canEdit
-      ? TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id) && t.id !== 'arrow')
+      ? TOOL_REGISTRY.filter((t) => !pinnedSet.has(t.id) && t.id !== 'arrow' && !TEACHING_TOOL_IDS.has(t.id))
       : [];
 
     dock.innerHTML = `

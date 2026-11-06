@@ -912,6 +912,38 @@ export function initLibraryPanel(app) {
     });
   }
 
+// Simple preview icons mapped to template ids — a visual hint of what each
+// template contains, so users can preview before inserting.
+const TEMPLATE_PREVIEW_ICONS = {
+  'tpl-linux-boot': ICONS.present,
+  'tpl-dns-resolution': ICONS.share,
+  'tpl-tcp-tls': ICONS.lock,
+  'tpl-docker-lifecycle': ICONS.frame,
+  'tpl-cicd-gitops': ICONS.timeline,
+  'tpl-cloud-network': ICONS.layers,
+  'tpl-monitoring-incident': ICONS.pointer,
+  'tpl-blank': ICONS.select,
+  'tpl-kanban': ICONS.table,
+  'tpl-mindmap': ICONS.pointer,
+  'tpl-flowchart': ICONS.frame,
+  'tpl-k8s': ICONS.layers,
+  'tpl-sequence': ICONS.timeline,
+  'tpl-kwl': ICONS.table,
+  'tpl-venn': ICONS.pointer,
+  'tpl-2x2': ICONS.table,
+  'tpl-number-line': ICONS.code,
+  'tpl-axes': ICONS.code,
+};
+
+function templatePreview(t) {
+  const icon = TEMPLATE_PREVIEW_ICONS[t.id] || ICONS.frame;
+  return `
+    <div class="wb-template-preview" aria-hidden="true">
+      ${icon}
+    </div>
+  `;
+}
+
   function renderTemplatesTab(content) {
     content.innerHTML = `
       <p class="wb-muted">Load a starter classroom or architecture template onto the active page.</p>
@@ -919,7 +951,8 @@ export function initLibraryPanel(app) {
       <div class="wb-template-list">
         ${BUILTIN_TEMPLATES.map(
           (t) => `
-          <div class="wb-template-card">
+          <div class="wb-template-card" data-tpl-card="${escapeXml(t.id)}">
+            ${templatePreview(t)}
             <div>
               <strong>${escapeXml(t.name)}</strong>
               <p class="wb-muted">${escapeXml(t.description)}</p>
