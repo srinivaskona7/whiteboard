@@ -228,7 +228,10 @@ export class WhiteboardApp {
         if (el) {
           el.dataset.state = state;
           el.textContent =
-            state === 'saved' ? 'Saved locally' : state === 'saving' ? 'Saving…' : 'Save failed';
+            state === 'saved' ? 'Saved locally'
+            : state === 'saving' ? 'Saving…'
+            : state === 'offline' ? 'Offline — changes queued'
+            : 'Save failed';
         }
       }
     );
@@ -644,6 +647,7 @@ export class WhiteboardApp {
       this.collab.broadcastSceneChange();
       this.updateUI();
       this.requestRender();
+      this.dialogs?.showToast?.('Undo', 'info', 2000);
       return;
     }
     if (Array.isArray(this.pageUndoStack) && this.pageUndoStack.length > 0) {

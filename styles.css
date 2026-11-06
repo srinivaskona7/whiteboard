@@ -890,6 +890,7 @@ kbd { padding: var(--space-1) var(--space-2); font-size: var(--font-size-xs); fo
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .wb-conn-pill.wb-conn-live { animation: none; }
 }
 
 /* Notebook view — vertically stacked lesson pages over one document model */
@@ -1097,4 +1098,70 @@ kbd { padding: var(--space-1) var(--space-2); font-size: var(--font-size-xs); fo
   padding: 10px 16px;
   background: var(--bg-elevated);
   border-top: 1px solid var(--border-color);
+}
+
+/* ── Pass 3: Canvas interactions (priority 6) ──
+   Placement preview ghost, selection handles, connector attachment targets,
+   and snapping guides — consistent at all zoom levels. */
+.wb-placement-preview {
+  position: absolute; pointer-events: none; z-index: 40;
+  border: 2px dashed var(--accent-color); background: var(--accent-soft);
+  border-radius: var(--radius-md); opacity: 0.9;
+}
+.wb-placement-preview.wb-ghost-frame { border-style: solid; border-width: 1.5px; }
+.wb-selection-handle {
+  position: absolute; width: 9px; height: 9px; background: #ffffff;
+  border: 2px solid var(--accent-color); border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm); pointer-events: none;
+}
+.wb-selection-handle.wb-handle-rotate {
+  width: 14px; height: 14px; background: var(--accent-color); border-color: #ffffff;
+}
+.wb-connector-target {
+  position: absolute; width: 10px; height: 10px; background: var(--accent-color);
+  border: 2px solid #ffffff; border-radius: var(--radius-full); pointer-events: none;
+  box-shadow: var(--shadow-sm);
+}
+.wb-connector-target.wb-target-hover { transform: scale(1.4); box-shadow: var(--shadow-md); }
+.wb-snapping-guide {
+  position: absolute; pointer-events: none; z-index: 38; background: var(--accent-color);
+  opacity: 0.6;
+}
+.wb-snapping-guide.wb-snap-vertical { width: 1px; }
+.wb-snapping-guide.wb-snap-horizontal { height: 1px; }
+
+/* ── Pass 3: Touch targets (priority 9) ──
+   Minimum 44px touch targets on all interactive elements. */
+@media (pointer: coarse) {
+  .wb-tool-btn { min-width: 44px; min-height: 44px; }
+  .wb-btn { min-height: 44px; padding: var(--space-2) var(--space-4); }
+  .wb-menu-item { min-height: 44px; padding: var(--space-2) var(--space-3); }
+  .wb-popover-item { min-height: 44px; padding: var(--space-2) var(--space-3); }
+  .wb-stencil-item { min-height: 72px; padding: var(--space-3) var(--space-2); }
+  .wb-tab-btn { min-height: 44px; padding: var(--space-2) var(--space-1); }
+  .wb-cat-pill, .wb-level-pill { min-height: 40px; padding: var(--space-1) var(--space-3); }
+  .wb-page-tab { min-height: 40px; padding: var(--space-1) var(--space-3); }
+}
+
+/* ── Pass 3: Feedback states (priority 7) ──
+   Clear Saved/Saving/Offline/Conflict states; room connection + participant roles. */
+.wb-save-status[data-state="saved"] { color: #16a34a; border-color: #16a34a; }
+.wb-save-status[data-state="offline"] { color: #b45309; border-color: #d97706; }
+.wb-conn-pill.wb-conn-live { animation: wb-pulse 2s infinite; }
+.wb-conn-pill.wb-conn-ro { background: rgba(37, 99, 235, 0.14); border-color: #2563eb; color: #2563eb; }
+.wb-conn-pill.wb-conn-connecting { background: rgba(139, 92, 246, 0.14); border-color: #a855f7; color: #7e22ce; }
+@keyframes wb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.wb-undo-toast { background: var(--bg-elevated); border-left: 3px solid var(--accent-color); }
+
+/* ── Pass 3: Accessibility (priority 10) ──
+   Visible focus rings, labelled icon buttons, reduced motion. */
+.wb-focus-ring:focus-visible {
+  outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-md);
+}
+.wb-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }

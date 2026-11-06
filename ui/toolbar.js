@@ -1123,6 +1123,9 @@ export function initToolbar(app) {
         connPill.textContent = app.collab.statusMessage || 'Local board';
         connPill.classList.toggle('wb-conn-live', app.collab.status === 'live');
         connPill.classList.toggle('wb-conn-offline', app.collab.status === 'offline' || app.collab.status === 'error');
+        connPill.classList.toggle('wb-conn-ro', app.collab.status === 'snapshot');
+        connPill.classList.toggle('wb-conn-connecting', app.collab.status === 'connecting');
+        connPill.setAttribute('aria-label', `Collaboration connection: ${app.collab.statusMessage || 'Local board'}`);
       }
       if (clsLabel) {
         const qCount = page.elements.filter((e) => e.type === 'question' && !e.resolved && !e.hidden).length;
