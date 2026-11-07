@@ -567,7 +567,7 @@
       </div>
 
       <div class="figure">
-        <svg viewBox="0 0 1100 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="st-title st-desc">
+        <svg viewBox="0 78 1100 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="st-title st-desc">
           <title id="st-title">EC2 instance lifecycle state machine</title>
           <desc id="st-desc">A state diagram with a start dot leading to pending, then running, which is highlighted as the goal state. From running, StopInstances leads to stopping then stopped then starting, which returns to running. TerminateInstances leads to shutting-down then terminated. Annotations note that terminate works from any state and that running does not mean the operating system has booted.</desc>
 
@@ -587,34 +587,34 @@
           <line x1="67" y1="118" x2="95" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
           <line x1="240" y1="118" x2="325" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
           <line x1="470" y1="118" x2="595" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
-          <line x1="760" y1="118" x2="845" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="760" y1="118" x2="855" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
           <line x1="400" y1="146" x2="400" y2="296" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
           <line x1="470" y1="328" x2="555" y2="328" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
-          <line x1="700" y1="328" x2="775" y2="328" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
-          <path d="M 920 300 V 184 Q 920 176 912 176 H 458 Q 450 176 450 168 V 148"
+          <line x1="700" y1="328" x2="795" y2="328" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <path d="M 900 300 V 184 Q 900 176 892 176 H 458 Q 450 176 450 168 V 148"
                 fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
 
           <!-- Transition labels -->
-          <rect x="241" y="100" width="84" height="13" fill="#f5f5f5"/>
-          <text x="283" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
+          <rect x="243" y="100" width="84" height="13" fill="#f5f5f5"/>
+          <text x="285" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
 
-          <rect x="479" y="100" width="108" height="13" fill="#f5f5f5"/>
-          <text x="533" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">TerminateInstances</text>
+          <rect x="473" y="100" width="124" height="13" fill="#f5f5f5"/>
+          <text x="535" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TerminateInstances</text>
 
-          <rect x="758" y="100" width="90" height="13" fill="#f5f5f5"/>
-          <text x="803" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">volumes deleted</text>
+          <rect x="763" y="100" width="94" height="13" fill="#f5f5f5"/>
+          <text x="810" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">volumes deleted</text>
 
-          <rect x="408" y="215" width="86" height="13" fill="#f5f5f5"/>
-          <text x="412" y="225" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">StopInstances</text>
+          <rect x="404" y="215" width="86" height="13" fill="#f5f5f5"/>
+          <text x="408" y="225" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">StopInstances</text>
 
-          <rect x="474" y="310" width="78" height="13" fill="#f5f5f5"/>
-          <text x="513" y="320" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">flush · detach</text>
+          <rect x="473" y="310" width="84" height="13" fill="#f5f5f5"/>
+          <text x="515" y="320" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">flush · detach</text>
 
-          <rect x="696" y="310" width="84" height="13" fill="#f5f5f5"/>
-          <text x="738" y="320" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">StartInstances</text>
+          <rect x="703" y="310" width="94" height="13" fill="#f5f5f5"/>
+          <text x="750" y="320" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">StartInstances</text>
 
-          <rect x="638" y="158" width="84" height="13" fill="#f5f5f5"/>
-          <text x="680" y="168" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
+          <rect x="636" y="158" width="88" height="13" fill="#f5f5f5"/>
+          <text x="680" y="168" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
 
           <!-- Start dot -->
           <circle cx="60" cy="118" r="5" fill="#2d3142"/>
@@ -632,9 +632,9 @@
           <text x="680" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">shutting-down</text>
           <text x="680" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cleanup</text>
 
-          <rect x="850" y="90" width="160" height="56" rx="8" fill="#ececec" stroke="rgba(45,49,66,0.40)" stroke-width="1.2"/>
-          <text x="930" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">terminated</text>
-          <text x="930" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">terminal</text>
+          <rect x="860" y="90" width="160" height="56" rx="8" fill="#ececec" stroke="rgba(45,49,66,0.40)" stroke-width="1.2"/>
+          <text x="940" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">terminated</text>
+          <text x="940" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">terminal</text>
 
           <rect x="330" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
           <text x="400" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">stopping</text>
@@ -644,9 +644,9 @@
           <text x="630" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">stopped</text>
           <text x="630" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no compute charge</text>
 
-          <rect x="780" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-          <text x="850" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">starting</text>
-          <text x="850" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">boot again</text>
+          <rect x="800" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="870" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">starting</text>
+          <text x="870" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">boot again</text>
 
           <!-- ── Annotations ──────────────────────────────────────── -->
           <text x="100" y="404" fill="#4f5d75" font-size="12.5" font-family="'Instrument Serif', serif" font-style="italic">TerminateInstances works from any non-terminal state — it is a kill, not a step in this graph.</text>
@@ -670,7 +670,7 @@
       </div>
 
       <div class="figure">
-        <svg viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sk-title sk-desc">
+        <svg viewBox="0 100 1200 252" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sk-title sk-desc">
           <title id="sk-title">Hand-drawn sketch of the EC2 request path</title>
           <desc id="sk-desc">A deliberately rough, whiteboard-style sketch of six boxes in a row: you, the EC2 API, IAM, placement, Nitro, and the instance. Hand-drawn brackets group them into your side, the control plane, and the instance side. A legend below shows a hop, a hand-off, and an asynchronous arrow.</desc>
 
@@ -709,10 +709,10 @@
             <path d="M 398 193 H 434"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
             <path d="M 582 193 H 618"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
             <path d="M 766 193 H 802"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
-            <path d="M 950 193 H 986"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 950 193 H 986"  fill="none" stroke="#eb6c36" stroke-width="1.6" marker-end="url(#sk-arrow-accent)"/>
 
             <!-- focal ring around the instance -->
-            <ellipse cx="1060" cy="193" rx="84" ry="50" fill="none" stroke="#eb6c36" stroke-width="1.6"/>
+            <ellipse cx="1060" cy="193" rx="92" ry="50" fill="none" stroke="#eb6c36" stroke-width="1.6"/>
 
             <!-- legend shapes -->
             <rect x="70" y="296" width="46" height="28" rx="3" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
