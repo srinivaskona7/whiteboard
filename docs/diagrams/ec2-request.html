@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anatomy of an EC2 server request</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Caveat:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-accent:      #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-rust:        #b85450;
+      --color-olive:       #7a8c47;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem 4rem;
+      color: var(--color-ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1240px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header { margin-bottom: 3rem; max-width: 76ch; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.9rem, 3.2vw + 1rem, 2.75rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.08;
+      margin-bottom: 0.7rem;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 64ch;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.055);
+      border-radius: 3px;
+      padding: 0.05em 0.32em;
+    }
+
+    /* ── Sections ───────────────────────────────────────────────── */
+    .section { margin-top: 3.5rem; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 1.25rem;
+      align-items: start;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(45,49,66,0.10);
+    }
+
+    .section-num {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: var(--color-soft);
+      padding-top: 0.45rem;
+    }
+
+    .section-head h2 {
+      font-family: var(--font-serif);
+      font-size: 1.55rem;
+      font-weight: 400;
+      letter-spacing: -0.015em;
+      line-height: 1.15;
+      margin-bottom: 0.35rem;
+      color: var(--color-ink);
+    }
+
+    .section-sub {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 78ch;
+    }
+
+    /* ── Figures ────────────────────────────────────────────────── */
+    .figure {
+      overflow-x: auto;
+      padding: 0.25rem 0 0.5rem;
+    }
+
+    .figure svg { width: 100%; min-width: 860px; display: block; height: auto; }
+
+    .figcaption {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      line-height: 1.7;
+      letter-spacing: 0.05em;
+      color: var(--color-soft);
+      margin-top: 0.9rem;
+      max-width: 96ch;
+    }
+
+    .figcaption strong { color: var(--color-muted); font-weight: 500; }
+
+    /* ── Abbreviations table ────────────────────────────────────── */
+    .abbr {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      margin-top: 0.25rem;
+    }
+
+    .abbr th {
+      text-align: left;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      padding: 0.5rem 1rem 0.5rem 0;
+      border-bottom: 1px solid rgba(45,49,66,0.22);
+      white-space: nowrap;
+    }
+
+    .abbr td {
+      padding: 0.5rem 1rem 0.5rem 0;
+      vertical-align: top;
+      line-height: 1.55;
+      color: var(--color-muted);
+      border-bottom: 1px solid rgba(45,49,66,0.07);
+    }
+
+    .abbr td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--color-ink);
+      white-space: nowrap;
+      padding-right: 1.25rem;
+      width: 8.5rem;
+    }
+
+    .abbr td:nth-child(2) { width: 17rem; color: var(--color-ink); }
+
+    .abbr tr.group td {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      padding-top: 1.35rem;
+      border-bottom: 1px solid rgba(45,49,66,0.14);
+    }
+
+    @media (max-width: 720px) {
+      body { padding: 2rem 1.1rem 3rem; }
+      .section-head { grid-template-columns: 1fr; gap: 0.4rem; }
+      .section-num { padding-top: 0; }
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 3.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">AWS · EC2 · request anatomy</p>
+      <h1>Anatomy of an EC2 server request</h1>
+      <p class="subtitle">One call — <code>RunInstances</code> — travels through six AWS layers before a single guest instruction executes. This page follows that request four ways: as a stack, as a timeline, as a decision tree, as a lifecycle, and finally as a sketch.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         01 · LAYER STACK
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">01</div>
+        <div>
+          <h2>Where the request travels</h2>
+          <p class="section-sub">Six layers, one direction. Each layer can refuse the request outright, and every refusal is reported upward as an error code — never as a partial success.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1200 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lay-title lay-desc">
+          <title id="lay-title">The six AWS layers a RunInstances request passes through</title>
+          <desc id="lay-desc">A vertical stack of six layers. From top: client tools, edge endpoint, identity and policy, the EC2 control plane (marked as the focal layer), capacity and placement, and hypervisor and devices. A dashed line at the bottom marks the guest boundary below which the instance's own boot chain begins.</desc>
+
+          <defs>
+            <pattern id="lay-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+            <marker id="lay-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+          </defs>
+
+          <rect width="1200" height="560" fill="#f5f5f5"/>
+          <rect width="1200" height="560" fill="url(#lay-dots)" opacity="0.55"/>
+
+          <text x="130" y="36" fill="#7a8399" font-size="10" font-family="'Geist Mono', monospace" letter-spacing="0.16em">REQUEST TRAVELS INWARD · DOWN THE STACK</text>
+
+          <text transform="rotate(-90 62 280)" x="62" y="280" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" letter-spacing="0.24em" text-anchor="middle">AWS-OWNED</text>
+
+          <!-- 01 · Client -->
+          <rect x="130" y="60" width="940" height="64" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+          <text x="152" y="98" fill="#7a8399" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">01</text>
+          <text x="186" y="88" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Client</text>
+          <text x="186" y="106" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">Where a request is born, and where every error lands</text>
+          <text x="1046" y="98" fill="#4f5d75" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">boto3 · AWS CLI · Terraform · Console</text>
+
+          <!-- 02 · Edge -->
+          <rect x="130" y="132" width="940" height="64" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+          <text x="152" y="170" fill="#7a8399" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">02</text>
+          <text x="186" y="160" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Edge endpoint</text>
+          <text x="186" y="178" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">The first AWS-owned hop; the signature is checked here</text>
+          <text x="1046" y="170" fill="#4f5d75" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">TLS 1.2+ · SigV4 verified</text>
+
+          <!-- 03 · Identity -->
+          <rect x="130" y="204" width="940" height="64" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+          <text x="152" y="242" fill="#7a8399" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">03</text>
+          <text x="186" y="232" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Identity &amp; policy</text>
+          <text x="186" y="250" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">May this caller do this — to every resource in the call</text>
+          <text x="1046" y="242" fill="#4f5d75" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">IAM · SCP · boundary · STS</text>
+
+          <!-- 04 · Control plane — FOCAL -->
+          <rect x="130" y="276" width="940" height="64" rx="6" fill="rgba(235,108,54,0.07)" stroke="#eb6c36" stroke-width="1.2"/>
+          <rect x="130" y="276" width="4" height="64" rx="2" fill="#eb6c36"/>
+          <text x="152" y="314" fill="#eb6c36" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">04</text>
+          <text x="186" y="304" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">EC2 control plane</text>
+          <text x="186" y="322" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">Intent becomes a durable, retry-safe, asynchronous job</text>
+          <text x="1046" y="314" fill="#eb6c36" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">validate · quota · idempotency · async job</text>
+
+          <!-- 05 · Capacity -->
+          <rect x="130" y="348" width="940" height="64" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+          <text x="152" y="386" fill="#7a8399" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">05</text>
+          <text x="186" y="376" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Capacity &amp; placement</text>
+          <text x="186" y="394" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">Which physical host — and is there room on it</text>
+          <text x="1046" y="386" fill="#4f5d75" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">AZ · placement group · host bin-packing</text>
+
+          <!-- 06 · Hypervisor -->
+          <rect x="130" y="420" width="940" height="64" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+          <text x="152" y="458" fill="#7a8399" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">06</text>
+          <text x="186" y="448" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Hypervisor &amp; devices</text>
+          <text x="186" y="466" fill="#7a8399" font-size="10.5" font-family="'Geist', sans-serif">Assemble the virtual machine and attach its disks</text>
+          <text x="1046" y="458" fill="#4f5d75" font-size="10.5" font-family="'Geist Mono', monospace" text-anchor="end">Nitro · PCIe · ENA · NVMe · EBS attach</text>
+
+          <!-- Guest boundary -->
+          <line x1="100" y1="508" x2="1100" y2="508" stroke="#7a8399" stroke-width="1" stroke-dasharray="6,4"/>
+          <rect x="470" y="521" width="260" height="20" rx="3" fill="#f5f5f5"/>
+          <text x="600" y="535" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" letter-spacing="0.1em" text-anchor="middle">GUEST BOUNDARY · THE INSTANCE NOW BOOTS</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>Read it downward.</strong> Layers 01–03 are refusals: a bad signature, an expired credential, or a missing <code>ec2:RunInstances</code> stops the request before it costs AWS anything. Layer 04 is the focal point — the only layer that converts a synchronous HTTP call into a durable job. Layers 05–06 are where an accepted request can still fail for capacity reasons.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         02 · SEQUENCE
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">02</div>
+        <div>
+          <h2>The happy path, in time</h2>
+          <p class="section-sub">The same six layers, but ordered. Five actors, eleven messages. Note where the API answers — the caller gets an instance id long before the instance is running.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1200 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-title seq-desc">
+          <title id="seq-title">Sequence of a successful RunInstances call</title>
+          <desc id="seq-desc">A five-lifeline sequence diagram. The caller sends RunInstances to the EC2 API, which asks IAM to authorise it. IAM returns allow. The API asks placement for a host, placement reserves capacity on Nitro, and both return. The API then replies 200 with a pending instance id, highlighted in accent. Nitro asynchronously boots the guest, and a later DescribeInstances call returns running with two of two status checks passing.</desc>
+
+          <defs>
+            <marker id="seq-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <marker id="seq-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+            </marker>
+            <pattern id="seq-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+          </defs>
+
+          <rect width="1200" height="560" fill="#f5f5f5"/>
+          <rect width="1200" height="560" fill="url(#seq-dots)" opacity="0.55"/>
+
+          <!-- Time axis -->
+          <line x1="42" y1="34" x2="42" y2="496" stroke="rgba(45,49,66,0.18)" stroke-width="1" stroke-dasharray="4,4"/>
+          <text transform="rotate(-90 30 270)" x="30" y="270" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.22em" text-anchor="middle">TIME</text>
+
+          <!-- Lifelines -->
+          <line x1="150"  y1="70" x2="150"  y2="520" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+          <line x1="380"  y1="70" x2="380"  y2="520" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+          <line x1="600"  y1="70" x2="600"  y2="520" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+          <line x1="830"  y1="70" x2="830"  y2="520" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+          <line x1="1050" y1="70" x2="1050" y2="520" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+
+          <!-- Activation bars -->
+          <rect x="376"  y="104" width="8" height="258" fill="rgba(79,93,117,0.14)" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <rect x="596"  y="138" width="8" height="50"  fill="rgba(79,93,117,0.14)" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <rect x="826"  y="206" width="8" height="118" fill="rgba(79,93,117,0.14)" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <rect x="1046" y="240" width="8" height="172" fill="rgba(79,93,117,0.14)" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <rect x="376"  y="428" width="8" height="52"  fill="rgba(79,93,117,0.14)" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+
+          <!-- ── Messages ─────────────────────────────────────────── -->
+          <!-- 1 · RunInstances -->
+          <rect x="225" y="97" width="80" height="12" fill="#f5f5f5"/>
+          <text x="265" y="105" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">RunInstances</text>
+          <line x1="150" y1="112" x2="380" y2="112" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 2 · Authorize -->
+          <rect x="460" y="131" width="62" height="12" fill="#f5f5f5"/>
+          <text x="490" y="139" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Authorize</text>
+          <line x1="380" y1="146" x2="600" y2="146" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 3 · Allow (return) -->
+          <rect x="472" y="165" width="38" height="12" fill="#f5f5f5"/>
+          <text x="490" y="173" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Allow</text>
+          <line x1="600" y1="180" x2="380" y2="180" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#seq-arrow)"/>
+
+          <!-- 4 · place -->
+          <rect x="551" y="199" width="116" height="12" fill="#f5f5f5"/>
+          <text x="605" y="207" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">place · AZ · type</text>
+          <line x1="380" y1="214" x2="830" y2="214" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 5 · reserve host -->
+          <rect x="904" y="233" width="80" height="12" fill="#f5f5f5"/>
+          <text x="940" y="241" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">reserve host</text>
+          <line x1="830" y1="248" x2="1050" y2="248" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 6 · reserved (return) -->
+          <rect x="916" y="267" width="56" height="12" fill="#f5f5f5"/>
+          <text x="940" y="275" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">reserved</text>
+          <line x1="1050" y1="282" x2="830" y2="282" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#seq-arrow)"/>
+
+          <!-- 7 · placed (return) -->
+          <rect x="587" y="301" width="44" height="12" fill="#f5f5f5"/>
+          <text x="605" y="309" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">placed</text>
+          <line x1="830" y1="316" x2="380" y2="316" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#seq-arrow)"/>
+
+          <!-- 8 · the response — accent, the only accent message -->
+          <rect x="205" y="335" width="127" height="13" fill="#f5f5f5"/>
+          <text x="265" y="343" fill="#eb6c36" font-size="10.5" font-weight="500" font-family="'Geist Mono', monospace" text-anchor="middle">200 · i-… · pending</text>
+          <line x1="380" y1="350" x2="150" y2="350" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#seq-arrow-accent)"/>
+
+          <!-- 9 · Nitro self-message -->
+          <rect x="894" y="388" width="116" height="13" fill="#f5f5f5"/>
+          <text x="1002" y="396" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace" text-anchor="end">boot guest · async</text>
+          <path d="M 1050 384 H 1012 V 402 H 1044" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 10 · DescribeInstances -->
+          <rect x="214" y="421" width="110" height="12" fill="#f5f5f5"/>
+          <text x="265" y="429" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">DescribeInstances</text>
+          <line x1="150" y1="436" x2="380" y2="436" stroke="#4f5d75" stroke-width="1" marker-end="url(#seq-arrow)"/>
+
+          <!-- 11 · running (return) -->
+          <rect x="205" y="455" width="127" height="12" fill="#f5f5f5"/>
+          <text x="265" y="463" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">running · 2/2 checks</text>
+          <line x1="380" y1="470" x2="150" y2="470" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#seq-arrow)"/>
+
+          <!-- ── Actors ───────────────────────────────────────────── -->
+          <rect x="65"   y="20" width="170" height="50" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <text x="150" y="42" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Caller</text>
+          <text x="150" y="58" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">your account</text>
+
+          <rect x="295"  y="20" width="170" height="50" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <text x="380" y="42" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">EC2 API</text>
+          <text x="380" y="58" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">control plane</text>
+
+          <rect x="515"  y="20" width="170" height="50" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <text x="600" y="42" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">IAM</text>
+          <text x="600" y="58" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">policy engine</text>
+
+          <rect x="745"  y="20" width="170" height="50" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <text x="830" y="42" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Placement</text>
+          <text x="830" y="58" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">capacity service</text>
+
+          <rect x="965"  y="20" width="170" height="50" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <text x="1050" y="42" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nitro</text>
+          <text x="1050" y="58" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">host agent</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>The asymmetry that matters.</strong> Messages 1–8 are the synchronous request and take milliseconds. Message 8 returns <code>pending</code> — an id, not a machine. Everything after it is asynchronous, which is why scripts that assume “API returned, therefore SSH works” fail. Message 11 is the first honest signal that the OS finished booting.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         03 · FLOWCHART
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">03</div>
+        <div>
+          <h2>Where it can fail</h2>
+          <p class="section-sub">Three gates, three different error families. Which gate rejects you tells you who owns the fix — your signature, your policy, or AWS's spare capacity.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1020 880" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fc-title fc-desc">
+          <title id="fc-title">Decision flow for a RunInstances call, with rejection paths</title>
+          <desc id="fc-desc">A vertical flowchart. A start node leads to a decision on signature validity, which rejects to a 403 SignatureDoesNotMatch terminal. Success leads to an authorisation decision, which rejects to 403 UnauthorizedOperation. Success leads to an accepted pending state, then to a capacity decision, which rejects to InsufficientInstanceCapacity. Success reaches a running instance with two of two status checks. A dashed branch shows the running but unreachable case where only one of two checks passes.</desc>
+
+          <defs>
+            <marker id="fc-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <marker id="fc-arrow-rust" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#b85450"/>
+            </marker>
+            <pattern id="fc-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+          </defs>
+
+          <rect width="1020" height="880" fill="#f5f5f5"/>
+          <rect width="1020" height="880" fill="url(#fc-dots)" opacity="0.55"/>
+
+          <!-- Synchronous / asynchronous brackets -->
+          <line x1="100" y1="36" x2="100" y2="526" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <line x1="93"  y1="36" x2="107" y2="36"  stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <line x1="93"  y1="526" x2="107" y2="526" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <text transform="rotate(-90 82 281)" x="82" y="281" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.2em" text-anchor="middle">SYNCHRONOUS · MILLISECONDS</text>
+
+          <line x1="100" y1="526" x2="100" y2="816" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="5,4"/>
+          <line x1="93"  y1="816" x2="107" y2="816" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <text transform="rotate(-90 82 671)" x="82" y="671" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.2em" text-anchor="middle">ASYNC · SECONDS</text>
+
+          <!-- ── Connectors (drawn first) ─────────────────────────── -->
+          <line x1="340" y1="88"  x2="340" y2="121" stroke="#4f5d75" stroke-width="1" marker-end="url(#fc-arrow)"/>
+          <line x1="460" y1="185" x2="596" y2="185" stroke="#b85450" stroke-width="1" marker-end="url(#fc-arrow-rust)"/>
+          <line x1="340" y1="245" x2="340" y2="291" stroke="#4f5d75" stroke-width="1" marker-end="url(#fc-arrow)"/>
+          <line x1="460" y1="355" x2="596" y2="355" stroke="#b85450" stroke-width="1" marker-end="url(#fc-arrow-rust)"/>
+          <line x1="340" y1="415" x2="340" y2="466" stroke="#4f5d75" stroke-width="1" marker-end="url(#fc-arrow)"/>
+          <line x1="340" y1="526" x2="340" y2="581" stroke="#4f5d75" stroke-width="1" marker-end="url(#fc-arrow)"/>
+          <line x1="460" y1="645" x2="596" y2="645" stroke="#b85450" stroke-width="1" marker-end="url(#fc-arrow-rust)"/>
+          <line x1="340" y1="705" x2="340" y2="758" stroke="#4f5d75" stroke-width="1" marker-end="url(#fc-arrow)"/>
+          <line x1="452" y1="788" x2="596" y2="788" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#fc-arrow)"/>
+
+          <!-- Branch labels -->
+          <rect x="512" y="169" width="30" height="14" fill="#f5f5f5"/>
+          <text x="527" y="180" fill="#b85450" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">NO</text>
+          <rect x="347" y="258" width="34" height="14" fill="#f5f5f5"/>
+          <text x="352" y="269" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace">YES</text>
+          <rect x="512" y="339" width="30" height="14" fill="#f5f5f5"/>
+          <text x="527" y="350" fill="#b85450" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">NO</text>
+          <rect x="347" y="432" width="34" height="14" fill="#f5f5f5"/>
+          <text x="352" y="443" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace">YES</text>
+          <rect x="512" y="629" width="30" height="14" fill="#f5f5f5"/>
+          <text x="527" y="640" fill="#b85450" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">NO</text>
+          <rect x="347" y="722" width="34" height="14" fill="#f5f5f5"/>
+          <text x="352" y="733" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace">YES</text>
+          <rect x="486" y="772" width="62" height="14" fill="#f5f5f5"/>
+          <text x="517" y="783" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">OS BROKEN</text>
+
+          <!-- ── Nodes ────────────────────────────────────────────── -->
+          <!-- Start -->
+          <ellipse cx="340" cy="62" rx="112" ry="26" fill="#ffffff" stroke="rgba(45,49,66,0.35)" stroke-width="1.2"/>
+          <text x="340" y="67" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Create a server</text>
+
+          <!-- D1 -->
+          <polygon points="340,125 460,185 340,245 220,185" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1.2"/>
+          <text x="340" y="181" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">Signature</text>
+          <text x="340" y="195" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">valid?</text>
+
+          <!-- D2 -->
+          <polygon points="340,295 460,355 340,415 220,355" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1.2"/>
+          <text x="340" y="351" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">Authorized for</text>
+          <text x="340" y="365" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">every resource?</text>
+
+          <!-- Accepted -->
+          <rect x="225" y="470" width="230" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+          <text x="340" y="495" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Accepted · pending</text>
+          <text x="340" y="512" fill="#eb6c36" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">an async job, not a machine</text>
+
+          <!-- D3 -->
+          <polygon points="340,585 460,645 340,705 220,645" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1.2"/>
+          <text x="340" y="641" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">Capacity in</text>
+          <text x="340" y="655" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">the AZ?</text>
+
+          <!-- End -->
+          <ellipse cx="340" cy="788" rx="112" ry="26" fill="#ffffff" stroke="rgba(45,49,66,0.35)" stroke-width="1.2"/>
+          <text x="340" y="793" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">running · 2/2</text>
+
+          <!-- ── Rejection terminals ──────────────────────────────── -->
+          <rect x="600" y="157" width="320" height="56" rx="6" fill="rgba(184,84,80,0.06)" stroke="rgba(184,84,80,0.45)" stroke-width="1"/>
+          <text x="760" y="182" fill="#b85450" font-size="11" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">403 SignatureDoesNotMatch</text>
+          <text x="760" y="198" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif" text-anchor="middle">clock skew, wrong secret, or a resigned body</text>
+
+          <rect x="600" y="327" width="320" height="56" rx="6" fill="rgba(184,84,80,0.06)" stroke="rgba(184,84,80,0.45)" stroke-width="1"/>
+          <text x="760" y="352" fill="#b85450" font-size="11" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">403 UnauthorizedOperation</text>
+          <text x="760" y="368" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif" text-anchor="middle">ami, subnet, sg, key pair or a CreateVolume right</text>
+
+          <rect x="600" y="617" width="320" height="56" rx="6" fill="rgba(184,84,80,0.06)" stroke="rgba(184,84,80,0.45)" stroke-width="1"/>
+          <text x="760" y="642" fill="#b85450" font-size="11" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">InsufficientInstanceCapacity</text>
+          <text x="760" y="658" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif" text-anchor="middle">retry · different AZ · different instance type</text>
+
+          <!-- ── Post-launch note ─────────────────────────────────── -->
+          <rect x="600" y="760" width="320" height="56" rx="6" fill="#ececec" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="5,4"/>
+          <text x="760" y="785" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">running · 1/2 checks</text>
+          <text x="760" y="801" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif" text-anchor="middle">the API cannot see this — only the guest knows</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>The order of the gates is the diagnostic.</strong> A signature failure means nothing was evaluated. An authorisation failure means the request was well-formed but the caller is not allowed. A capacity failure means AWS agreed to everything and still had no room. And the fourth box is the quiet one: <code>RunInstances</code> succeeded, the instance is <code>running</code>, and SSH is still refused — because the failure moved inside the guest, where the API cannot see it.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         04 · STATE MACHINE
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">04</div>
+        <div>
+          <h2>Instance lifecycle</h2>
+          <p class="section-sub">Once the request is accepted, the instance is a state machine. Seven states, and only one of them is the one you actually wanted.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1100 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="st-title st-desc">
+          <title id="st-title">EC2 instance lifecycle state machine</title>
+          <desc id="st-desc">A state diagram with a start dot leading to pending, then running, which is highlighted as the goal state. From running, StopInstances leads to stopping then stopped then starting, which returns to running. TerminateInstances leads to shutting-down then terminated. Annotations note that terminate works from any state and that running does not mean the operating system has booted.</desc>
+
+          <defs>
+            <marker id="st-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <pattern id="st-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+          </defs>
+
+          <rect width="1100" height="470" fill="#f5f5f5"/>
+          <rect width="1100" height="470" fill="url(#st-dots)" opacity="0.55"/>
+
+          <!-- ── Transitions ──────────────────────────────────────── -->
+          <line x1="67" y1="118" x2="95" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="240" y1="118" x2="325" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="470" y1="118" x2="595" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="760" y1="118" x2="845" y2="118" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="400" y1="146" x2="400" y2="296" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="470" y1="328" x2="555" y2="328" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <line x1="700" y1="328" x2="775" y2="328" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+          <path d="M 920 300 V 184 Q 920 176 912 176 H 458 Q 450 176 450 168 V 148"
+                fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+
+          <!-- Transition labels -->
+          <rect x="241" y="100" width="84" height="13" fill="#f5f5f5"/>
+          <text x="283" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
+
+          <rect x="479" y="100" width="108" height="13" fill="#f5f5f5"/>
+          <text x="533" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">TerminateInstances</text>
+
+          <rect x="758" y="100" width="90" height="13" fill="#f5f5f5"/>
+          <text x="803" y="110" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">volumes deleted</text>
+
+          <rect x="408" y="215" width="86" height="13" fill="#f5f5f5"/>
+          <text x="412" y="225" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">StopInstances</text>
+
+          <rect x="474" y="310" width="78" height="13" fill="#f5f5f5"/>
+          <text x="513" y="320" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">flush · detach</text>
+
+          <rect x="696" y="310" width="84" height="13" fill="#f5f5f5"/>
+          <text x="738" y="320" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">StartInstances</text>
+
+          <rect x="638" y="158" width="84" height="13" fill="#f5f5f5"/>
+          <text x="680" y="168" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">boot completes</text>
+
+          <!-- Start dot -->
+          <circle cx="60" cy="118" r="5" fill="#2d3142"/>
+
+          <!-- ── States ───────────────────────────────────────────── -->
+          <rect x="100" y="90" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="170" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">pending</text>
+          <text x="170" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">queued</text>
+
+          <rect x="330" y="90" width="140" height="56" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+          <text x="400" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">running</text>
+          <text x="400" y="130" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">billable · ssh-able</text>
+
+          <rect x="600" y="90" width="160" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="680" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">shutting-down</text>
+          <text x="680" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cleanup</text>
+
+          <rect x="850" y="90" width="160" height="56" rx="8" fill="#ececec" stroke="rgba(45,49,66,0.40)" stroke-width="1.2"/>
+          <text x="930" y="114" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">terminated</text>
+          <text x="930" y="130" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">terminal</text>
+
+          <rect x="330" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="400" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">stopping</text>
+          <text x="400" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">flush</text>
+
+          <rect x="560" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="630" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">stopped</text>
+          <text x="630" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no compute charge</text>
+
+          <rect x="780" y="300" width="140" height="56" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+          <text x="850" y="324" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">starting</text>
+          <text x="850" y="340" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">boot again</text>
+
+          <!-- ── Annotations ──────────────────────────────────────── -->
+          <text x="100" y="404" fill="#4f5d75" font-size="12.5" font-family="'Instrument Serif', serif" font-style="italic">TerminateInstances works from any non-terminal state — it is a kill, not a step in this graph.</text>
+          <text x="100" y="426" fill="#4f5d75" font-size="12.5" font-family="'Instrument Serif', serif" font-style="italic">running is the API's answer, not the OS's. SSH works only after the guest boots and both checks pass.</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>Two words that get conflated.</strong> <code>pending</code> means the control plane accepted the job. <code>running</code> means the hypervisor says a guest exists. Neither one means Linux finished booting — that is the status checks, which is why <code>DescribeInstances</code> and <code>2/2</code> are the only reliable readiness signal.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         05 · SKETCHY
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">05</div>
+        <div>
+          <h2>The same thing, hand-drawn</h2>
+          <p class="section-sub">Everything above, reduced to what you would actually put on a whiteboard: six boxes and five arrows. If you can redraw this from memory, you understand the request.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sk-title sk-desc">
+          <title id="sk-title">Hand-drawn sketch of the EC2 request path</title>
+          <desc id="sk-desc">A deliberately rough, whiteboard-style sketch of six boxes in a row: you, the EC2 API, IAM, placement, Nitro, and the instance. Hand-drawn brackets group them into your side, the control plane, and the instance side. A legend below shows a hop, a hand-off, and an asynchronous arrow.</desc>
+
+          <defs>
+            <filter id="sk-rough" x="-12%" y="-12%" width="124%" height="124%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="4" result="noise"/>
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G"/>
+            </filter>
+            <marker id="sk-arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+              <polygon points="0 0, 9 3.5, 0 7" fill="#4f5d75"/>
+            </marker>
+            <marker id="sk-arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+              <polygon points="0 0, 9 3.5, 0 7" fill="#eb6c36"/>
+            </marker>
+          </defs>
+
+          <rect width="1200" height="380" fill="#f5f5f5"/>
+
+          <!-- ── Filtered: shapes only ──────────────────────────── -->
+          <g filter="url(#sk-rough)">
+            <!-- phase brackets -->
+            <path d="M 70 138 V 130 H 210 V 138" fill="none" stroke="#7a8399" stroke-width="1.2"/>
+            <path d="M 254 138 V 130 H 946 V 138" fill="none" stroke="#7a8399" stroke-width="1.2"/>
+            <path d="M 990 138 V 130 H 1130 V 138" fill="none" stroke="#7a8399" stroke-width="1.2"/>
+
+            <!-- boxes -->
+            <rect x="70"  y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <rect x="254" y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <rect x="438" y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <rect x="622" y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <rect x="806" y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <rect x="990" y="155" width="140" height="76" rx="4" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+
+            <!-- hand-offs -->
+            <path d="M 214 193 H 250"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 398 193 H 434"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 582 193 H 618"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 766 193 H 802"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 950 193 H 986"  fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+
+            <!-- focal ring around the instance -->
+            <ellipse cx="1060" cy="193" rx="84" ry="50" fill="none" stroke="#eb6c36" stroke-width="1.6"/>
+
+            <!-- legend shapes -->
+            <rect x="70" y="296" width="46" height="28" rx="3" fill="#ffffff" stroke="#4f5d75" stroke-width="1.6"/>
+            <path d="M 300 310 H 356" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#sk-arrow)"/>
+            <path d="M 560 310 H 616" fill="none" stroke="#4f5d75" stroke-width="1.6" stroke-dasharray="7,5" marker-end="url(#sk-arrow)"/>
+          </g>
+
+          <!-- ── Unfiltered: text ───────────────────────────────── -->
+          <text x="140" y="120" fill="#7a8399" font-size="16" font-family="'Caveat', cursive" text-anchor="middle">your side</text>
+          <text x="600" y="120" fill="#7a8399" font-size="16" font-family="'Caveat', cursive" text-anchor="middle">the control plane</text>
+          <text x="1060" y="120" fill="#7a8399" font-size="16" font-family="'Caveat', cursive" text-anchor="middle">the instance</text>
+
+          <text x="140"  y="188" fill="#2d3142" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">You</text>
+          <text x="140"  y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">boto3</text>
+
+          <text x="324"  y="188" fill="#2d3142" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">EC2 API</text>
+          <text x="324"  y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">RunInstances</text>
+
+          <text x="508"  y="188" fill="#2d3142" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">IAM</text>
+          <text x="508"  y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">policy</text>
+
+          <text x="692"  y="188" fill="#2d3142" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">Placement</text>
+          <text x="692"  y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">capacity</text>
+
+          <text x="876"  y="188" fill="#2d3142" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">Nitro</text>
+          <text x="876"  y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">hypervisor</text>
+
+          <text x="1060" y="188" fill="#eb6c36" font-size="23" font-weight="600" font-family="'Caveat', cursive" text-anchor="middle">Instance</text>
+          <text x="1060" y="211" fill="#7a8399" font-size="15" font-family="'Caveat', cursive" text-anchor="middle">your OS</text>
+
+          <!-- legend labels -->
+          <text x="126" y="316" fill="#7a8399" font-size="16" font-family="'Caveat', cursive">one hop</text>
+          <text x="368" y="316" fill="#7a8399" font-size="16" font-family="'Caveat', cursive">a hand-off</text>
+          <text x="628" y="316" fill="#7a8399" font-size="16" font-family="'Caveat', cursive">async — it has not happened yet</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>Why draw it twice.</strong> The precise diagrams are for reading; this one is for remembering. Six boxes is the whole shape of the system: your code, one API, one policy check, one placement decision, one hypervisor, and the machine you asked for. Everything else — subnets, security groups, snapshots, user-data — is configuration that rides along inside those arrows.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         06 · ABBREVIATIONS
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">06</div>
+        <div>
+          <h2>Every abbreviation, expanded</h2>
+          <p class="section-sub">Grouped by the layer it belongs to. The third column says what the term actually does in an EC2 request, not just what the letters stand for.</p>
+        </div>
+      </div>
+
+      <table class="abbr">
+        <thead>
+          <tr><th>Term</th><th>Expansion</th><th>What it means here</th></tr>
+        </thead>
+        <tbody>
+          <tr class="group"><td colspan="3">Identity &amp; access</td></tr>
+          <tr><td>IAM</td><td>Identity and Access Management</td><td>The policy engine that answers “may this principal perform this action on this resource”. Evaluated per call, never cached by your code.</td></tr>
+          <tr><td>SCP</td><td>Service Control Policy</td><td>An organisation-level permission ceiling. It can only subtract — a broad identity policy still loses to a restrictive SCP.</td></tr>
+          <tr><td>STS</td><td>Security Token Service</td><td>Issues the temporary credentials behind every role. They expire, which is why long-running scripts need a refresh path.</td></tr>
+          <tr><td>SigV4</td><td>Signature Version 4</td><td>The HMAC scheme that signs the canonical request, the headers and a timestamp. Clock skew is the classic cause of a <code>403</code> here.</td></tr>
+          <tr><td>ARN</td><td>Amazon Resource Name</td><td>The canonical id for anything: <code>arn:aws:ec2:us-east-1:123456789012:instance/i-0abc…</code>.</td></tr>
+          <tr><td>KMS</td><td>Key Management Service</td><td>Managed keys for encrypted EBS volumes, snapshots and AMI copies. An unshared key makes an AMI unlaunchable even if it is visible.</td></tr>
+          <tr><td>MFA</td><td>Multi-Factor Authentication</td><td>A second factor the session must present before certain actions. Applies to the caller, not to the instance.</td></tr>
+          <tr><td>IMDS</td><td>Instance Metadata Service</td><td>The link-local HTTP endpoint at <code>169.254.169.254</code> that tells a guest its own id, AZ, and role credentials.</td></tr>
+          <tr><td>IMDSv2</td><td>Instance Metadata Service, version 2</td><td>Requires a session token from a <code>PUT</code> before any <code>GET</code>. Defeats SSRF because forged requests cannot set the token header.</td></tr>
+
+          <tr class="group"><td colspan="3">Compute &amp; network</td></tr>
+          <tr><td>EC2</td><td>Elastic Compute Cloud</td><td>The virtual-server service. “Elastic” means the fleet is shared and the capacity is not reserved for you unless you pay for it.</td></tr>
+          <tr><td>AMI</td><td>Amazon Machine Image</td><td>A launch recipe, not a disk: block-device mappings plus metadata such as architecture and UEFI boot data.</td></tr>
+          <tr><td>EBS</td><td>Elastic Block Store</td><td>Network-attached block storage. Latency can spike, which is why the default kernel command line relaxes the NVMe timeout.</td></tr>
+          <tr><td>ENA</td><td>Elastic Network Adapter</td><td>The PCIe NIC. If the <code>ena</code> driver is missing from the kernel and the initramfs, the guest has no network at all.</td></tr>
+          <tr><td>ENI</td><td>Elastic Network Interface</td><td>The virtual NIC object: MAC address, private IP, and the security groups attached to it. It survives instance termination if you detach it first.</td></tr>
+          <tr><td>NVMe</td><td>Non-Volatile Memory Express</td><td>The storage protocol EBS volumes speak inside a Nitro guest. <code>/dev/xvda</code> is only an API-level alias for <code>/dev/nvme0n1</code>.</td></tr>
+          <tr><td>PCIe</td><td>Peripheral Component Interconnect Express</td><td>The only bus the guest sees. There is no SATA, IDE or floppy controller on Nitro, which is why old AMIs fail.</td></tr>
+          <tr><td>vCPU</td><td>Virtual Central Processing Unit</td><td>One hyperthread on a physical core plus a fixed memory reservation. The instance type fixes how many PCIe functions you get.</td></tr>
+          <tr><td>AZ</td><td>Availability Zone</td><td>An isolated data-centre group inside a region. Snapshots are regional; volumes never cross an AZ boundary.</td></tr>
+          <tr><td>VPC</td><td>Virtual Private Cloud</td><td>The private network. The subnet, route table and internet gateway all live here, and all of them can block a launch.</td></tr>
+          <tr><td>SG</td><td>Security Group</td><td>A stateful virtual firewall on an ENI. Allows nothing by default — including SSH, which is why a “running” instance can be unreachable.</td></tr>
+          <tr><td>EIP</td><td>Elastic IP</td><td>A static public IPv4 address you can move between instances, unlike the ephemeral one assigned at launch.</td></tr>
+          <tr><td>HVM</td><td>Hardware Virtual Machine</td><td>Full hardware emulation of a standard PC. Nitro only supports HVM; the old paravirtual mode is gone.</td></tr>
+          <tr><td>ASG</td><td>Auto Scaling Group</td><td>Replaces unhealthy instances automatically. The reason a “terminated” instance sometimes comes back with a new id.</td></tr>
+
+          <tr class="group"><td colspan="3">Storage &amp; transport</td></tr>
+          <tr><td>S3</td><td>Simple Storage Service</td><td>Where snapshots live as incremental block chains. An AMI is metadata pointing at them, not a file you download.</td></tr>
+          <tr><td>IOPS</td><td>Input/Output Operations per Second</td><td>The sizing unit for <code>gp3</code> and <code>io2</code> volumes. Root-volume IOPS decide how fast boot actually completes.</td></tr>
+          <tr><td>TLS</td><td>Transport Layer Security</td><td>The encryption layer under HTTPS. The EC2 API requires 1.2 or newer.</td></tr>
+          <tr><td>HTTPS</td><td>HyperText Transfer Protocol Secure</td><td>HTTP inside TLS. Every AWS API call uses it — except IMDS, which is deliberately plain HTTP on a link-local address.</td></tr>
+          <tr><td>DNS</td><td>Domain Name System</td><td>Resolves <code>ec2.us-east-1.amazonaws.com</code> for the caller, and the instance’s own <code>ip-10-0-0-5.ec2.internal</code> name after boot.</td></tr>
+
+          <tr class="group"><td colspan="3">Boot &amp; firmware</td></tr>
+          <tr><td>UEFI</td><td>Unified Extensible Firmware Interface</td><td>The firmware interface Nitro guests boot with. It runs <code>.efi</code> executables from a FAT32 partition instead of a boot sector.</td></tr>
+          <tr><td>BIOS</td><td>Basic Input/Output System</td><td>The legacy firmware UEFI replaced. Xen-era AMIs often still expect it, and hang on a Nitro host.</td></tr>
+          <tr><td>OVMF</td><td>Open Virtual Machine Firmware</td><td>The open-source UEFI build (TianoCore/EDK2) AWS runs per guest. Same codebase as QEMU’s firmware.</td></tr>
+          <tr><td>POST</td><td>Power-On Self-Test</td><td>Used loosely here for firmware init: enumerate PCIe, initialise option ROMs, publish ACPI and DMI tables, pick a boot entry.</td></tr>
+          <tr><td>ACPI</td><td>Advanced Configuration and Power Interface</td><td>The table set that describes CPUs, interrupts and devices to the kernel — no hardware probing required.</td></tr>
+          <tr><td>DSDT</td><td>Differentiated System Description Table</td><td>The main ACPI bytecode blob: devices, power management, and the topology the kernel parses at boot.</td></tr>
+          <tr><td>MADT</td><td>Multiple APIC Description Table</td><td>Lists the CPUs and interrupt controllers — this is how the kernel discovers and starts the other vCPUs.</td></tr>
+          <tr><td>SMBIOS</td><td>System Management BIOS</td><td>The specification behind DMI: the identity card that <code>dmidecode</code> reads to report instance type and AZ.</td></tr>
+          <tr><td>GPT</td><td>GUID Partition Table</td><td>The partition map firmware reads on the root volume. A GPT with no bootable entry means “No bootable device”.</td></tr>
+          <tr><td>MBR</td><td>Master Boot Record</td><td>The legacy 512-byte partition table and first-stage bootstrap. Still fine for BIOS-boot images, invisible to UEFI.</td></tr>
+          <tr><td>ESP</td><td>EFI System Partition</td><td>A FAT32 partition with a well-known type GUID. Firmware mounts it and runs <code>\EFI\BOOT\BOOTX64.EFI</code>.</td></tr>
+          <tr><td>GRUB</td><td>GRand Unified Bootloader</td><td>Reads <code>grub.cfg</code>, loads the kernel and initramfs, and supplies the command line. Generated, never hand-edited.</td></tr>
+          <tr><td>bzImage</td><td>big zImage</td><td>The compressed kernel file: a legacy setup header plus a compressed 64-bit payload with an EFI stub.</td></tr>
+          <tr><td>initramfs</td><td>initial RAM filesystem</td><td>A cpio archive the kernel unpacks into <code>tmpfs</code>. It carries the drivers needed to mount the real root.</td></tr>
+          <tr><td>initrd</td><td>initial RAM disk</td><td>The older block-device form of the same idea — you needed a filesystem driver just to read the thing holding your drivers.</td></tr>
+          <tr><td>cpio</td><td>copy in/out</td><td>The archive format initramfs is packed in, chosen because the kernel can unpack it with no driver at all.</td></tr>
+          <tr><td>GDT</td><td>Global Descriptor Table</td><td>The segment descriptor table built early in <code>start_kernel()</code>, before memory management is usable.</td></tr>
+          <tr><td>IDT</td><td>Interrupt Descriptor Table</td><td>Maps interrupt vectors to handlers. Built alongside the GDT so the CPU can take faults and timers.</td></tr>
+          <tr><td>APIC</td><td>Advanced Programmable Interrupt Controller</td><td>The interrupt controller used to wake secondary vCPUs with INIT-SIPI during SMP bring-up.</td></tr>
+          <tr><td>SMP</td><td>Symmetric Multi-Processing</td><td>Bringing every vCPU online. Until it finishes, the guest is effectively single-threaded.</td></tr>
+          <tr><td>VFS</td><td>Virtual File System</td><td>The kernel layer behind <code>mount</code>. <code>VFS: Unable to mount root fs on unknown-block(0,0)</code> means the <code>root=</code> spec resolved to no device.</td></tr>
+          <tr><td>PID</td><td>Process Identifier</td><td>PID 1 is the first userspace process — <code>/sbin/init</code>, normally systemd. <code>switch_root</code> replaces the initramfs’s PID 1 with the real one.</td></tr>
+
+          <tr class="group"><td colspan="3">Formats &amp; interfaces</td></tr>
+          <tr><td>API</td><td>Application Programming Interface</td><td>The contract behind <code>RunInstances</code>. EC2 uses an RPC-style API, not a REST one — every call is an action name plus parameters.</td></tr>
+          <tr><td>SDK</td><td>Software Development Kit</td><td>Language bindings that build the signed request for you. <code>boto3</code> is the Python one and does its own retries.</td></tr>
+          <tr><td>CLI</td><td>Command Line Interface</td><td>The <code>aws</code> command. It is a thin wrapper over the same API, so it inherits every policy and quota limit.</td></tr>
+          <tr><td>IaC</td><td>Infrastructure as Code</td><td>Terraform, CloudFormation, CDK — declaring servers in files so the request is reviewable and repeatable.</td></tr>
+          <tr><td>JSON</td><td>JavaScript Object Notation</td><td>The response format of the EC2 API. Partial failures appear inside it, not as HTTP errors.</td></tr>
+          <tr><td>YAML</td><td>YAML Ain’t Markup Language</td><td>The format of <code>#cloud-config</code> user-data. Indentation is significant, and a tab silently breaks it.</td></tr>
+          <tr><td>UUID</td><td>Universally Unique Identifier</td><td>The 128-bit id a filesystem gets at creation. <code>root=UUID=…</code> is why a restored snapshot with a stale id fails to boot.</td></tr>
+          <tr><td>CIDR</td><td>Classless Inter-Domain Routing</td><td>Subnet notation such as <code>10.0.0.0/24</code>. Its size decides how many free IPs a launch can consume.</td></tr>
+
+          <tr class="group"><td colspan="3">Operations &amp; security</td></tr>
+          <tr><td>SSH</td><td>Secure Shell</td><td>The remote shell you are trying to reach. Working SSH is the practical definition of “the instance is up”.</td></tr>
+          <tr><td>SSM</td><td>Systems Manager</td><td>Runs commands through an outbound agent instead of inbound SSH — the fix when a security group blocks port 22.</td></tr>
+          <tr><td>EIC</td><td>EC2 Instance Connect</td><td>Pushes a short-lived public key through the API, so no static key has to live on the instance.</td></tr>
+          <tr><td>SSRF</td><td>Server-Side Request Forgery</td><td>The attack IMDSv2 exists to block: tricking your app into fetching metadata credentials on its own network path.</td></tr>
+          <tr><td>HA</td><td>High Availability</td><td>Surviving the loss of an AZ. One instance is never HA, no matter how healthy its status checks are.</td></tr>
+          <tr><td>RTO</td><td>Recovery Time Objective</td><td>How long you can afford to be down. It decides whether you rebuild from an AMI or restore a snapshot.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      <span>AWS EC2 · request anatomy · 6 layers, 11 messages, 7 states</span>
+      <span>November 2026</span>
+    </div>
+
+  </div>
+</body>
+</html>
