@@ -65,7 +65,7 @@ import { LaserTool } from './tools/laser.js';
 import { StampTool } from './tools/stamp.js';
 import { MathOverlayTool } from './tools/math-tools.js';
 import { handleImageFiles, setupImagePasteAndDrop } from './tools/image.js';
-import { buildDevOpsDiagramPacks } from './ui/registry.js';
+import { buildDevOpsDiagramPacks, ICONS, TOOL_REGISTRY } from './ui/registry.js';
 import { initToolbar } from './ui/toolbar.js';
 import { initPropsPanel } from './ui/props-panel.js';
 import { initPagesBar } from './ui/pages.js';
@@ -195,6 +195,22 @@ export class WhiteboardApp {
     this.classroomTool = new ClassroomTool(this);
 
     this.collab = new CollabClient(this);
+
+    // Production-build startup check: verify critical UI modules loaded.
+    // A missing import (e.g. ICONS) would silently break rendering; fail loud
+    // with a visible error instead of a blank canvas.
+    const _missing = [];
+    if (typeof ICONS === 'undefined') _missing.push('ICONS');
+    if (typeof TOOL_REGISTRY === 'undefined') _missing.push('TOOL_REGISTRY');
+    if (typeof BUILTIN_TEMPLATES === 'undefined') _missing.push('BUILTIN_TEMPLATES');
+    if (_missing.length > 0) {
+      const msg = 'StudioBoard failed to initialize: missing module(s) ' + _missing.join(', ');
+      console.error(msg);
+      const el = document.getElementById('wb-app');
+      if (el) el.innerHTML = `<div style="padding:24px;font-family:sans-serif;color:#dc2626;"><strong>${msg}</strong><p style="font-size:12px;margin-top:8px;">Reload the page. If this persists, clear your browser cache and try again.</p></div>`;
+      return;
+    }
+
     this.dialogs = initDialogs(this);
     this.classroomUI = initClassroomUI(this);
     this.toolbarUI = initToolbar(this);
@@ -827,6 +843,8 @@ export class WhiteboardApp {
     if (this.collab.followingTeacher) this.collab.setFollowTeacher(false);
     const page = this.getPage();
     const cam = page.camera;
+    // Reject non-finite zoom factors to keep the camera valid.
+    if (!Number.isFinite(factor) || factor <= 0) return;
     const cx = centerScreen ? centerScreen.x : this.renderer.width / 2;
     const cy = centerScreen ? centerScreen.y : this.renderer.height / 2;
     const wx = (cx - cam.x) / cam.zoom;
@@ -862,7 +880,13 @@ export class WhiteboardApp {
     const insets = this.getOpenPanelInsets();
     const availW = Math.max(160, this.renderer.width - insets.left - insets.right - 48);
     const availH = Math.max(140, this.renderer.height - insets.top - insets.bottom - 48);
-    const zoom = Math.max(0.15, Math.min(2.5, Math.min(availW / b.w, availH / b.h)));
+    // Guard against NaN/Infinity from an unsized renderer or degenerate bounds.
+    if (!Number.isFinite(availW) || !Number.isFinite(availH) ||
+        !Number.isFinite(b.w) || !Number.isFinite(b.h) ||
+        b.w <= 0 || b.h <= 0) return false;
+    const zoomRaw = Math.min(availW / b.w, availH / b.h);
+    if (!Number.isFinite(zoomRaw)) return false;
+    const zoom = Math.max(0.15, Math.min(2.5, zoomRaw));
     const page = this.getPage();
     const centerScreenX = insets.left + availW / 2 + 24;
     const centerScreenY = insets.top + availH / 2 + 24;

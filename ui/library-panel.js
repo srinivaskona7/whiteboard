@@ -193,7 +193,22 @@ export function initLibraryPanel(app) {
     });
 
     const content = panel.querySelector('#wb-library-content');
-    renderTabContent();
+    try {
+      renderTabContent();
+    } catch (err) {
+      content.innerHTML = `
+        <div class="wb-muted" style="padding:20px;text-align:center;">
+          <strong>Library failed to load</strong>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:6px;">
+            ${escapeXml(String(err?.message || err))}
+          </p>
+          <button type="button" class="wb-btn wb-sm wb-primary" id="btn-library-retry" style="margin-top:10px;">Retry</button>
+        </div>
+      `;
+      content.querySelector('#btn-library-retry')?.addEventListener('click', () => {
+        renderTabContent();
+      });
+    }
   }
 
   // Rebuilds only the tab grid. Used live during the size slider drag —
