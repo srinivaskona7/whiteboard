@@ -146,6 +146,187 @@
       color: var(--color-ink);
     }
 
+    /* ── Step-by-step walkthrough ─────────────────────────────────── */
+    .walkthrough { margin-top: 3.5rem; }
+
+    .section-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.64rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-bottom: 0.5rem;
+    }
+
+    .walkthrough h2 {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      font-weight: 400;
+      letter-spacing: -0.015em;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .section-intro {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 68ch;
+      margin-bottom: 0.75rem;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 104px 1fr;
+      gap: 1.75rem;
+      padding: 1.75rem 0;
+      border-top: 1px solid rgba(45,49,66,0.10);
+    }
+
+    .step-index {
+      font-family: var(--font-mono);
+      font-size: 1.375rem;
+      font-weight: 500;
+      line-height: 1;
+      color: rgba(45,49,66,0.28);
+    }
+
+    .step-focal .step-index { color: var(--color-accent); }
+
+    .step-layer {
+      display: block;
+      margin-top: 0.6rem;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      line-height: 1.55;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+    }
+
+    .step h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      color: var(--color-ink);
+      margin-bottom: 0.4rem;
+    }
+
+    .step-lede {
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 78ch;
+      margin-bottom: 0.75rem;
+    }
+
+    .step ul { list-style: none; max-width: 84ch; }
+
+    .step li {
+      position: relative;
+      padding-left: 0.9rem;
+      margin-bottom: 0.35rem;
+      font-size: 0.8125rem;
+      line-height: 1.65;
+      color: var(--color-muted);
+    }
+
+    .step li::before {
+      content: '·';
+      position: absolute;
+      left: 0.15rem;
+      color: rgba(45,49,66,0.3);
+    }
+
+    .walkthrough code {
+      font-family: var(--font-mono);
+      font-size: 0.92em;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.055);
+      border-radius: 3px;
+      padding: 0.05em 0.32em;
+    }
+
+    .walkthrough pre {
+      background: #ffffff;
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 0.9rem 1rem;
+      margin: 0.9rem 0 0.25rem;
+      overflow-x: auto;
+    }
+
+    .walkthrough pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.72rem;
+      line-height: 1.7;
+      color: var(--color-ink);
+      white-space: pre;
+    }
+
+    .step-note {
+      display: grid;
+      grid-template-columns: 84px 1fr;
+      gap: 0.3rem 0.9rem;
+      margin-top: 0.9rem;
+      max-width: 84ch;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      line-height: 1.55;
+    }
+
+    .step-note dt {
+      color: var(--color-soft);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .step-note dd { color: var(--color-muted); }
+
+    .step-note code { white-space: nowrap; }
+
+    .glossary {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+      font-size: 0.8125rem;
+    }
+
+    .glossary th {
+      text-align: left;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      padding: 0.5rem 1rem 0.5rem 0;
+      border-bottom: 1px solid rgba(45,49,66,0.20);
+    }
+
+    .glossary td {
+      padding: 0.6rem 1rem 0.6rem 0;
+      vertical-align: top;
+      line-height: 1.6;
+      color: var(--color-muted);
+      border-bottom: 1px solid rgba(45,49,66,0.07);
+    }
+
+    .glossary td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--color-ink);
+      white-space: nowrap;
+      padding-right: 1.25rem;
+    }
+
+    @media (max-width: 640px) {
+      .step { grid-template-columns: 1fr; gap: 0.75rem; }
+      .step-note { grid-template-columns: 1fr; }
+    }
+
     .footer {
       margin-top: 2rem;
       padding-top: 1.5rem;
@@ -437,6 +618,241 @@
           <li>Status checks: instance reachability first, then system</li>
         </ul>
       </div>
+    </div>
+
+    <div class="walkthrough">
+      <p class="section-eyebrow">Step by step · internals</p>
+      <h2>What actually happens in each stage</h2>
+      <p class="section-intro">The diagram is the map; this is the wiring. Each stage below names what runs, where the boundary is crossed, which paths and parameters decide the outcome, and the failure signature you will actually see when it breaks.</p>
+
+      <div class="step">
+        <div>
+          <div class="step-index">01</div>
+          <span class="step-layer">EC2<br>control plane</span>
+        </div>
+        <div>
+          <h3>Instance request</h3>
+          <p class="step-lede">An authenticated API call creates <em>intent</em>, not hardware. Everything after this is the control plane trying to make the intent true.</p>
+          <ul>
+            <li><code>RunInstances</code> is SigV4-signed against the regional EC2 endpoint. The response returns an <code>i-…</code> id immediately in state <code>pending</code> — the launch itself is asynchronous.</li>
+            <li>IAM evaluates SCPs, identity policy, permission boundary and resource policy. <code>ec2:RunInstances</code> also needs rights on the <em>referenced</em> resources: the AMI, its snapshot, the subnet, security groups, key pair, and <code>ec2:CreateVolume</code> for EBS-backed AMIs.</li>
+            <li>Fields that change the boot later: <code>ImageId</code>, <code>InstanceType</code>, <code>BlockDeviceMappings</code> (root size, type, <code>DeleteOnTermination</code>), <code>UserData</code> (≤ 16 KB, base64), <code>MetadataOptions</code> (<code>HttpTokens=required</code>, <code>HttpPutResponseHopLimit</code>), <code>IamInstanceProfile</code>.</li>
+            <li>Validation here is synchronous and cheap: AMI state and visibility, AZ capacity for the type, free IPs in the subnet, vCPU service quota, EBS attachment limits.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>i-…</code> id · <code>pending</code> state · resolved launch template version</dd>
+            <dt>Fails as</dt>
+            <dd><code>InsufficientInstanceCapacity</code>, <code>VcpuLimitExceeded</code>, <code>InvalidAMIID.NotFound</code>, <code>UnauthorizedOperation</code> — all before any hardware exists.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">02</div>
+          <span class="step-layer">Nitro<br>hypervisor</span>
+        </div>
+        <div>
+          <h3>Host placement and provisioning</h3>
+          <p class="step-lede">The placement service picks the physical host; the Nitro host agent then builds a guest around your AMI's disk image.</p>
+          <ul>
+            <li>Placement bin-packs against free capacity in the AZ, honouring tenancy (shared, dedicated, host). Snapshots are regional but volumes are AZ-scoped — a snapshot not yet resident in the AZ is copied from S3 before first use, which is why a first launch in a new AZ is slower.</li>
+            <li>vCPUs are allocated as hyperthreads on physical cores plus a fixed memory reservation. The instance type decides how many Nitro PCIe functions you get.</li>
+            <li>Devices are presented as plain PCIe: the ENA network adapter, an NVMe controller for EBS, and instance-store NVMe when the type has it. Nitro moves the I/O off-box, so the guest never sees a SATA/AHCI controller.</li>
+            <li>The root EBS volume is created from the AMI snapshot and attached. The guest sees <code>/dev/nvme0n1</code> while the API still calls it <code>/dev/xvda</code> — a naming compatibility shim, not a device.</li>
+            <li>The volume's first sector must carry a valid MBR/GPT with the active flag set, or the firmware finds nothing to execute.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd>root volume <code>attaching</code> → <code>attached</code> · PCIe device map · DMI/SMBIOS identity</dd>
+            <dt>Fails as</dt>
+            <dd>stuck in <code>pending</code> then <code>shutting-down</code>, or <code>Client.VolumeLimitExceeded</code>. A blank or garbage root volume gives “No bootable device” at step 3.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">03</div>
+          <span class="step-layer">Firmware</span>
+        </div>
+        <div>
+          <h3>UEFI and device bring-up</h3>
+          <p class="step-lede">Nitro guests boot with UEFI, not BIOS. The firmware is AWS's OVMF-derived build — there is no POST in the sense you would find on a laptop.</p>
+          <ul>
+            <li>Execution walks <code>SEC</code> → <code>PEI</code> → <code>DXE</code>. DXE enumerates PCIe and publishes the ACPI tables (<code>DSDT</code>, <code>MADT</code>, <code>SRAT</code>) plus DMI/SMBIOS — exactly what <code>dmidecode</code> reports later: instance type, AZ, system UUID.</li>
+            <li>The NVMe and ENA option ROMs initialise here, which is why disks and the NIC exist before any OS driver loads.</li>
+            <li>Boot order is resolved from the AMI's UEFI boot entries (<code>HD()</code>, <code>CDROM()</code>); the default is the root volume. <code>--uefi-data</code> can register a custom entry, and Secure Boot verifies the loader's PE signature before running it.</li>
+            <li>Firmware reads the GPT, finds the EFI System Partition, loads <code>\EFI\BOOT\BOOTX64.EFI</code> or <code>\EFI\amazon\grubx64.efi</code>, then calls <code>ExitBootServices()</code>. From that instant the firmware is gone and the OS owns the machine.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd>ACPI + DMI tables · ESP contents · boot entry in NVRAM</dd>
+            <dt>Fails as</dt>
+            <dd>“No bootable device” on the serial console, an empty system log, or the instance stopping itself. A Xen-era AMI on Nitro shows a SeaBIOS screen and then hangs.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">04</div>
+          <span class="step-layer">Firmware<br>→ loader</span>
+        </div>
+        <div>
+          <h3>Boot loader</h3>
+          <p class="step-lede">GRUB's only job is to pick a kernel and hand it a command line. On EC2, that command line is where most boot bugs are written.</p>
+          <ul>
+            <li><code>grubx64.efi</code> loads its modules and reads <code>grub.cfg</code> — <code>/boot/grub2/grub.cfg</code> on Amazon Linux and RHEL, <code>/boot/grub/grub.cfg</code> on Ubuntu. It is generated from <code>/etc/default/grub</code> plus <code>/etc/grub.d/*</code> by <code>grub2-mkconfig</code> or <code>update-grub</code>.</li>
+            <li>Each entry is a <code>linux</code> + <code>initrd</code> pair: it decompresses <code>vmlinuz</code> (a bzImage — 16-bit setup header plus a compressed 64-bit payload) and stages <code>initramfs</code> in memory.</li>
+            <li>Parameters that matter on EC2: <code>root=UUID=…</code>, <code>console=tty0 console=ttyS0,115200n8</code> (this is what makes output reach the system log and serial console), <code>ro</code>, <code>nvme_core.io_timeout=4294967295</code> to survive EBS latency spikes, <code>crashkernel=</code> for kdump, <code>ima_policy=</code> for measured boot.</li>
+            <li>Control transfers to the kernel's EFI stub. There is no boot sector and no <code>int 19h</code>.</li>
+          </ul>
+          <pre><code>menuentry 'Amazon Linux (6.1.x)' --class fedora {
+    linux /vmlinuz-6.1.xx root=UUID=6f1a… ro console=tty0 \
+          console=ttyS0,115200n8 nvme_core.io_timeout=4294967295
+    initrd /initramfs-6.1.xx.img
+}</code></pre>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>vmlinuz-*</code> · <code>initramfs-*</code> · <code>/boot/grub2/grub.cfg</code> · <code>/etc/default/grub</code></dd>
+            <dt>Fails as</dt>
+            <dd><code>error: file '/vmlinuz-…' not found</code>, <code>unknown filesystem</code>, or the <code>grub&gt;</code> rescue prompt. Repair from a rescue instance with <code>chroot</code> then <code>grub2-install</code> / <code>grub2-mkconfig</code>.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step step-focal">
+        <div>
+          <div class="step-index">05</div>
+          <span class="step-layer">Linux<br>kernel</span>
+        </div>
+        <div>
+          <h3>Kernel load <span aria-hidden="true">★</span></h3>
+          <p class="step-lede">The kernel boots twice: once into the initramfs, then into the real root. This is the first stage where a broken AMI fails quietly instead of loudly.</p>
+          <ul>
+            <li>The EFI stub decompresses into long mode. <code>start_kernel()</code> builds the GDT/IDT and paging, then parses <code>boot_params</code> — the command line handed over by GRUB.</li>
+            <li>Bring-up order: <code>memblock</code> → buddy allocator → SMP via APIC INIT-SIPI → ACPI parse → timers (TSC/HPET) → scheduler → <code>do_initcalls()</code> at levels <code>early</code>, <code>core</code>, <code>postcore</code>, <code>arch</code>, <code>subsys</code>, <code>fs</code>, <code>device</code>, <code>late</code>.</li>
+            <li>Built-in and initramfs drivers probe in parallel. On Nitro, <code>nvme</code>, <code>nvme_core</code>, <code>ena</code> and <code>xfs</code>/<code>ext4</code> must be reachable here, or the root device never appears.</li>
+            <li>Hardware stays fully virtual: no SMBIOS string matching or ACPI DMI quirks. PCIe IDs and the ACPI tables are all the kernel sees.</li>
+            <li>Finally <code>init/main.c</code> unpacks the cpio into the tmpfs <code>rootfs</code>, frees init memory, and executes <code>/init</code>.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>dmesg</code> · <code>/proc/cmdline</code> · <code>/sys/firmware/acpi</code> · <code>uname -r</code></dd>
+            <dt>Fails as</dt>
+            <dd><code>VFS: Unable to mount root fs on unknown-block(0,0)</code>, <code>Kernel panic - not syncing: No working init found</code>, or “elastic network adapter not found” — the classic Xen-built AMI launched on Nitro.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">06</div>
+          <span class="step-layer">Linux<br>kernel</span>
+        </div>
+        <div>
+          <h3>Root pivot</h3>
+          <p class="step-lede">The initramfs is a life-support shell: mount the real root, then replace itself with it.</p>
+          <ul>
+            <li><code>/init</code> is dracut's shell script (on Ubuntu, <code>initramfs-tools</code> plus busybox). It mounts <code>/proc</code>, <code>/sys</code>, <code>/dev</code>, coldplugs udev with <code>udevadm trigger</code>, loads <code>modules-load.d</code> entries and waits for <code>root=UUID=</code> to resolve under <code>/dev/disk/by-uuid/</code>.</li>
+            <li>Optional stacks activate here in order: dm-crypt/LUKS, LVM (<code>vgchange -ay</code>), multipath, iSCSI/NBD, then <code>fsck</code> according to <code>fsck.mode=</code>.</li>
+            <li>Root is mounted read-only at <code>/sysroot</code>, <code>/dev</code> <code>/proc</code> <code>/sys</code> are moved over, and <code>switch_root</code> performs <code>pivot_root</code> plus an unlink of the initramfs, reclaiming its memory and replacing PID 1.</li>
+            <li>Rebuild commands: <code>dracut -f --kver $(uname -r) --add-drivers "ena nvme"</code> on RHEL/AL, or <code>update-initramfs -u -k all</code> on Debian/Ubuntu.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>/sysroot</code> · <code>/run/initramfs</code> · <code>initramfs-*.img</code></dd>
+            <dt>Fails as</dt>
+            <dd>A dracut emergency shell, or an endless “Waiting for device /dev/disk/by-uuid/…”. Both mean the initramfs cannot see the volume — almost always a missing <code>ena</code>/<code>nvme</code>/<code>xfs</code> module, or a stale UUID after a snapshot restore.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">07</div>
+          <span class="step-layer">systemd</span>
+        </div>
+        <div>
+          <h3>PID 1 and the unit graph</h3>
+          <p class="step-lede">Boot on the real root is a dependency graph, not a sequence of runlevels.</p>
+          <ul>
+            <li><code>/usr/lib/systemd/systemd</code> becomes PID 1, re-execs into a clean namespace, mounts <code>/run</code>, and <code>systemd-fstab-generator</code> turns <code>/etc/fstab</code> into <code>.mount</code> and <code>.swap</code> units.</li>
+            <li>Ordering is a DAG: <code>After=</code>/<code>Before=</code> control sequence, <code>Requires=</code>/<code>Wants=</code> control failure propagation. Socket activation (<code>ssh.socket</code>) lets services come up in parallel.</li>
+            <li>The EC2 ordering in practice: <code>systemd-remount-fs</code> (root read-write) → <code>local-fs.target</code> → <code>cloud-init-local.service</code> → <code>network.target</code> → <code>network-online.target</code> → <code>cloud-init.service</code> → <code>sshd.service</code> → <code>multi-user.target</code>.</li>
+            <li><code>systemd-analyze</code> splits the boot into firmware, loader, kernel and userspace; <code>critical-chain</code> shows what is actually on the slow path.</li>
+          </ul>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>journalctl -b</code> · <code>systemctl list-units --failed</code> · <code>systemd-analyze blame</code></dd>
+            <dt>Fails as</dt>
+            <dd>“Reached target” never prints and SSH never answers. A unit with <code>After=</code> on a target that never activates blocks everything queued behind it.</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <div class="step-index">08</div>
+          <span class="step-layer">cloud-init</span>
+        </div>
+        <div>
+          <h3>First-boot configuration</h3>
+          <p class="step-lede">The instance is already running by now. cloud-init is what makes it <em>yours</em>: hostname, keys, packages, user-data.</p>
+          <ul>
+            <li>Four ordered units: <code>cloud-init-local</code> (before network, local datasource) → <code>cloud-init</code> (network up, <strong>DatasourceEc2</strong>) → <code>cloud-config</code> (modules: users-groups, ssh, write-files) → <code>cloud-final</code> (<code>runcmd</code>, package installs).</li>
+            <li>Metadata comes from the link-local <code>169.254.169.254</code>, never DNS. IMDSv2 requires a <code>PUT /latest/api/token</code> with <code>X-aws-ec2-metadata-token-ttl-seconds</code>; every subsequent <code>GET</code> carries the session token.</li>
+            <li><code>user-data</code> is dispatched by content: <code>#cloud-config</code> YAML runs modules, a <code>#!</code> shebang runs as a script, MIME multipart runs every part, gzip is decompressed. The ceiling is 16 KB.</li>
+            <li>Also seeded here: <code>/etc/hostname</code> (<code>ip-10-0-0-5</code>), <code>authorized_keys</code> from the key pair, regenerated SSH host keys, and IAM role credentials from <code>/latest/meta-data/iam/security-credentials/&lt;role&gt;</code>.</li>
+            <li>EC2 health is then two checks: <em>instance status</em> (hypervisor reachability) and <em>system status</em> (OS and ENA responding). Both green gives <code>2/2 checks passed</code>.</li>
+          </ul>
+          <pre><code>TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/iam/security-credentials/</code></pre>
+          <dl class="step-note">
+            <dt>Artifacts</dt>
+            <dd><code>/var/lib/cloud</code> · <code>/var/log/cloud-init-output.log</code> · <code>/run/cloud-init/result.json</code></dd>
+            <dt>Fails as</dt>
+            <dd><code>cloud-init status --long</code> reporting <code>error</code> after a two-minute metadata timeout — a missing route, IMDS disabled, or <code>HttpPutResponseHopLimit=1</code> breaking containers.</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="walkthrough" style="margin-top:2.5rem">
+      <p class="section-eyebrow">Reference</p>
+      <h2>Technical terms</h2>
+      <table class="glossary">
+          <thead>
+            <tr><th>Term</th><th>What it means in this chain</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>AMI</td><td>Amazon Machine Image — root volume snapshots plus launch metadata: architecture, block device mapping, UEFI boot data, default user-data.</td></tr>
+            <tr><td>Snapshot</td><td>Block-level point-in-time copy of an EBS volume, stored in S3. Regional; a volume created from it is AZ-scoped.</td></tr>
+            <tr><td>EBS</td><td>Elastic Block Store — network-attached block storage, presented to the guest as an NVMe device.</td></tr>
+            <tr><td>Nitro</td><td>AWS's offloaded virtualisation platform: network, storage and management I/O run on dedicated cards rather than in the hypervisor's software path.</td></tr>
+            <tr><td>ENA</td><td>Elastic Network Adapter — the PCIe NIC at 10–100 Gbps. Needs the <code>ena</code> driver present in the kernel or initramfs.</td></tr>
+            <tr><td>NVMe</td><td>Non-Volatile Memory Express — the PCIe storage protocol EBS volumes speak. <code>/dev/xvda</code> is only an API alias.</td></tr>
+            <tr><td>UEFI / OVMF</td><td>Unified Extensible Firmware Interface; OVMF is the open-source reference implementation AWS builds its guest firmware from.</td></tr>
+            <tr><td>ESP</td><td>EFI System Partition — a FAT32 partition holding the <code>.efi</code> loaders that firmware executes.</td></tr>
+            <tr><td>GPT</td><td>GUID Partition Table — the partition map firmware reads. MBR is the legacy alternative.</td></tr>
+            <tr><td>GRUB 2</td><td>The boot loader. Reads <code>grub.cfg</code>, loads kernel and initramfs, and supplies the kernel command line.</td></tr>
+            <tr><td>bzImage / vmlinuz</td><td>The compressed kernel image: a 16-bit setup header plus a compressed 64-bit payload whose EFI stub decompresses itself.</td></tr>
+            <tr><td>initramfs</td><td>A cpio archive unpacked into an in-memory tmpfs. Its <code>/init</code> mounts the real root before handing over. <em>initrd</em> is the older block-device form of the same idea.</td></tr>
+            <tr><td>dracut</td><td>The initramfs generator on RHEL and Amazon Linux. <code>initramfs-tools</code> does the same job on Debian and Ubuntu.</td></tr>
+            <tr><td>pivot_root / switch_root</td><td>The syscall, and dracut's wrapper, that swap the initramfs root for the real root and replace PID 1.</td></tr>
+            <tr><td>systemd unit / target</td><td>PID 1 and its object model: a unit is one managed thing (<code>.service</code>, <code>.mount</code>, <code>.socket</code>); a target groups units and is not a runlevel.</td></tr>
+            <tr><td>cloud-init</td><td>First-boot configuration agent — four ordered systemd units that read metadata and user-data and apply them.</td></tr>
+            <tr><td>IMDS / IMDSv2</td><td>Instance Metadata Service on 169.254.169.254. v2 requires a session token obtained by <code>PUT</code>, which defends against SSRF.</td></tr>
+            <tr><td>user-data</td><td>The ≤ 16 KB blob passed to <code>RunInstances</code>: cloud-config YAML, a script, or MIME multipart.</td></tr>
+            <tr><td>Status checks</td><td>Instance status = hypervisor reachability. System status = OS and ENA responsiveness. <code>2/2</code> is healthy.</td></tr>
+            <tr><td>Serial console</td><td>Out-of-band text I/O via <code>console=ttyS0</code> — the only way to see firmware, GRUB and early kernel output.</td></tr>
+      </tbody>
+      </table>
     </div>
 
     <div class="footer">
