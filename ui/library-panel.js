@@ -22,7 +22,7 @@ import { renderWorkflowsTab } from './workflows-tab.js';
 import { renderTopicsTab } from './library-topics-tab.js';
 import { LIBRARY_TOPICS, classifyCategory } from '../stencils/library-topics.js';
 import { PACK_INDEX } from '../stencils/icon-pack-index.js';
-import { buildDevOpsDiagramPacks } from './registry.js';
+import { buildDevOpsDiagramPacks, ICONS } from './registry.js';
 import { escapeXml } from '../render/svg-export.js';
 import { saveWorkspacePreferences } from '../scene/storage.js';
 
