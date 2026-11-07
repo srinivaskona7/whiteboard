@@ -655,7 +655,7 @@ body:has(.wb-left-panel:not(.wb-hidden)) .wb-brush-drawer { left: 356px; }
 .wb-empty-state {
   position: absolute; inset: 0; z-index: 10;
   display: flex; align-items: center; justify-content: center;
-  background: var(--bg-surface);
+  background: transparent;
   pointer-events: none;
 }
 .wb-empty-state-card {

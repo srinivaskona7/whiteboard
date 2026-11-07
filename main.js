@@ -115,6 +115,7 @@ export class WhiteboardApp {
     this.currentStyle = { ...DEFAULT_STYLE };
     this.nextStampNumber = 1;
     this.hoveredElement = null;
+    this.emptyStateDismissed = false;
     this.hoveredPort = null;
     this.connectorPreview = null;
     this.placementPreview = null;
@@ -505,6 +506,10 @@ export class WhiteboardApp {
   toggleEmptyState() {
     const el = document.getElementById('wb-empty-state');
     if (!el) return;
+    if (this.emptyStateDismissed) {
+      el.classList.add('wb-hidden');
+      return;
+    }
     const show =
       !this.presentState.active &&
       this.viewMode === 'diagram' &&
@@ -622,6 +627,9 @@ export class WhiteboardApp {
     }
     this.cancelActiveInteractions();
     this.activeTool = toolId;
+    if (toolId !== 'select' && toolId !== 'hand') {
+      this.emptyStateDismissed = true;
+    }
     // Dismiss empty state guidance once user selects any drawing tool
     document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
     // Each ink tool keeps its own natural preset instead of inheriting whichever
@@ -2461,14 +2469,17 @@ export class WhiteboardApp {
 
     // Empty board guidance actions
     document.getElementById('btn-empty-blank')?.addEventListener('click', () => {
+      this.emptyStateDismissed = true;
       document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
     });
     document.getElementById('btn-empty-template')?.addEventListener('click', () => {
+      this.emptyStateDismissed = true;
       document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
       app.togglePanel('wb-library-panel');
       app.libraryUI?.update?.();
     });
     document.getElementById('btn-empty-workflows')?.addEventListener('click', () => {
+      this.emptyStateDismissed = true;
       document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
       app.togglePanel('wb-library-panel');
       // Switch library to the Workflows tab by clicking its tab button if present.
