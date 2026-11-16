@@ -53,7 +53,10 @@ import { createCodeSnippetElement } from './scene/code-snippet.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
 import { buildQuickAdd } from './scene/quick-add.js';
 import { VersionHistory, formatVersionTime } from './scene/version-history.js';
+import { indexedDBBackup } from './scene/indexeddb-backup.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
+import { initTeachingQuickbar } from './ui/teaching-quickbar.js';
+import { initPageNavigator } from './ui/page-navigator.js';
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
 import { CanvasRenderer, spotlightEscapeAction } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
@@ -187,6 +190,13 @@ export class WhiteboardApp {
     // Version history for board snapshots
     this.versionHistory = new VersionHistory();
 
+    // IndexedDB auto-backup (higher capacity than localStorage)
+    this.indexedDBBackup = indexedDBBackup;
+
+    // Teaching UI modules (initialized after DOM ready)
+    this.teachingQuickbar = null;
+    this.pageNavigator = null;
+
     this.canvas = document.getElementById('wb-canvas');
     this.minimapCanvas = document.getElementById('wb-minimap');
     this.canvasWrap = document.getElementById('wb-canvas-wrap');
@@ -275,6 +285,15 @@ export class WhiteboardApp {
     this.updateUI();
     this.requestRender();
     this._refreshStorageSize();
+
+    // Initialize IndexedDB backup and start auto-save
+    this.indexedDBBackup.init().then(() => {
+      this.indexedDBBackup.startAutoSave(this);
+    });
+
+    // Initialize teaching UI modules
+    this.teachingQuickbar = initTeachingQuickbar(this);
+    this.pageNavigator = initPageNavigator(this);
   }
 
   get fadingInk() {
@@ -779,6 +798,194 @@ export class WhiteboardApp {
     this.requestRender();
     await this._refreshStorageSize();
     this.dialogs.showToast('Board cleared.', 'success');
+  }
+
+  // ── Teaching Efficiency: Style Presets ────────────────────────────────
+
+  applyTeachingStyle(styleId) {
+    const TEACHING_STYLES = {
+      correct: { stroke: '#16a34a', fill: '#dcfce7', textColor: '#166534', label: 'Correct ✓' },
+      incorrect: { stroke: '#dc2626', fill: '#fee2e2', textColor: '#991b1b', label: 'Incorrect ✗' },
+      highlight: { stroke: '#ca8a04', fill: '#fef3c7', textColor: '#92400e', label: 'Highlight ★' },
+      neutral: { stroke: '#64748b', fill: '#f1f5f9', textColor: '#475569', label: 'Neutral' },
+    };
+    const style = TEACHING_STYLES[styleId];
+    if (!style) return;
+    const page = this.getPage();
+    const targets = page.elements.filter((e) => this.selectedIds.has(e.id) && !e.locked);
+    if (targets.length === 0) {
+      this.dialogs.showToast('Select elements first to apply a teaching style.', 'info');
+      return;
+    }
+    for (const el of targets) {
+      el.stroke = style.stroke;
+      el.fill = style.fill;
+      el.textColor = style.textColor;
+      if (el.type === 'text' || el.type === 'sticky') {
+        el.textColor = style.textColor;
+      }
+    }
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    this.haptic?.('light');
+    this.dialogs.showToast(`Applied "${style.label}" to ${targets.length} element(s).`, 'success');
+  }
+
+  // ── Teaching Efficiency: Laser Pointer Color Presets ─────────────────
+
+  setLaserColor(color) {
+    if (!this.laserTool) return;
+    this.laserTool.color = color;
+    this.workspacePrefs = { ...this.workspacePrefs, laserColor: color };
+    // saveWorkspacePreferences is available via import
+    try {
+      saveWorkspacePreferences(this.workspacePrefs);
+    } catch {
+      // prefs may not be saved yet
+    }
+    this.haptic?.('light');
+    this.dialogs.showToast(`Laser color: ${color}`, 'info');
+  }
+
+  // ── Teaching Efficiency: Spotlight Size Presets ──────────────────────
+
+  setSpotlightSizePreset(size) {
+    const sizes = { small: 120, medium: 180, large: 260, xlarge: 340 };
+    const radius = sizes[size] || 180;
+    this.spotlight.radius = radius;
+    this.spotlight.fitRx = null;
+    this.spotlight.fitRy = null;
+    this.spotlight.fitBase = null;
+    this.haptic?.('light');
+    this.dialogs.showToast(`Spotlight: ${size} (${radius}px)`, 'info');
+    this.requestRender();
+    this.broadcastSpotlight?.({ throttle: false });
+  }
+
+  // ── Teaching Efficiency: Quick Duplicate Page with Template ──────────
+
+  async duplicatePageWithTemplate(pageId, templateType = 'notes') {
+    const src = this.scene.pages.find((p) => p.id === pageId);
+    if (!src) return;
+    const copy = createPage(`${src.name} (Copy)`);
+    copy.background = src.background;
+    copy.elements = cloneElementsWithBindings(src.elements, 40, 40);
+    this.scene.pages.push(copy);
+    this.history.initPage(copy);
+    this.scene.activePageId = copy.id;
+    this.selectedIds.clear();
+
+    // Add template annotation based on type
+    if (templateType === 'discussion') {
+      const discussionEl = createElement('sticky', {
+        x: 50, y: 50, w: 200, h: 100,
+        text: '💬 Discussion Points:\n• Key takeaways\n• Questions\n• Action items',
+        fill: '#fef3c7',
+        stroke: '#ca8a04',
+        textColor: '#92400e',
+        fontSize: 14,
+      });
+      copy.elements.push(discussionEl);
+    } else if (templateType === 'notes') {
+      const notesEl = createElement('sticky', {
+        x: 50, y: 50, w: 200, h: 80,
+        text: '📝 Teacher Notes:\n• Lesson objectives\n• Student activities',
+        fill: '#dcfce7',
+        stroke: '#16a34a',
+        textColor: '#166534',
+        fontSize: 14,
+      });
+      copy.elements.push(notesEl);
+    } else if (templateType === 'answers') {
+      const answersEl = createElement('sticky', {
+        x: 50, y: 50, w: 200, h: 80,
+        text: '✅ Answers:\n• Solution key\n• Common mistakes',
+        fill: '#dbeafe',
+        stroke: '#2563eb',
+        textColor: '#1e40af',
+        fontSize: 14,
+      });
+      copy.elements.push(answersEl);
+    }
+
+    this.scheduleAutosave(this.scene);
+    this.indexedDBBackup.save(this.scene, { label: `Duplicate: ${copy.name}` });
+    this.collab.broadcastSceneChange();
+    this.updateUI();
+    this.requestRender();
+    this.dialogs.showToast(`Duplicated "${src.name}" with ${templateType} template.`, 'success');
+  }
+
+  // ── Teaching Efficiency: Export Lesson Handout (PDF) ─────────────────
+
+  async exportLessonHandout() {
+    const pages = this.scene.pages;
+    if (!pages.length) {
+      this.dialogs.showToast('No pages to export.', 'info');
+      return;
+    }
+    // Build a printable HTML document with all pages + teacher notes, then trigger browser print.
+    const printRoot = document.getElementById('wb-print-root');
+    if (printRoot) printRoot.remove();
+    const root = document.createElement('div');
+    root.id = 'wb-print-root';
+    root.setAttribute('aria-hidden', 'true');
+    root.style.position = 'fixed';
+    root.style.inset = '0';
+    root.style.zIndex = '1000';
+    root.style.background = '#ffffff';
+    root.style.padding = '20px';
+    root.style.boxSizing = 'border-box';
+
+    let html = `<h1 style="font-family:sans-serif;color:#1e293b;">${escapeXml(this.scene.title || 'Lesson Handout')}</h1>`;
+    html += `<p style="font-family:sans-serif;color:#64748b;font-size:12px;">Exported from StudioBoard • ${new Date().toLocaleDateString()}</p>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:24px;">`;
+
+    for (const page of pages) {
+      try {
+        const canvas = this.renderer.exportToPngCanvas(this.scene, page, { scale: 1.5 });
+        const imgData = canvas.toDataURL('image/png');
+        const notes = page.teacherNotes ? `<p style="font-family:sans-serif;font-size:11px;color:#64748b;margin-top:6px;"><strong>Notes:</strong> ${escapeXml(page.teacherNotes)}</p>` : '';
+        html += `
+          <div style="border:1px solid #cbd5e1;border-radius:8px;padding:12px;width:240px;box-sizing:border-box;background:#ffffff;">
+            <img src="${imgData}" style="width:100%;height:auto;border-radius:4px;display:block;margin-bottom:8px;" />
+            <div style="font-family:sans-serif;font-weight:600;font-size:13px;color:#1e293b;">${escapeXml(page.name)}</div>
+            ${notes}
+          </div>`;
+      } catch (err) {
+        console.warn('Handout render failed for page', page.id, err);
+      }
+    }
+
+    html += `</div><p style="font-family:sans-serif;font-size:10px;color:#94a3b8;margin-top:24px;">Generated by StudioBoard — Classroom Whiteboard & Diagramming Studio</p>`;
+    root.innerHTML = html;
+    document.body.appendChild(root);
+
+    try {
+      window.print();
+    } catch {
+      // Fallback: show the handout in a modal
+      this.dialogs.showToast('Print dialog opened. Use "Save as PDF" in your browser.', 'info');
+    }
+
+    // Clean up after print
+    setTimeout(() => {
+      root.remove();
+    }, 1000);
+
+    this.haptic?.('light');
+    this.dialogs.showToast(`Handout ready: ${pages.length} page(s) → Print / Save as PDF.`, 'success');
+  }
+
+  // ── Teaching Efficiency: Quickbar / Navigator Toggles ────────────────
+
+  toggleTeachingQuickbar() {
+    this.teachingQuickbar?.toggle();
+  }
+
+  togglePageNavigator() {
+    this.pageNavigator?.toggle();
   }
 
   undo() {

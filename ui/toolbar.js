@@ -98,6 +98,11 @@ export function initToolbar(app) {
             <button type="button" class="wb-menu-item" id="btn-timer">${ICONS.timer} Countdown / Stopwatch</button>
             <button type="button" class="wb-menu-item" id="btn-focus-mode">${ICONS.focus} Teaching Focus Mode (F10)</button>
             <div class="wb-popover-sep"></div>
+            <div class="wb-popover-title">Quick Actions</div>
+            <button type="button" class="wb-menu-item" id="btn-toggle-quickbar">${ICONS.focus} Teaching Quick-Action Bar</button>
+            <button type="button" class="wb-menu-item" id="btn-toggle-pagenav">${ICONS.focus} Page Thumbnail Navigator</button>
+            <button type="button" class="wb-menu-item" id="btn-export-handout">${ICONS.download} Export Lesson Handout (PDF)</button>
+            <div class="wb-popover-sep"></div>
             <button type="button" class="wb-menu-item" id="btn-customize-focus">${ICONS.sliders} Customize Pinned Tools…</button>
           </div>
         </div>
@@ -180,6 +185,9 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-annotation-mode')?.addEventListener('click', () => app.toggleAnnotationMode());
     topBar.querySelector('#btn-dot-vote')?.addEventListener('click', () => app.votingUI.toggle());
     topBar.querySelector('#btn-focus-mode')?.addEventListener('click', () => app.toggleFocusMode());
+    topBar.querySelector('#btn-toggle-quickbar')?.addEventListener('click', () => app.toggleTeachingQuickbar());
+    topBar.querySelector('#btn-toggle-pagenav')?.addEventListener('click', () => app.togglePageNavigator());
+    topBar.querySelector('#btn-export-handout')?.addEventListener('click', () => app.exportLessonHandout());
     topBar.querySelector('#btn-customize-focus')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
     topBar.querySelector('#btn-palette')?.addEventListener('click', () => app.paletteUI.open());
     topBar.querySelector('#btn-theme')?.addEventListener('click', () => app.cycleTheme());

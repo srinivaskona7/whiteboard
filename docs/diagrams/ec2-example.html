@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin vs non-admin: an EC2 launch, configured end to end</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-paper:       #f5f5f5;
+      --color-paper-2:     #ececec;
+      --color-ink:         #2d3142;
+      --color-muted:       #4f5d75;
+      --color-soft:        #7a8399;
+      --color-rule:        rgba(45,49,66,0.12);
+      --color-accent:      #eb6c36;
+      --color-rust:        #b85450;
+      --color-olive:       #7a8c47;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      min-height: 100vh;
+      padding: 3rem 2rem 4rem;
+      color: var(--color-ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1180px; margin: 0 auto; }
+
+    .header { margin-bottom: 2.5rem; max-width: 74ch; }
+
+    .header-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.9rem, 3.2vw + 1rem, 2.7rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.08;
+      margin-bottom: 0.7rem;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 66ch;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      color: var(--color-ink);
+      background: rgba(45,49,66,0.055);
+      border-radius: 3px;
+      padding: 0.05em 0.32em;
+    }
+
+    /* ── Scenario strip ─────────────────────────────────────────── */
+    .kv {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: rgba(45,49,66,0.12);
+      border: 1px solid rgba(45,49,66,0.12);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 1.75rem;
+    }
+
+    .kv > div { background: #ffffff; padding: 0.95rem 1.1rem; }
+
+    .kv dt {
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-bottom: 0.35rem;
+    }
+
+    .kv dd {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--color-ink);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 860px) { .kv { grid-template-columns: repeat(2, 1fr); } }
+
+    /* ── Sections ───────────────────────────────────────────────── */
+    .section { margin-top: 3.5rem; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 1.25rem;
+      align-items: start;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(45,49,66,0.10);
+    }
+
+    .section-num {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: var(--color-soft);
+      padding-top: 0.45rem;
+    }
+
+    .section-head h2 {
+      font-family: var(--font-serif);
+      font-size: 1.55rem;
+      font-weight: 400;
+      letter-spacing: -0.015em;
+      line-height: 1.15;
+      margin-bottom: 0.35rem;
+    }
+
+    .section-sub {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      max-width: 80ch;
+    }
+
+    /* ── Figures ────────────────────────────────────────────────── */
+    .figure { overflow-x: auto; padding: 0.25rem 0 0.5rem; }
+    .figure svg { width: 100%; min-width: 820px; display: block; height: auto; }
+
+    .figcaption {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      line-height: 1.75;
+      letter-spacing: 0.04em;
+      color: var(--color-soft);
+      margin-top: 0.9rem;
+      max-width: 96ch;
+    }
+
+    .figcaption strong { color: var(--color-muted); font-weight: 500; }
+
+    /* ── Runbook ────────────────────────────────────────────────── */
+    .step {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 1.75rem;
+      padding: 1.6rem 0;
+      border-top: 1px solid rgba(45,49,66,0.09);
+    }
+
+    .step:first-of-type { border-top: none; padding-top: 0.5rem; }
+
+    .step-idx {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 500;
+      line-height: 1;
+      color: rgba(45,49,66,0.28);
+    }
+
+    .step-idx span {
+      display: block;
+      margin-top: 0.55rem;
+      font-size: 0.56rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+    }
+
+    .step h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      margin-bottom: 0.45rem;
+    }
+
+    .step p {
+      font-size: 0.84rem;
+      line-height: 1.65;
+      color: var(--color-muted);
+      max-width: 82ch;
+      margin-bottom: 0.65rem;
+    }
+
+    .step p:last-child { margin-bottom: 0; }
+
+    .step strong { color: var(--color-ink); font-weight: 600; }
+
+    .step ul { list-style: none; max-width: 82ch; margin-bottom: 0.6rem; }
+
+    .step li {
+      position: relative;
+      padding-left: 0.9rem;
+      margin-bottom: 0.3rem;
+      font-size: 0.8125rem;
+      line-height: 1.65;
+      color: var(--color-muted);
+    }
+
+    .step li::before {
+      content: '·';
+      position: absolute;
+      left: 0.15rem;
+      color: rgba(45,49,66,0.3);
+    }
+
+    pre {
+      background: #ffffff;
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 0.85rem 1rem;
+      margin: 0.7rem 0 0.35rem;
+      overflow-x: auto;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.715rem;
+      line-height: 1.75;
+      color: var(--color-ink);
+      white-space: pre;
+    }
+
+    .out {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      line-height: 1.7;
+      color: var(--color-muted);
+      border-left: 2px solid rgba(45,49,66,0.18);
+      padding: 0.15rem 0 0.15rem 0.8rem;
+      margin: 0.55rem 0 0.2rem;
+      white-space: pre-wrap;
+    }
+
+    .out.ok { border-left-color: rgba(122,140,71,0.7); }
+    .out.bad { border-left-color: rgba(184,84,80,0.7); }
+
+    /* ── Two-column comparison ──────────────────────────────────── */
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+
+    @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+
+    .split > div { min-width: 0; }
+
+    .split-label {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-bottom: 0.45rem;
+    }
+
+    .split-label.ok  { color: var(--color-olive); }
+    .split-label.bad { color: var(--color-rust); }
+
+    /* ── Tables ─────────────────────────────────────────────────── */
+    .cmp {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      margin-top: 0.5rem;
+    }
+
+    .cmp th {
+      text-align: left;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      padding: 0.5rem 1rem 0.5rem 0;
+      border-bottom: 1px solid rgba(45,49,66,0.22);
+    }
+
+    .cmp td {
+      padding: 0.55rem 1rem 0.55rem 0;
+      vertical-align: top;
+      line-height: 1.6;
+      color: var(--color-muted);
+      border-bottom: 1px solid rgba(45,49,66,0.07);
+    }
+
+    .cmp td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--color-ink);
+      white-space: nowrap;
+      width: 11rem;
+    }
+
+    .cmp td code { font-size: 0.92em; }
+
+    .cmp tr.group td {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      padding-top: 1.35rem;
+      border-bottom: 1px solid rgba(45,49,66,0.14);
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      vertical-align: 1px;
+    }
+
+    .tag.ok  { color: var(--color-olive); background: rgba(122,140,71,0.10); }
+    .tag.bad { color: var(--color-rust);  background: rgba(184,84,80,0.09); }
+
+    @media (max-width: 720px) {
+      body { padding: 2rem 1.1rem 3rem; }
+      .section-head { grid-template-columns: 1fr; gap: 0.4rem; }
+      .section-num { padding-top: 0; }
+      .step { grid-template-columns: 1fr; gap: 0.6rem; }
+    }
+
+    .footer {
+      margin-top: 3.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">AWS · EC2 · worked example</p>
+      <h1>Two principals, one command</h1>
+      <p class="subtitle">An admin and a user with no permissions both try to launch a server in <code>us-east-1</code> inside the default VPC. Same account, same region, same AMI, same CLI. One gets an instance; the other gets a policy error that names exactly what is missing.</p>
+    </div>
+
+    <dl class="kv">
+      <div><dt>Account</dt><dd>123456789012<br>acme-lab</dd></div>
+      <div><dt>Region</dt><dd>us-east-1<br>6 AZs, a–f</dd></div>
+      <div><dt>Network</dt><dd>default VPC<br>172.31.0.0/16</dd></div>
+      <div><dt>Request</dt><dd>run-instances<br>t3.micro · 1</dd></div>
+    </dl>
+
+    <!-- ══════════════════════════════════════════════════════════
+         01 · THE CAST
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">01</div>
+        <div>
+          <h2>The two principals</h2>
+          <p class="section-sub">Both are IAM users in the same account, so both can sign in and both reach the same regional endpoint. The only difference is one attached policy.</p>
+        </div>
+      </div>
+
+      <table class="cmp">
+        <thead>
+          <tr><th></th><th>Admin</th><th>Non-admin</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Name</td><td><code>admin-alice</code></td><td><code>dev-bob</code></td></tr>
+          <tr><td>Type</td><td>IAM user, console + access key</td><td>IAM user, console + access key</td></tr>
+          <tr><td>Attached policy</td><td><code>AdministratorAccess</code> — <code>Action: *</code> on <code>Resource: *</code></td><td><span class="tag bad">none</span> — no policy document at all</td></tr>
+          <tr><td>Group</td><td>—</td><td>—</td></tr>
+          <tr><td>Can sign in</td><td><span class="tag ok">yes</span></td><td><span class="tag ok">yes</span> — the console loads, then everything errors</td></tr>
+          <tr><td>Can call <code>ec2:RunInstances</code></td><td><span class="tag ok">yes</span></td><td><span class="tag bad">no</span> — implicit deny</td></tr>
+          <tr><td>Can call <code>ec2:DescribeInstances</code></td><td><span class="tag ok">yes</span></td><td><span class="tag bad">no</span></td></tr>
+        </tbody>
+      </table>
+
+      <p class="figcaption" style="margin-top:1.1rem"><strong>Why “no permissions” is not “no access to the console”.</strong> Authentication and authorisation are separate steps. Signing in only proves the credentials are real. Every subsequent API call is authorised independently — which is why the non-admin can log in and still see an empty, broken console.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         02 · THE FORK
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">02</div>
+        <div>
+          <h2>Where the two paths split</h2>
+          <p class="section-sub">Everything before IAM is identical for both users: same endpoint, same signature check, same request body. The fork happens at one question — is there a policy that allows this?</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1100 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ex-title ex-desc">
+          <title id="ex-title">Admin and non-admin request paths through the EC2 API</title>
+          <desc id="ex-desc">Both principals send the same RunInstances request through the edge endpoint to the IAM policy decision. The admin path branches left with an explicit allow and reaches a running instance. The non-admin path branches right with no allow and terminates in a 403 UnauthorizedOperation error.</desc>
+
+          <defs>
+            <pattern id="ex-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+            <marker id="ex-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <marker id="ex-arrow-ok" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#7a8c47"/>
+            </marker>
+            <marker id="ex-arrow-bad" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#b85450"/>
+            </marker>
+          </defs>
+
+          <rect width="1100" height="600" fill="#f5f5f5"/>
+          <rect width="1100" height="600" fill="url(#ex-dots)" opacity="0.55"/>
+
+          <!-- ── Connectors ───────────────────────────────────────── -->
+          <line x1="550" y1="94"  x2="550" y2="126" stroke="#4f5d75" stroke-width="1" marker-end="url(#ex-arrow)"/>
+          <line x1="550" y1="184" x2="550" y2="196" stroke="#4f5d75" stroke-width="1" marker-end="url(#ex-arrow)"/>
+
+          <path d="M 370 268 H 245 Q 237 268 237 276 V 368"
+                fill="none" stroke="#7a8c47" stroke-width="1.2" marker-end="url(#ex-arrow-ok)"/>
+          <path d="M 730 268 H 855 Q 863 268 863 276 V 368"
+                fill="none" stroke="#b85450" stroke-width="1.2" marker-end="url(#ex-arrow-bad)"/>
+
+          <line x1="245" y1="428" x2="245" y2="466" stroke="#7a8c47" stroke-width="1.2" marker-end="url(#ex-arrow-ok)"/>
+          <line x1="855" y1="428" x2="855" y2="466" stroke="#b85450" stroke-width="1.2" marker-end="url(#ex-arrow-bad)"/>
+
+          <!-- Branch labels -->
+          <rect x="268" y="249" width="64" height="14" fill="#f5f5f5"/>
+          <text x="300" y="260" fill="#7a8c47" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ALLOW</text>
+          <rect x="772" y="249" width="86" height="14" fill="#f5f5f5"/>
+          <text x="815" y="260" fill="#b85450" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NO ALLOW</text>
+
+          <!-- ── Shared prefix ────────────────────────────────────── -->
+          <rect x="420" y="40" width="260" height="54" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.28)" stroke-width="1"/>
+          <text x="550" y="63" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">RunInstances · us-east-1</text>
+          <text x="550" y="80" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">default VPC · t3.micro · count 1</text>
+
+          <rect x="420" y="130" width="260" height="54" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.28)" stroke-width="1"/>
+          <text x="550" y="153" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Edge endpoint</text>
+          <text x="550" y="170" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TLS 1.2+ · SigV4 verified</text>
+
+          <!-- ── Decision ─────────────────────────────────────────── -->
+          <polygon points="550,200 730,268 550,336 370,268" fill="#ffffff" stroke="#eb6c36" stroke-width="1.2"/>
+          <text x="550" y="262" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">Does any policy</text>
+          <text x="550" y="278" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle">allow it?</text>
+
+          <!-- ── Left branch ──────────────────────────────────────── -->
+          <rect x="90" y="372" width="310" height="56" rx="6" fill="rgba(122,140,71,0.07)" stroke="rgba(122,140,71,0.55)" stroke-width="1"/>
+          <text x="245" y="396" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">admin-alice</text>
+          <text x="245" y="413" fill="#7a8c47" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">AdministratorAccess · * on *</text>
+
+          <rect x="90" y="470" width="310" height="56" rx="6" fill="rgba(122,140,71,0.07)" stroke="rgba(122,140,71,0.55)" stroke-width="1"/>
+          <text x="245" y="494" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">running · i-… · 2/2</text>
+          <text x="245" y="511" fill="#7a8c47" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">instance exists and is billable</text>
+
+          <!-- ── Right branch ─────────────────────────────────────── -->
+          <rect x="700" y="372" width="310" height="56" rx="6" fill="rgba(184,84,80,0.05)" stroke="rgba(184,84,80,0.45)" stroke-width="1"/>
+          <text x="855" y="396" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">dev-bob</text>
+          <text x="855" y="413" fill="#b85450" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">no policy attached</text>
+
+          <rect x="700" y="470" width="310" height="56" rx="6" fill="rgba(184,84,80,0.05)" stroke="rgba(184,84,80,0.45)" stroke-width="1"/>
+          <text x="855" y="494" fill="#b85450" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">403 UnauthorizedOperation</text>
+          <text x="855" y="511" fill="#b85450" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="middle">no identity-based policy allows it</text>
+
+          <!-- ── Annotation ───────────────────────────────────────── -->
+          <text x="90" y="570" fill="#4f5d75" font-size="12.5" font-family="'Instrument Serif', serif" font-style="italic">Same account, same region, same VPC, same bytes on the wire — the fork is entirely inside one policy document.</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>Note where the arrow terminates.</strong> The non-admin never reaches the control plane, so no instance id is created, no volume is reserved and nothing is billed. Authorisation is evaluated before any resource is touched — a denied call has zero side effects.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         03 · RUNBOOK
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">03</div>
+        <div>
+          <h2>Configuring it, in order</h2>
+          <p class="section-sub">Eight steps. Steps 1–5 build the world the request runs in; step 6 creates the two principals; steps 7–8 send the identical call from each. Run them with an admin profile, because everything here is account configuration.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">01<span>Region</span></div>
+        <div>
+          <h3>Pin the region to <code>us-east-1</code></h3>
+          <p>Region is a client-side setting, not a permission. Both profiles must point at <code>us-east-1</code> or you will be comparing two different request paths without noticing.</p>
+          <pre><code>aws configure set region us-east-1 --profile admin
+aws configure set region us-east-1 --profile dev
+
+aws sts get-caller-identity --profile admin</code></pre>
+          <div class="out ok">{
+    "UserId": "AIDAEXAMPLEUSERID",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/admin-alice"
+}</div>
+          <p style="margin-top:0.7rem">A wrong region does <strong>not</strong> produce a permission error. It produces <code>InvalidAMIID.NotFound</code>, because every AMI id is valid in exactly one region — which is why “it works in eu-west-1” is a region bug, not an IAM bug.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">02<span>Network</span></div>
+        <div>
+          <h3>Confirm the default VPC exists</h3>
+          <p>Accounts created after 2013 get one default VPC per region: <code>172.31.0.0/16</code>, one <code>/20</code> subnet in every AZ, an internet gateway, a main route table sending <code>0.0.0.0/0</code> to it, and public IP auto-assignment on. It can be deleted — and once deleted, <code>RunInstances</code> without <code>--subnet-id</code> fails.</p>
+          <pre><code>aws ec2 describe-vpcs --filters Name=is-default,Values=true \
+  --query 'Vpcs[0].[VpcId,CidrBlock]' --output text</code></pre>
+          <div class="out ok">vpc-0a1b2c3d4e5f60718	172.31.0.0/16</div>
+          <p style="margin-top:0.7rem">Empty output means there is no default VPC. Recreate it, then capture the three ids the launch will need:</p>
+          <pre><code>aws ec2 create-default-vpc
+
+VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \
+        --query 'Vpcs[0].VpcId' --output text)
+SUBNET=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC \
+        --query 'Subnets[0].SubnetId' --output text)
+SG=$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC \
+        Name=group-name,Values=default \
+        --query 'SecurityGroups[0].GroupId' --output text)</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">03<span>Access</span></div>
+        <div>
+          <h3>Create a key pair in the same region</h3>
+          <p>Key pairs are regional objects, not account-wide. A key created in <code>eu-west-1</code> does not exist in <code>us-east-1</code>, and the launch fails with <code>InvalidKeyPair.NotFound</code>.</p>
+          <pre><code>aws ec2 create-key-pair --key-name lab-key --key-type ed25519 \
+  --query KeyMaterial --output text &gt; lab-key.pem
+chmod 400 lab-key.pem</code></pre>
+          <p>You can skip keys entirely and use <strong>SSM Session Manager</strong> or <strong>EC2 Instance Connect</strong> instead — both need an IAM instance profile, but neither needs an inbound port 22 rule.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">04<span>Firewall</span></div>
+        <div>
+          <h3>Open SSH on the default security group</h3>
+          <p>This is the step everyone forgets. The default security group has exactly one inbound rule: <em>all traffic from members of itself</em>. There is no rule allowing your laptop. Launch into it and you get a <code>running</code> instance you cannot connect to.</p>
+          <pre><code>aws ec2 authorize-security-group-ingress --group-id $SG \
+  --protocol tcp --port 22 --cidr 203.0.113.10/32</code></pre>
+          <p>Use your own address, not <code>0.0.0.0/0</code>. If the rule is missing, the symptom is not an AWS error at all — it is an SSH connection that times out, which is why it gets misdiagnosed as a broken boot.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">05<span>Image</span></div>
+        <div>
+          <h3>Resolve an AMI id for <code>us-east-1</code></h3>
+          <p>AMI ids are region-specific, so never hard-code one from a tutorial. The SSM public parameter always points at the current Amazon Linux 2023 build in whatever region your client is set to.</p>
+          <pre><code>AMI=$(aws ssm get-parameter \
+  --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+  --query Parameter.Value --output text)
+echo $AMI</code></pre>
+          <div class="out ok">ami-0abc123def456789a</div>
+          <p style="margin-top:0.7rem">The AMI also supplies the defaults you did not specify: the root volume size and type, the partition layout, the UEFI boot entry and the initial user account (<code>ec2-user</code> on Amazon Linux, <code>ubuntu</code> on Ubuntu).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">06<span>Identity</span></div>
+        <div>
+          <h3>Create the two principals</h3>
+          <p>Both are IAM users. The only asymmetry is the attached policy — and the second one is deliberately left empty.</p>
+          <pre><code>aws iam create-user --user-name admin-alice
+aws iam attach-user-policy --user-name admin-alice \
+  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+aws iam create-access-key --user-name admin-alice
+
+aws iam create-user --user-name dev-bob
+aws iam create-access-key --user-name dev-bob
+# no attach-user-policy, no group, no inline policy</code></pre>
+          <p><strong>One caveat before you trust <code>AdministratorAccess</code>.</strong> That policy means “everything, allowed” — but it is still an identity policy. If this account sits inside an AWS Organization, a Service Control Policy above it can remove actions even from an administrator. An admin in a member account is not the same as an admin in the management account.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">07<span>Admin</span></div>
+        <div>
+          <h3>Launch as the admin</h3>
+          <pre><code>aws ec2 run-instances --profile admin \
+  --image-id $AMI --instance-type t3.micro --count 1 \
+  --key-name lab-key --security-group-ids $SG --subnet-id $SUBNET \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=admin-demo}]' \
+  --query 'Instances[0].[InstanceId,State.Name]' --output text</code></pre>
+          <div class="out ok">i-0abc123def4567890	pending</div>
+          <p style="margin-top:0.7rem">Note what came back: an id and the word <code>pending</code>. No IP, no host. Give it 30–90 seconds, then:</p>
+          <pre><code>aws ec2 describe-instance-status --instance-ids i-0abc123def4567890 \
+  --query 'InstanceStatuses[0].[InstanceState.Name,InstanceStatus.Status,SystemStatus.Status]' \
+  --output text</code></pre>
+          <div class="out ok">running	ok	ok</div>
+          <p style="margin-top:0.7rem">Two <code>ok</code> values are the <code>2/2</code> you are looking for. <code>InstanceStatus</code> is the hypervisor's view of the VM; <code>SystemStatus</code> is the guest OS answering. Only the second one tells you Linux is up.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">08<span>Non-admin</span></div>
+        <div>
+          <h3>Run the identical call as the non-admin</h3>
+          <p>Same region, same image, same type. The only thing that changed is the credential on the request.</p>
+          <pre><code>aws ec2 run-instances --profile dev \
+  --image-id $AMI --instance-type t3.micro --count 1</code></pre>
+          <div class="out bad">An error occurred (UnauthorizedOperation) when calling the RunInstances
+operation: User: arn:aws:iam::123456789012:user/dev-bob is not authorized
+to perform: ec2:RunInstances on resource:
+arn:aws:ec2:us-east-1:123456789012:instance/*
+because no identity-based policy allows the ec2:RunInstances action</div>
+          <p style="margin-top:0.7rem">Read it as three facts: <strong>who</strong> (<code>dev-bob</code>), <strong>what</strong> (<code>ec2:RunInstances</code> on <code>instance/*</code>), and <strong>why</strong> (<em>no identity-based policy allows</em> — an implicit deny, not an explicit one). If a policy had said <code>Deny</code>, the reason would read “with an explicit deny”. That distinction tells you whether to add an allow or hunt for the deny.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         04 · WHAT THE DEFAULT VPC GIVES YOU
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">04</div>
+        <div>
+          <h2>What “us-east-1 + default VPC” actually buys you</h2>
+          <p class="section-sub">“Default VPC” is not one object. It is a region, a network, six subnets, a route table, a gateway and a firewall — created together, and scoped to different things.</p>
+        </div>
+      </div>
+
+      <div class="figure">
+        <svg viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vpc-title vpc-desc">
+          <title id="vpc-title">The default VPC in us-east-1 and the scope of each object</title>
+          <desc id="vpc-desc">A nested diagram: the us-east-1 region contains the default VPC at 172.31.0.0/16, which contains six default subnets in availability zones a through f. One subnet holds a running instance. Facts list the default route table, security group and public IP behaviour. Two side panels separate regional and VPC-scoped objects from AZ-scoped ones.</desc>
+
+          <defs>
+            <pattern id="vpc-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/>
+            </pattern>
+          </defs>
+
+          <rect width="1100" height="620" fill="#f5f5f5"/>
+          <rect width="1100" height="620" fill="url(#vpc-dots)" opacity="0.55"/>
+
+          <!-- Region -->
+          <rect x="40" y="40" width="660" height="500" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.32)" stroke-width="1.2"/>
+          <text x="62" y="68" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em">REGION · us-east-1</text>
+
+          <!-- VPC -->
+          <rect x="66" y="88" width="608" height="426" rx="6" fill="rgba(45,49,66,0.025)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <text x="88" y="116" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" letter-spacing="0.1em">DEFAULT VPC · vpc-0a1b2c3d · 172.31.0.0/16</text>
+
+          <!-- Subnet row 1 -->
+          <rect x="111" y="146" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="130" y="174" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1a</text>
+          <text x="130" y="192" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.0.0/20</text>
+          <rect x="121" y="204" width="155" height="28" rx="3" fill="rgba(122,140,71,0.09)" stroke="rgba(122,140,71,0.45)" stroke-width="1"/>
+          <text x="198" y="222" fill="#7a8c47" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">i-0abc… · running</text>
+
+          <rect x="302" y="146" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="321" y="174" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1b</text>
+          <text x="321" y="192" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.16.0/20</text>
+
+          <rect x="493" y="146" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="512" y="174" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1c</text>
+          <text x="512" y="192" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.32.0/20</text>
+
+          <!-- Subnet row 2 -->
+          <rect x="111" y="258" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="130" y="286" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1d</text>
+          <text x="130" y="304" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.48.0/20</text>
+
+          <rect x="302" y="258" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="321" y="286" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1e</text>
+          <text x="321" y="304" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.64.0/20</text>
+
+          <rect x="493" y="258" width="175" height="100" rx="4" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="512" y="286" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif">us-east-1f</text>
+          <text x="512" y="304" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace">172.31.80.0/20</text>
+
+          <!-- Defaults inside the VPC -->
+          <text x="88" y="386" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CREATED WITH THE VPC</text>
+
+          <rect x="88" y="400" width="8" height="8" rx="1" fill="rgba(79,93,117,0.35)"/>
+          <text x="104" y="408" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">route table · 0.0.0.0/0 → igw  (so the subnet has a route out)</text>
+
+          <rect x="88" y="428" width="8" height="8" rx="1" fill="rgba(184,84,80,0.45)"/>
+          <text x="104" y="436" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">security group sg-… · inbound: self only  (so SSH is blocked)</text>
+
+          <rect x="88" y="456" width="8" height="8" rx="1" fill="rgba(122,140,71,0.55)"/>
+          <text x="104" y="464" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">public IP on launch · automatic  (so --subnet-id is optional)</text>
+
+          <!-- Scope panels -->
+          <rect x="740" y="40" width="320" height="230" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <text x="760" y="66" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em">REGION / VPC SCOPE</text>
+          <text x="760" y="102" fill="#2d3142" font-size="11.5" font-family="'Geist', sans-serif">Shared by every AZ</text>
+
+          <rect x="760" y="122" width="6" height="6" rx="1" fill="rgba(79,93,117,0.4)"/>
+          <text x="774" y="129" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">AMI  · id is region-specific</text>
+          <rect x="760" y="150" width="6" height="6" rx="1" fill="rgba(79,93,117,0.4)"/>
+          <text x="774" y="157" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">key pair  · must exist in-region</text>
+          <rect x="760" y="178" width="6" height="6" rx="1" fill="rgba(79,93,117,0.4)"/>
+          <text x="774" y="185" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">security group  · lives in the VPC</text>
+          <rect x="760" y="206" width="6" height="6" rx="1" fill="rgba(79,93,117,0.4)"/>
+          <text x="774" y="213" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">snapshot  · regional, copied per AZ</text>
+
+          <rect x="740" y="290" width="320" height="250" rx="6" fill="#ffffff" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+          <text x="760" y="316" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em">SINGLE AZ SCOPE</text>
+          <text x="760" y="352" fill="#2d3142" font-size="11.5" font-family="'Geist', sans-serif">Does not exist anywhere else</text>
+
+          <rect x="760" y="372" width="6" height="6" rx="1" fill="rgba(235,108,54,0.6)"/>
+          <text x="774" y="379" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">subnet  · one per AZ, /20 each</text>
+          <rect x="760" y="400" width="6" height="6" rx="1" fill="rgba(235,108,54,0.6)"/>
+          <text x="774" y="407" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">EBS volume  · created in one AZ</text>
+          <rect x="760" y="428" width="6" height="6" rx="1" fill="rgba(235,108,54,0.6)"/>
+          <text x="774" y="435" fill="#4f5d75" font-size="9.5" font-family="'Geist Mono', monospace">the instance itself</text>
+
+          <text x="760" y="480" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif">Lose the AZ and you lose the</text>
+          <text x="760" y="496" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif">instance and its root volume.</text>
+          <text x="760" y="512" fill="#7a8399" font-size="9.5" font-family="'Geist', sans-serif">The AMI and snapshot survive.</text>
+
+          <text x="40" y="582" fill="#4f5d75" font-size="12.5" font-family="'Instrument Serif', serif" font-style="italic">Cross an AZ and you need a copy. Cross a region and you need a new everything — including the AMI id.</text>
+        </svg>
+      </div>
+
+      <p class="figcaption"><strong>This is why <code>--subnet-id</code> is optional but <code>--key-name</code> is not.</strong> The default VPC supplies a subnet, a route and a public IP without being asked. It cannot supply a key pair, because keys are regional objects you create yourself — and it will not let SSH in, because its only inbound rule is self-referencing.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         05 · WHY BOB FAILED
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">05</div>
+        <div>
+          <h2>Why the non-admin failed</h2>
+          <p class="section-sub">IAM answers one question per call: is there an allow? It checks policies in a fixed order, and “no policy” is a valid, complete answer — it means deny.</p>
+        </div>
+      </div>
+
+      <table class="cmp">
+        <thead>
+          <tr><th>#</th><th>Check</th><th>If it fails</th><th><code>dev-bob</code></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>An <strong>explicit deny</strong> in any applicable policy — SCP, identity, boundary, resource or session</td><td><span class="tag bad">deny</span> — nothing overrides it</td><td>no denial exists</td></tr>
+          <tr><td>2</td><td>An <strong>SCP</strong> above the account allows the action (Organizations only)</td><td><span class="tag bad">deny</span></td><td>not in an org</td></tr>
+          <tr><td>3</td><td>A <strong>permission boundary</strong>, if one is set, also allows it</td><td><span class="tag bad">deny</span></td><td>no boundary set</td></tr>
+          <tr><td>4</td><td>An <strong>identity policy</strong> or <strong>resource policy</strong> allows it</td><td><span class="tag bad">implicit deny</span></td><td><strong>stops here</strong></td></tr>
+          <tr><td>5</td><td>A <strong>session policy</strong>, if one is set, allows it</td><td><span class="tag bad">deny</span></td><td>no session policy</td></tr>
+          <tr><td>6</td><td>Nothing failed</td><td><span class="tag ok">allow</span></td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <p class="figcaption" style="margin-top:1.1rem"><strong>Three answers, not two.</strong> <em>Allow</em> means a statement matched. <em>Implicit deny</em> means nothing matched — the default, and what bob hits. <em>Explicit deny</em> means a <code>Deny</code> statement matched, and it outranks every allow in the account. The error message distinguishes the last two, which is the fastest way to know whether to add a policy or go hunting for one that is blocking you.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         06 · THE FIX
+         ══════════════════════════════════════════════════════════ -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-num">06</div>
+        <div>
+          <h2>Giving the non-admin exactly one launch</h2>
+          <p class="section-sub">Not <code>AdministratorAccess</code>, and not <code>AmazonEC2FullAccess</code> either — that allows any instance type in any region, and lets the holder terminate everything in the account.</p>
+        </div>
+      </div>
+
+      <div class="step" style="border-top:none;padding-top:0.5rem">
+        <div class="step-idx">01<span>Policy</span></div>
+        <div>
+          <h3>The document</h3>
+          <p>Save as <code>launch.json</code>. Replace the account id, and keep the resource ids from step 02.</p>
+          <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LaunchOnlyInUsEast1",
+      "Effect": "Allow",
+      "Action": ["ec2:RunInstances", "ec2:CreateTags"],
+      "Resource": [
+        "arn:aws:ec2:us-east-1:123456789012:instance/*",
+        "arn:aws:ec2:us-east-1:123456789012:volume/*",
+        "arn:aws:ec2:us-east-1:123456789012:network-interface/*"
+      ],
+      "Condition": {
+        "StringEquals": { "aws:RequestedRegion": "us-east-1" }
+      }
+    },
+    {
+      "Sid": "OnlyTheseInputs",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:us-east-1:123456789012:image/ami-0abc123def456789a",
+        "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-0a1b2c3d4e5f60718",
+        "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0",
+        "arn:aws:ec2:us-east-1:123456789012:key-pair/lab-key"
+      ]
+    },
+    {
+      "Sid": "ReadWhatYouLaunched",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances", "ec2:DescribeInstanceStatus",
+        "ec2:DescribeImages", "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">02<span>Attach</span></div>
+        <div>
+          <h3>Attach it through a group, not a user</h3>
+          <p>Groups make the intent legible: <code>ec2-launchers</code> is a role in the organisation, not a permission grafted onto one person.</p>
+          <pre><code>aws iam create-policy --policy-name ec2-launch-default-vpc \
+  --policy-document file://launch.json
+
+aws iam create-group --group-name ec2-launchers
+aws iam attach-group-policy --group-name ec2-launchers \
+  --policy-arn arn:aws:iam::123456789012:policy/ec2-launch-default-vpc
+aws iam add-user-to-group --group-name ec2-launchers --user-name dev-bob</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">03<span>Verify</span></div>
+        <div>
+          <h3>Test the decision before you test the launch</h3>
+          <p>The policy simulator answers without creating anything, which is much cheaper than a failed <code>RunInstances</code> in a loop.</p>
+          <pre><code>aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/dev-bob \
+  --action-names ec2:RunInstances ec2:TerminateInstances \
+  --resource-arns arn:aws:ec2:us-east-1:123456789012:instance/* \
+  --query 'EvaluationResults[].[EvalActionName,EvalDecision]' --output text</code></pre>
+          <div class="out ok">ec2:RunInstances	allowed
+ec2:TerminateInstances	implicitDeny</div>
+          <p style="margin-top:0.7rem">That pair of answers is the whole point: bob can create, and cannot destroy. Add <code>ec2:TerminateInstances</code> only if the workflow genuinely needs it.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-idx">04<span>Detail</span></div>
+        <div>
+          <h3>Why one action name needs four resource ARNs</h3>
+          <p>This is the part that surprises everyone. <code>RunInstances</code> is a single API call that creates three resources and references four more, and IAM checks every one of them in the same evaluation.</p>
+          <ul>
+            <li><strong>Created by the call</strong> — the instance, its root EBS volume, and an ENI. All three need <code>Allow</code> on their own ARN.</li>
+            <li><strong>Referenced by the call</strong> — the AMI, the subnet, the security group and the key pair. Each also needs <code>Allow</code>, or the call is denied for that resource.</li>
+            <li><strong>Not resource-scoped</strong> — <code>Describe*</code> actions do not support resource ARNs, so they must be <code>"Resource": "*"</code>. This is why a policy that looks over-broad in one statement is actually correct.</li>
+            <li><strong>Encrypted AMIs</strong> add <code>kms:CreateGrant</code>, <code>kms:GenerateDataKeyWithoutPlaintext</code> and <code>kms:Decrypt</code> on the key — the most common “but I allowed RunInstances” surprise.</li>
+          </ul>
+          <p>Leave out any one of these and the error names exactly the missing resource type — <code>...on resource: arn:aws:ec2:us-east-1:123456789012:volume/*</code> — which tells you which block to extend.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MORE -->
+
+  </div>
+</body>
+</html>
