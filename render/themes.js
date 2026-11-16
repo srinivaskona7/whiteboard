@@ -1,8 +1,31 @@
 // render/themes.js
 
-export const THEME_ORDER = ['light', 'dark'];
+export const THEME_ORDER = ['excalidraw', 'light', 'dark'];
 
 export const THEMES = {
+  // Excalidraw-style default: warm white canvas, subtle dot grid, near-black
+  // ink, and a violet selection accent — the familiar hand-drawn whiteboard feel.
+  excalidraw: {
+    name: 'excalidraw',
+    canvasBg: '#fdfcf9',
+    gridMajor: 'rgba(30, 30, 30, 0.10)',
+    gridMinor: 'rgba(30, 30, 30, 0.05)',
+    dotsColor: 'rgba(30, 30, 30, 0.16)',
+    defaultStroke: '#1e1e1e',
+    defaultText: '#1e1e1e',
+    selectionStroke: '#6965db',
+    selectionFill: 'rgba(105, 101, 219, 0.08)',
+    handleFill: '#ffffff',
+    handleStroke: '#6965db',
+    portFill: '#6965db',
+    portHoverFill: '#4c46c4',
+    guideStroke: '#e64980',
+    frameBg: 'rgba(241, 240, 236, 0.6)',
+    frameBorder: '#b8b8b8',
+    frameHeaderBg: '#ecebe6',
+    frameTitle: '#4a4a4a',
+    connectorLabelBg: 'rgba(253, 252, 249, 0.94)',
+  },
   light: {
     name: 'light',
     canvasBg: '#f8fafc',
@@ -78,8 +101,8 @@ export const PALETTE_FILL_COLORS = [
   '#fbcfe8',
 ];
 
-export function getThemeTokens(themeName = 'light') {
-  return THEMES[themeName === 'dark' ? 'dark' : 'light'];
+export function getThemeTokens(themeName = 'excalidraw') {
+  return THEMES[themeName] || THEMES.excalidraw;
 }
 
 /**
@@ -103,7 +126,7 @@ export function resolveThemeColor(color, themeName = 'light', role = 'stroke') {
   return color;
 }
 
-export function applyThemeToDocument(themeName = 'light') {
+export function applyThemeToDocument(themeName = 'excalidraw') {
   if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', themeName === 'dark' ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', THEMES[themeName] ? themeName : 'excalidraw');
 }

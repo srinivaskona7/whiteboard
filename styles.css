@@ -4,7 +4,8 @@
    Single source of truth for spacing, typography, radius, component sizes,
    shadows and selected states. One accent color for primary actions. */
 :root,
-[data-theme="light"] {
+[data-theme="light"],
+[data-theme="excalidraw"] {
   /* Color */
   --bg-surface: rgba(255, 255, 255, 0.95);
   --bg-elevated: #ffffff;
@@ -68,6 +69,30 @@
   --ring: 0 0 0 2px var(--accent-color);
   --ring-offset: 2px;
 }
+
+/* Excalidraw-style default: warm off-white UI, violet accent, softer borders */
+[data-theme="excalidraw"] {
+  --bg-surface: rgba(253, 252, 249, 0.92);
+  --bg-elevated: #ffffff;
+  --bg-muted: #f7f6f2;
+  --bg-hover: #efeee9;
+  --text-primary: #1e1e1e;
+  --text-secondary: #5c5c5c;
+  --text-muted: #8a8a8a;
+  --border-color: #d8d8d4;
+  --border-subtle: #ecece8;
+  --accent-color: #6965db;
+  --accent-soft: rgba(105, 101, 219, 0.12);
+  --danger-color: #e03131;
+  --shadow-lg: 0 10px 25px -5px rgba(30, 30, 30, 0.10), 0 4px 10px -4px rgba(30, 30, 30, 0.06);
+  --focus-ring: 0 0 0 2px #6965db;
+  --ring: 0 0 0 2px var(--accent-color);
+}
+[data-theme="excalidraw"] .wb-empty-state-card,
+[data-theme="excalidraw"] .wb-mobile-sheet-panel,
+[data-theme="excalidraw"] .wb-quickbar-panel,
+[data-theme="excalidraw"] .wb-pagenav-panel { background: #ffffff; }
+[data-theme="excalidraw"] .wb-brand-logo svg rect { fill: #6965db; }
 
 [data-theme="dark"] {
   /* Color */
@@ -1410,3 +1435,14 @@ body.wb-force-desktop .wb-mobile-dock { display: none !important; }
   border: 2px solid var(--bg-elevated); flex-shrink: 0; margin-left: var(--space-2);
 }
 .wb-pagenav-footer { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle); display: flex; gap: var(--space-2); }
+
+/* ── Advanced Options: Storage & Features ── */
+.wb-storage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 4px 0 8px; }
+.wb-storage-card { padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); }
+.wb-storage-card-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.wb-storage-card-value { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 2px 0; }
+.wb-storage-card-sub { font-size: 10px; color: var(--text-secondary); }
+.wb-storage-meta { font-size: 11px; color: var(--text-secondary); padding: 6px 2px; }
+.wb-storage-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.wb-adv-feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.wb-adv-feature:hover { border-color: var(--accent-color) !important; background: var(--accent-soft) !important; }

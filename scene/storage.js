@@ -1,6 +1,7 @@
 // scene/storage.js
 import { SCHEMA_VERSION, createScene, createPage, createElement, uid } from './model.js';
 import { isValidElementGeometry } from './geometry.js';
+import { saveBoardToIDB } from './indexeddb-backup.js';
 
 export const STORAGE_KEY = 'classroom_whiteboard_scene_v2';
 export const LIBRARY_STORAGE_KEY = 'classroom_whiteboard_user_library_v1';
@@ -74,7 +75,7 @@ export function sanitizeSceneForPersistence(scene, { stripNotes = false } = {}) 
   return {
     version: SCHEMA_VERSION,
     title: scene.title || 'StudioBoard Lesson',
-    theme: scene.theme === 'dark' ? 'dark' : 'light',
+    theme: ['dark', 'light', 'excalidraw'].includes(scene.theme) ? scene.theme : 'excalidraw',
     activePageId: scene.activePageId || cleanPages[0]?.id,
     pages: cleanPages,
     files: scene.files && typeof scene.files === 'object' ? { ...scene.files } : {},
@@ -373,7 +374,7 @@ export function migrateSceneData(raw) {
   data.title =
     typeof data.title === 'string' && data.title.trim() ? data.title.trim() : 'StudioBoard Lesson';
   data.files = data.files && typeof data.files === 'object' ? data.files : {};
-  data.theme = data.theme === 'dark' ? 'dark' : 'light';
+  data.theme = ['dark', 'light', 'excalidraw'].includes(data.theme) ? data.theme : 'excalidraw';
   data.settings = {
     snapToGrid: data.settings?.snapToGrid ?? true,
     snapToObjects: data.settings?.snapToObjects ?? true,
@@ -437,7 +438,7 @@ export function saveSceneToLocalStorage(scene, onQuotaError = null, storage = gl
   }
 }
 
-export function loadSceneFromLocalStorage(preferredTheme = 'light', storage = globalThis.localStorage) {
+export function loadSceneFromLocalStorage(preferredTheme = 'excalidraw', storage = globalThis.localStorage) {
   if (!storage) return createScene(preferredTheme);
   try {
     const rawStr = storage.getItem(STORAGE_KEY);
@@ -481,17 +482,60 @@ export function createDebouncedAutosave(arg1 = 500, arg2 = null, arg3 = null) {
   let timer = null;
   let lastSnapshotTime = 0;
   let pendingScene = null;
+  let saving = false;
+  let lastSuccessfulSaveAt = 0;
 
-  const runSave = () => {
-    if (!pendingScene) return;
+  // Board data is written to IndexedDB (large quota). localStorage is only a
+  // fallback for environments without IndexedDB (e.g. Node test runners).
+  const runSave = async () => {
+    if (!pendingScene || saving) return;
     const scene = pendingScene;
     pendingScene = null;
-    const ok = saveSceneToLocalStorage(scene, onQuotaError);
-    if (onStatusChange) onStatusChange(ok ? 'saved' : 'error');
-    const now = Date.now();
-    if (ok && now - lastSnapshotTime > 45000) {
-      lastSnapshotTime = now;
-      saveRecoverySnapshot(scene, 'Auto-checkpoint');
+
+    // No IndexedDB (Node tests, private contexts): write synchronously so
+    // flush() remains a synchronous guarantee for callers that rely on it.
+    if (typeof indexedDB === 'undefined') {
+      const ok = saveSceneToLocalStorage(scene, onQuotaError);
+      if (ok) {
+        lastSuccessfulSaveAt = Date.now();
+        if (onStatusChange) {
+          onStatusChange('saved', { backend: 'localStorage (fallback)', bytes: 0, at: lastSuccessfulSaveAt });
+        }
+      } else if (onStatusChange) {
+        onStatusChange('error', { error: new Error('localStorage write failed'), at: lastSuccessfulSaveAt });
+      }
+      return;
+    }
+
+    saving = true;
+    try {
+      const result = await saveBoardToIDB(scene);
+      if (!result.ok) {
+        throw result.error || new Error(`Save failed on ${result.backend || 'storage'}`);
+      }
+      if (!result.ok) {
+        throw result.error || new Error(`Save failed on ${result.backend || 'storage'}`);
+      }
+      lastSuccessfulSaveAt = result.at || Date.now();
+      if (onStatusChange) {
+        onStatusChange('saved', {
+          backend: result.backend,
+          bytes: result.bytes,
+          at: lastSuccessfulSaveAt,
+        });
+      }
+      const now = Date.now();
+      if (now - lastSnapshotTime > 45000) {
+        lastSnapshotTime = now;
+        saveRecoverySnapshot(scene, 'Auto-checkpoint');
+      }
+    } catch (err) {
+      if (onQuotaError) onQuotaError(err);
+      if (onStatusChange) onStatusChange('error', { error: err, at: lastSuccessfulSaveAt });
+    } finally {
+      saving = false;
+      // If another save was queued while this one ran, flush it now.
+      if (pendingScene && !timer) runSave();
     }
   };
 
@@ -506,16 +550,18 @@ export function createDebouncedAutosave(arg1 = 500, arg2 = null, arg3 = null) {
     }, delayMs);
   }
 
-  // Flush a pending debounced write synchronously. Used on pagehide/visibilitychange so a
-  // reload cannot discard a note or edit typed inside the debounce window.
+  // Flush a pending debounced write so a reload cannot discard a note or edit
+  // typed inside the debounce window. The IndexedDB transaction is started
+  // immediately; callers can await scheduleSave.settled() if they need proof.
   scheduleSave.flush = function flush() {
     if (timer) {
       clearTimeout(timer);
       timer = null;
     }
-    runSave();
+    return runSave();
   };
   scheduleSave.hasPending = () => Boolean(pendingScene);
+  scheduleSave.lastSavedAt = () => lastSuccessfulSaveAt;
   return scheduleSave;
 }
 
@@ -528,6 +574,16 @@ export function loadRecoverySnapshots(storage = globalThis.localStorage) {
     return Array.isArray(list) ? list : [];
   } catch {
     return [];
+  }
+}
+
+export function clearRecoverySnapshots(storage = globalThis.localStorage) {
+  if (!storage) return false;
+  try {
+    storage.removeItem(RECOVERY_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
   }
 }
 

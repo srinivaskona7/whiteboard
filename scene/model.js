@@ -415,12 +415,12 @@ export function syncContainerMemberships(page, movedElements = []) {
   }
 }
 
-export function createScene(preferredTheme = 'light') {
+export function createScene(preferredTheme = 'excalidraw') {
   const firstPage = createPage('Page 1');
   return {
     version: SCHEMA_VERSION,
     title: 'StudioBoard Lesson',
-    theme: preferredTheme === 'dark' ? 'dark' : 'light',
+    theme: ['dark', 'light', 'excalidraw'].includes(preferredTheme) ? preferredTheme : 'excalidraw',
     activePageId: firstPage.id,
     pages: [firstPage],
     files: {}, // fileId -> { id, dataUrl, mimeType, width, height, created }

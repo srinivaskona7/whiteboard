@@ -1374,6 +1374,7 @@ export function initDialogs(app) {
     isOpen,
     close,
     showToast,
+    openHtml,
     openShortcutsModal,
     openMermaidModal,
     openExportModal,

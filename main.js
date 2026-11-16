@@ -41,11 +41,14 @@ import {
   saveUserLibrary,
   saveThemePreference,
   saveRecoverySnapshot,
+  loadRecoverySnapshots,
+  clearRecoverySnapshots,
   loadWorkspacePreferences,
   saveWorkspacePreferences,
   DEFAULT_PRESET_TOOLS,
   WORKSPACE_PRESETS,
   STORAGE_KEY,
+  RECOVERY_STORAGE_KEY,
   addRecentBoard,
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
@@ -53,10 +56,19 @@ import { createCodeSnippetElement } from './scene/code-snippet.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
 import { buildQuickAdd } from './scene/quick-add.js';
 import { VersionHistory, formatVersionTime } from './scene/version-history.js';
-import { indexedDBBackup } from './scene/indexeddb-backup.js';
+import {
+  indexedDBBackup,
+  saveBoardToIDB,
+  loadBoardFromIDB,
+  getBoardInfo,
+  clearBoardFromIDB,
+  clearAllBackups,
+  listBackups,
+} from './scene/indexeddb-backup.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
 import { initTeachingQuickbar } from './ui/teaching-quickbar.js';
 import { initPageNavigator } from './ui/page-navigator.js';
+import { initAdvancedOptions } from './ui/advanced-options.js';
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
 import { CanvasRenderer, spotlightEscapeAction } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
@@ -119,6 +131,13 @@ export class WhiteboardApp {
     this.clipboard = [];
     this.formatPainterStyle = null;
     this.currentStyle = { ...DEFAULT_STYLE };
+    // Excalidraw-style default ink: near-black so shapes read like pen-on-paper.
+    if (this.scene.theme === 'excalidraw') {
+      this.currentStyle.stroke = '#1e1e1e';
+      this.currentStyle.textColor = '#1e1e1e';
+      this.currentStyle.fontFamily = 'hand';
+    }
+    this._lastSaveInfo = null; // { backend, at, bytes } from last successful save
     this.nextStampNumber = 1;
     this.hoveredElement = null;
     this.emptyStateDismissed = false;
@@ -251,25 +270,36 @@ export class WhiteboardApp {
 
     this.scheduleAutosave = createDebouncedAutosave(
       350,
-      (quotaErr) => {
+      (err) => {
         const el = document.getElementById('wb-autosave-status');
+        const backend = 'IndexedDB';
+        const detail = err?.message || 'Unknown storage error';
+        const last = this._lastSaveInfo?.at
+          ? new Date(this._lastSaveInfo.at).toLocaleTimeString()
+          : 'none';
         if (el) {
-          el.textContent = 'Save failed (Quota)';
+          el.textContent = 'Save failed';
           el.dataset.state = 'error';
+          el.title = `Backend: ${backend}\nError: ${detail}\nLast successful save: ${last}`;
         }
-        this.dialogs?.showToast(
-          quotaErr?.message || 'Browser storage is full. Export .whiteboard.json to back up your board.'
-        );
+        this.dialogs?.showToast(`Save failed (${backend}): ${detail}`, 'error');
       },
-      (state) => {
+      (state, info = {}) => {
         const el = document.getElementById('wb-autosave-status');
-        if (el) {
-          el.dataset.state = state;
-          el.textContent =
-            state === 'saved' ? 'Saved locally'
-            : state === 'saving' ? 'Saving…'
-            : state === 'offline' ? 'Offline — changes queued'
-            : 'Save failed';
+        if (!el) return;
+        el.dataset.state = state;
+        if (state === 'saved') {
+          this._lastSaveInfo = info;
+          const backend = info.backend || 'IndexedDB';
+          el.textContent = 'Saved';
+          el.title = `Saved to ${backend}${info.bytes ? ` · ${this.formatBytes(info.bytes)}` : ''} at ${new Date(info.at || Date.now()).toLocaleTimeString()}`;
+        } else if (state === 'saving') {
+          el.textContent = 'Saving…';
+        } else if (state === 'error') {
+          el.textContent = 'Save failed';
+          el.title = `Error: ${info.error?.message || 'unknown'}\nLast successful save: ${this._lastSaveInfo?.at ? new Date(this._lastSaveInfo.at).toLocaleTimeString() : 'none'}`;
+        } else {
+          el.textContent = 'Offline — changes queued';
         }
       }
     );
@@ -286,14 +316,70 @@ export class WhiteboardApp {
     this.requestRender();
     this._refreshStorageSize();
 
-    // Initialize IndexedDB backup and start auto-save
-    this.indexedDBBackup.init().then(() => {
-      this.indexedDBBackup.startAutoSave(this);
+    // Migrate the board to IndexedDB (authoritative store) and start checkpoints.
+    this._migrateBoardToIndexedDB().then(() => {
+      this.indexedDBBackup.init().then(() => this.indexedDBBackup.startAutoSave(this));
     });
 
     // Initialize teaching UI modules
     this.teachingQuickbar = initTeachingQuickbar(this);
     this.pageNavigator = initPageNavigator(this);
+    this.advancedOptions = initAdvancedOptions(this);
+    this.openAdvancedOptions = (section) => this.advancedOptions?.open(section);
+  }
+
+  // Migrate board data to IndexedDB (authoritative, large quota). localStorage
+  // keeps only small preferences. We always read back before deleting the old copy.
+  async _migrateBoardToIndexedDB() {
+    let source = null;
+    try {
+      const idbBoard = await loadBoardFromIDB();
+      if (idbBoard) source = idbBoard;
+      else {
+        const backups = await listBackups();
+        if (backups.length) source = await indexedDBBackup.restore(backups[0].id);
+      }
+    } catch {
+      // IndexedDB unavailable — keep the localStorage scene.
+    }
+
+    const localScene = this.scene;
+    if (source && source !== localScene) {
+      try {
+        this.scene = parseSceneJson(JSON.stringify(source));
+      } catch {
+        this.scene = source;
+      }
+      this.history = new HistoryManager(100);
+      for (const p of this.scene.pages) this.history.initPage(p);
+      this._initTheme();
+      this.updateUI();
+      this.requestRender();
+      this.dialogs?.showToast('Restored your most recent board from local backup.', 'info');
+    }
+
+    const result = await saveBoardToIDB(this.scene);
+    if (result.ok) {
+      const readback = await loadBoardFromIDB();
+      if (readback) {
+        // Verified in IndexedDB — safe to remove the small localStorage board copy.
+        try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+        this._lastSaveInfo = result;
+        const status = document.getElementById('wb-autosave-status');
+        if (status) {
+          status.textContent = 'Saved';
+          status.dataset.state = 'saved';
+          status.title = `Saved to ${result.backend} · ${this.formatBytes(result.bytes)} at ${new Date(result.at).toLocaleTimeString()}`;
+        }
+      }
+    } else {
+      const el = document.getElementById('wb-autosave-status');
+      if (el) {
+        el.textContent = 'Save unavailable';
+        el.dataset.state = 'error';
+        el.title = result.error?.message || 'IndexedDB is unavailable in this browser context';
+      }
+    }
   }
 
   get fadingInk() {
@@ -749,22 +835,42 @@ export class WhiteboardApp {
     const el = document.getElementById('wb-storage-size');
     if (!el) return;
     const { usage, quota } = await this.getStorageEstimate();
+
+    // Board data (authoritative copy lives in IndexedDB).
+    let boardBytes = 0;
+    try { boardBytes = new TextEncoder().encode(serializeScene(this.scene)).byteLength; } catch { /* ignore */ }
+    const boardInfo = await getBoardInfo();
+    if (boardInfo.bytes) boardBytes = Math.max(boardBytes, boardInfo.bytes);
+
+    // Recovery history: localStorage snapshots + IndexedDB checkpoints.
+    let recoveryBytes = 0;
+    try {
+      recoveryBytes = new TextEncoder().encode(localStorage.getItem(RECOVERY_STORAGE_KEY) || '').byteLength;
+    } catch { /* ignore */ }
+    const idbBackups = await listBackups();
+    recoveryBytes += idbBackups.reduce((sum, b) => sum + (b.bytes || 0), 0);
+
     const used = this.formatBytes(usage);
     const total = quota ? this.formatBytes(quota) : '—';
     const pct = quota ? Math.round((usage / quota) * 100) : null;
-    el.textContent = `${used} / ${total}` + (pct != null ? ` (${pct}%)` : '');
-    el.title = `Local storage usage — used ${used}${quota ? ` of ${total}` : ''}${pct != null ? ` (${pct}% of quota)` : ''}. Clear the board or export .whiteboard.json to free space.`;
-    // Colour the pill as it fills up.
+
+    el.textContent = `Board ${this.formatBytes(boardBytes)} · Rec ${this.formatBytes(recoveryBytes)} · Site ${pct != null ? `${pct}%` : used}`;
+    el.title = [
+      `Board data (IndexedDB): ${this.formatBytes(boardBytes)}`,
+      `Recovery history (snapshots + checkpoints): ${this.formatBytes(recoveryBytes)} (${idbBackups.length} checkpoints)`,
+      `Overall site storage (browser estimate): ${used} / ${total}${pct != null ? ` (${pct}%)` : ''}`,
+      '',
+      'Board saves use IndexedDB, so the overall site quota does not limit them.',
+      'Download a backup to PRESERVE data. Clear recovery history (Advanced Options) to FREE space.',
+    ].join('\n');
+
     el.classList.remove('wb-storage-ok', 'wb-storage-warn', 'wb-storage-full');
     if (pct != null) {
       el.classList.add(pct >= 90 ? 'wb-storage-full' : pct >= 70 ? 'wb-storage-warn' : 'wb-storage-ok');
-
-      // Warn once per hour when approaching the quota so the teacher can
-      // export/clear before saves start failing.
-      if (pct >= 80 && Date.now() - this._lastStorageWarningAt > 3_600_000) {
+      if (pct >= 90 && Date.now() - this._lastStorageWarningAt > 3_600_000) {
         this._lastStorageWarningAt = Date.now();
         this.dialogs.showToast(
-          `Local storage is ${pct}% full (${used} / ${total}). Export .whiteboard.json or Clear Board to free space.`,
+          `Overall site storage is ${pct}% full. This does NOT block board saves (IndexedDB). Clear recovery history if you want to free space.`,
           'warn'
         );
       }

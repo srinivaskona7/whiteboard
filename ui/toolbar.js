@@ -110,7 +110,8 @@ export function initToolbar(app) {
 
       <div class="wb-top-right">
         <button type="button" class="wb-btn" id="btn-palette" aria-label="Command Palette (${escapeXml(paletteKey)})" title="Command Palette (${escapeXml(paletteKey)})">${ICONS.search} <span class="wb-hide-md">${escapeXml(paletteKey)}</span></button>
-        <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Light / Dark Theme">${ICONS.theme}</button>
+        <button type="button" class="wb-btn" id="btn-theme" aria-label="Toggle Theme" title="Cycle Theme (Excalidraw → Light → Dark)">${ICONS.theme}</button>
+        <button type="button" class="wb-btn" id="btn-advanced" aria-label="Advanced Options" title="Advanced Options — features, storage & cleanup">⚙ <span class="wb-hide-md">Advanced</span></button>
 
         <div class="wb-dropdown">
           <button type="button" class="wb-btn wb-primary" id="btn-board-menu" aria-haspopup="true" title="Board File, Share & Export Actions">${ICONS.menu} <span class="wb-hide-sm">Board ▾</span></button>
@@ -191,19 +192,12 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-customize-focus')?.addEventListener('click', () => app.dialogs.openFocusToolsModal());
     topBar.querySelector('#btn-palette')?.addEventListener('click', () => app.paletteUI.open());
     topBar.querySelector('#btn-theme')?.addEventListener('click', () => app.cycleTheme());
+    topBar.querySelector('#btn-advanced')?.addEventListener('click', () => app.openAdvancedOptions?.('features'));
     topBar.querySelector('#btn-mermaid')?.addEventListener('click', () => app.dialogs.openMermaidModal());
     topBar.querySelector('#btn-auto-layout-board')?.addEventListener('click', () => app.autoLayoutSelection('LR'));
     topBar.querySelector('#btn-clear-board')?.addEventListener('click', () => app.clearBoard());
-    topBar.querySelector('#btn-storage-quota')?.addEventListener('click', async () => {
-      await app._refreshStorageSize();
-      const { usage, quota } = await app.getStorageEstimate();
-      const pct = quota ? Math.round((usage / quota) * 100) : null;
-      app.dialogs.showToast(
-        pct != null
-          ? `Storage quota: ${app.formatBytes(usage)} / ${app.formatBytes(quota)} (${pct}% used)`
-          : `Storage usage: ${app.formatBytes(usage)} (quota not reported by browser)`,
-        'info'
-      );
+    topBar.querySelector('#btn-storage-quota')?.addEventListener('click', () => {
+      app.openAdvancedOptions?.('storage');
     });
     topBar.querySelector('#btn-fullscreen')?.addEventListener('click', () => app.toggleFullscreen());
     topBar.querySelector('#btn-save-json')?.addEventListener('click', () => app.saveSceneFile());
