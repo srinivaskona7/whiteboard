@@ -7,6 +7,8 @@ export const LIBRARY_STORAGE_KEY = 'classroom_whiteboard_user_library_v1';
 export const THEME_STORAGE_KEY = 'classroom_whiteboard_theme_v1';
 export const RECOVERY_STORAGE_KEY = 'classroom_whiteboard_recovery_v1';
 export const WORKSPACE_PREFS_KEY = 'classroom_whiteboard_workspace_prefs_v1';
+export const RECENT_BOARDS_KEY = 'classroom_whiteboard_recent_boards_v1';
+export const MAX_RECENT_BOARDS = 10;
 
 const TRANSIENT_ELEMENT_KEYS = [
   'selected',
@@ -697,4 +699,64 @@ export function decodeSceneFromHash(hashString) {
   }
   const json = new TextDecoder().decode(bytes);
   return parseSceneJson(json);
+}
+
+// ── Recent boards tracking ───────────────────────────────────────────────
+
+export function addRecentBoard(board = {}, storage = globalThis.localStorage) {
+  if (!storage) return;
+  try {
+    const raw = storage.getItem(RECENT_BOARDS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return;
+    const entry = {
+      id: board.id || uid('rb'),
+      title: board.title || 'Untitled Board',
+      thumbnail: board.pages?.[0]?.elements?.[0]?.text || '',
+      updatedAt: Date.now(),
+      pageCount: board.pages?.length || 1,
+      elementCount: (board.pages || []).reduce((acc, p) => acc + (p.elements?.length || 0), 0),
+    };
+    const next = [entry, ...list.filter((b) => b.id !== entry.id)].slice(0, MAX_RECENT_BOARDS);
+    storage.setItem(RECENT_BOARDS_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadRecentBoards(storage = globalThis.localStorage) {
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(RECENT_BOARDS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function removeRecentBoard(id, storage = globalThis.localStorage) {
+  if (!storage) return false;
+  try {
+    const raw = storage.getItem(RECENT_BOARDS_KEY);
+    if (!raw) return false;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return false;
+    const next = list.filter((b) => b.id !== id);
+    storage.setItem(RECENT_BOARDS_KEY, JSON.stringify(next));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearRecentBoards(storage = globalThis.localStorage) {
+  if (!storage) return false;
+  try {
+    storage.removeItem(RECENT_BOARDS_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -53,16 +53,85 @@ export function initDialogs(app) {
     if (ev.target === backdrop) close();
   });
 
-  function showToast(message, type = 'info', duration = 3400) {
-    if (!toasts) return;
+  // Toast with optional action button, progress bar, and stack limit.
+  // Returns the toast element so callers can dismiss it early (e.g. on Undo).
+  function showToast(message, type = 'info', duration = 3400, { actionLabel, onAction } = {}) {
+    if (!toasts) return null;
+
+    // Stack limit: remove oldest toasts when we exceed 5.
+    while (toasts.children.length >= 5) {
+      const oldest = toasts.firstElementChild;
+      if (oldest) {
+        oldest.classList.add('wb-toast-fade');
+        setTimeout(() => oldest.remove(), 260);
+      }
+    }
+
     const item = document.createElement('div');
     item.className = `wb-toast wb-toast-${type}`;
-    item.textContent = message;
+    item.setAttribute('role', 'alert');
+    item.setAttribute('aria-live', 'polite');
+
+    const escaped = escapeXml(message);
+    const progress = `
+      <div class="wb-toast-progress"><div class="wb-toast-progress-bar"></div></div>
+    `;
+    const actionHtml = actionLabel && onAction
+      ? `<button type="button" class="wb-toast-action">${escapeXml(actionLabel)}</button>`
+      : '';
+
+    item.innerHTML = `
+      <span class="wb-toast-message">${escaped}</span>
+      ${actionHtml}
+      ${progress}
+    `;
     toasts.appendChild(item);
-    setTimeout(() => {
+
+    const bar = item.querySelector('.wb-toast-progress-bar');
+    if (bar) {
+      bar.style.transition = `width ${duration}ms linear`;
+      // Force reflow then start the width animation.
+      requestAnimationFrame(() => {
+        bar.style.width = '0%';
+      });
+    }
+
+    let settled = false;
+    const dismiss = () => {
+      if (settled) return;
+      settled = true;
       item.classList.add('wb-toast-fade');
       setTimeout(() => item.remove(), 260);
-    }, duration);
+    };
+
+    const actionBtn = item.querySelector('.wb-toast-action');
+    if (actionBtn) {
+      actionBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        dismiss();
+        onAction();
+      });
+    }
+
+    // Click anywhere on toast to dismiss.
+    item.addEventListener('click', (ev) => {
+      if (!actionBtn || !ev.target.closest('.wb-toast-action')) {
+        dismiss();
+      }
+    });
+
+    const timer = setTimeout(dismiss, duration);
+    item._toastTimer = timer;
+    return item;
+  }
+
+  // Dismiss a specific toast early.
+  function dismissToast(item) {
+    if (!item) return;
+    clearTimeout(item._toastTimer);
+    item.classList.add('wb-toast-fade');
+    setTimeout(() => item.remove(), 260);
   }
 
   function openShortcutsModal() {
@@ -1269,6 +1338,38 @@ export function initDialogs(app) {
     });
   }
 
+  // Confirmation modal for destructive actions (clear board, etc.).
+  // Returns a promise that resolves to true when the user confirms, false on cancel/close.
+  function openConfirmModal(title, body, { confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
+    return new Promise((resolve) => {
+      openHtml(
+        title,
+        `
+          <div class="wb-confirm-body ${danger ? 'wb-confirm-danger' : ''}" style="margin:8px 0 0;line-height:1.45;">${escapeXml(body)}</div>
+          <div class="wb-modal-actions" style="justify-content:flex-end;gap:8px;">
+            <button type="button" class="wb-btn" id="wb-confirm-cancel">${escapeXml(cancelLabel)}</button>
+            <button type="button" class="wb-btn ${danger ? 'wb-danger' : 'wb-primary'}" id="wb-confirm-ok">${escapeXml(confirmLabel)}</button>
+          </div>
+        `,
+        (modal) => {
+          let settled = false;
+          const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            close();
+            resolve(value);
+          };
+          modal.querySelector('#wb-confirm-ok')?.addEventListener('click', () => finish(true));
+          modal.querySelector('#wb-confirm-cancel')?.addEventListener('click', () => finish(false));
+          modal.querySelector('#wb-modal-close')?.addEventListener('click', () => finish(false));
+          backdrop?.addEventListener('click', (ev) => {
+            if (ev.target === backdrop) finish(false);
+          });
+        }
+      );
+    });
+  }
+
   return {
     isOpen,
     close,
@@ -1282,10 +1383,12 @@ export function initDialogs(app) {
     openRecoveryModal,
     openHyperlinkModal,
     openPromptModal,
+    openConfirmModal,
     openFocusToolsModal,
     openCodeEditorModal,
     openTableInsertModal,
     openTabletTestModal,
     openDiagramConfigModal,
+    dismissToast,
   };
 }

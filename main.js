@@ -46,15 +46,18 @@ import {
   DEFAULT_PRESET_TOOLS,
   WORKSPACE_PRESETS,
   STORAGE_KEY,
+  addRecentBoard,
 } from './scene/storage.js';
 import { computeNonOverlappingOrigin } from './scene/mermaid.js';
 import { createCodeSnippetElement } from './scene/code-snippet.js';
 import { computeBatchStencilPlacement, autoLayoutArchitecture } from './scene/layout.js';
 import { buildQuickAdd } from './scene/quick-add.js';
+import { VersionHistory, formatVersionTime } from './scene/version-history.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
 import { CollabClient, parseShareRoute } from './scene/collab-client.js';
 import { CanvasRenderer, spotlightEscapeAction } from './render/canvas.js';
 import { THEME_ORDER } from './render/themes.js';
+import { escapeXml } from './render/svg-export.js';
 import { getStencilById, isStencilLoaded, ensureIconPackLoaded } from './stencils/index.js';
 import { BUILTIN_TEMPLATES } from './templates/index.js';
 import { SelectTool } from './tools/select.js';
@@ -127,6 +130,8 @@ export class WhiteboardApp {
     this.spacePressed = false;
     this.isPanning = false;
     this.panStart = { x: 0, y: 0 };
+    this._pinchState = null; // { id1, id2, startDist, startCenter, startZoom, startCamX, startCamY }
+    this._activeTouches = new Map(); // pointerId -> { x, y }
     this.minimapOpen = Boolean(this.workspacePrefs.minimapOpen);
     this.propsDrawerOpen = true;
     this.propsPinned = Boolean(this.workspacePrefs.inspectorPinned);
@@ -175,6 +180,12 @@ export class WhiteboardApp {
     this.presentState = { active: false, slideIndex: 0, revealStep: 0 };
     this.viewMode = 'diagram'; // 'diagram' | 'notebook' — a projection over the same document
     this._lastFatalErrorTime = 0;
+
+    this._lastStorageRefresh = 0;
+    this._lastStorageWarningAt = 0;
+
+    // Version history for board snapshots
+    this.versionHistory = new VersionHistory();
 
     this.canvas = document.getElementById('wb-canvas');
     this.minimapCanvas = document.getElementById('wb-minimap');
@@ -255,6 +266,7 @@ export class WhiteboardApp {
 
     this._initTheme();
     this._bindEvents();
+    this._initMobileSheet();
     setupImagePasteAndDrop(this);
     this._updateCanvasCursor();
     this.setWorkspacePreset(this.activePreset, { applyDefaultPanels: true, silent: true });
@@ -262,6 +274,7 @@ export class WhiteboardApp {
     this._initShareRouteFromHash();
     this.updateUI();
     this.requestRender();
+    this._refreshStorageSize();
   }
 
   get fadingInk() {
@@ -625,6 +638,19 @@ export class WhiteboardApp {
       this.votingUI.toggle();
       return;
     }
+    // Image tool opens the file picker instead of entering a placement mode.
+    if (toolId === 'image') {
+      this.cancelActiveInteractions();
+      this.activeTool = 'image';
+      this.emptyStateDismissed = true;
+      document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
+      this._updateCanvasCursor();
+      this.toolbarUI.update();
+      this.propsUI.update();
+      this.requestRender();
+      document.getElementById('wb-file-image')?.click();
+      return;
+    }
     this.cancelActiveInteractions();
     this.activeTool = toolId;
     if (toolId !== 'select' && toolId !== 'hand') {
@@ -659,9 +685,100 @@ export class WhiteboardApp {
     }
     this.history.record(page);
     this.scheduleAutosave(this.scene);
+    this.versionHistory.save(this.scene);
     this.collab.broadcastSceneChange(deletedIds);
     this.toolbarUI.update();
     this.layersUI.update();
+  }
+
+  // ── Storage usage / limit ─────────────────────────────────────────────
+
+  formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const n = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+    return `${n} ${sizes[i]}`;
+  }
+
+  async getStorageEstimate() {
+    // Prefer the browser's Storage Estimation API for the real origin quota.
+    if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+      try {
+        const est = await navigator.storage.estimate();
+        return {
+          usage: Number(est.usage) || 0,
+          quota: Number(est.quota) || 0,
+        };
+      } catch {
+        // fall through to localStorage fallback below
+      }
+    }
+    // Fallback: measure the whiteboard scene key itself (not the whole origin).
+    let usage = 0;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      usage = raw ? new TextEncoder().encode(raw).byteLength : 0;
+    } catch {
+      usage = 0;
+    }
+    return { usage, quota: null };
+  }
+
+  async _refreshStorageSize() {
+    const el = document.getElementById('wb-storage-size');
+    if (!el) return;
+    const { usage, quota } = await this.getStorageEstimate();
+    const used = this.formatBytes(usage);
+    const total = quota ? this.formatBytes(quota) : '—';
+    const pct = quota ? Math.round((usage / quota) * 100) : null;
+    el.textContent = `${used} / ${total}` + (pct != null ? ` (${pct}%)` : '');
+    el.title = `Local storage usage — used ${used}${quota ? ` of ${total}` : ''}${pct != null ? ` (${pct}% of quota)` : ''}. Clear the board or export .whiteboard.json to free space.`;
+    // Colour the pill as it fills up.
+    el.classList.remove('wb-storage-ok', 'wb-storage-warn', 'wb-storage-full');
+    if (pct != null) {
+      el.classList.add(pct >= 90 ? 'wb-storage-full' : pct >= 70 ? 'wb-storage-warn' : 'wb-storage-ok');
+
+      // Warn once per hour when approaching the quota so the teacher can
+      // export/clear before saves start failing.
+      if (pct >= 80 && Date.now() - this._lastStorageWarningAt > 3_600_000) {
+        this._lastStorageWarningAt = Date.now();
+        this.dialogs.showToast(
+          `Local storage is ${pct}% full (${used} / ${total}). Export .whiteboard.json or Clear Board to free space.`,
+          'warn'
+        );
+      }
+    }
+  }
+
+  // ── Clear / reset board ───────────────────────────────────────────────
+
+  async clearBoard() {
+    if (!this.collab.canEditBoard()) {
+      this.dialogs.showToast('Viewers cannot clear board content.', 'info');
+      return;
+    }
+    const page = this.getPage();
+    const visible = page.elements.filter((e) => !e.hidden);
+    if (visible.length === 0) {
+      this.dialogs.showToast('Board is already empty.', 'info');
+      return;
+    }
+    const confirmed = await this.dialogs.openConfirmModal(
+      'Clear Board',
+      `This will delete all ${visible.length} element(s) on the current page. A recovery snapshot is taken first so you can restore it from Recovery Snapshots if needed.`,
+      { confirmLabel: 'Clear Everything', cancelLabel: 'Cancel', danger: true }
+    );
+    if (!confirmed) return;
+    saveRecoverySnapshot(this.scene, 'Before Clear Board');
+    page.elements = [];
+    this.selectedIds.clear();
+    this.commitChange();
+    this.updateUI();
+    this.requestRender();
+    await this._refreshStorageSize();
+    this.dialogs.showToast('Board cleared.', 'success');
   }
 
   undo() {
@@ -725,6 +842,14 @@ export class WhiteboardApp {
     this.classroomUI?.update();
     this.notebookView?.update();
     this.toggleEmptyState();
+
+    // Refresh the storage size pill at most once every 3 seconds so we don't
+    // hammer the Storage Estimation API on every tiny change.
+    const now = Date.now();
+    if (!this._lastStorageRefresh || now - this._lastStorageRefresh > 3000) {
+      this._lastStorageRefresh = now;
+      this._refreshStorageSize();
+    }
   }
 
   setViewMode(mode) {
@@ -880,6 +1005,17 @@ export class WhiteboardApp {
     this.collab.broadcastTeacherCamera();
     this.toolbarUI.update();
     this.requestRender();
+  }
+
+  toggleFullscreen() {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {
+        this.dialogs.showToast('Fullscreen not supported by this browser.', 'info');
+      });
+    } else {
+      document.exitFullscreen?.();
+    }
   }
 
   _fitElementsBounds(elements) {
@@ -2347,6 +2483,7 @@ export class WhiteboardApp {
         .toLowerCase()
         .replace(/[^a-z0-9-_]+/g, '-');
       this.downloadBlob(blob, `${safeName}.whiteboard.json`);
+      addRecentBoard(this.scene);
     } catch (err) {
       this.dialogs.showToast(`Save aborted: ${err.message}`);
     }
@@ -2488,6 +2625,22 @@ export class WhiteboardApp {
       if (wfTab) wfTab.click();
     });
 
+    // Quick template cards on the empty board state.
+    document.getElementById('wb-empty-state')?.addEventListener('click', (ev) => {
+      const tpl = ev.target.closest('[data-tpl]');
+      if (!tpl) return;
+      const tplId = tpl.dataset.tpl;
+      this.emptyStateDismissed = true;
+      document.getElementById('wb-empty-state')?.classList.add('wb-hidden');
+      const map = {
+        architecture: 'pack-linux-boot',
+        flowchart: 'pack-dns-flow',
+        mindmap: 'pack-k8s-arch',
+      };
+      const packId = map[tplId];
+      if (packId) app.insertDiagramPack(packId);
+    });
+
     document.getElementById('wb-file-import-lib')?.addEventListener('change', async (e) => {
       const f = e.target.files?.[0];
       if (!f) return;
@@ -2561,6 +2714,135 @@ export class WhiteboardApp {
     });
   }
 
+  _initMobileSheet() {
+    const sheet = document.getElementById('wb-mobile-sheet');
+    const backdrop = sheet?.querySelector('.wb-mobile-sheet-backdrop');
+    const closeBtn = sheet?.querySelector('#wb-mobile-sheet-close');
+    if (!sheet) return;
+
+    const open = () => {
+      this._renderMobilePagesList();
+      sheet.classList.remove('wb-hidden');
+      sheet.setAttribute('aria-hidden', 'false');
+    };
+    const close = () => {
+      sheet.classList.add('wb-hidden');
+      sheet.setAttribute('aria-hidden', 'true');
+    };
+
+    closeBtn?.addEventListener('click', close);
+    backdrop?.addEventListener('click', close);
+
+    // Template buttons inside the sheet.
+    sheet.querySelectorAll('[data-tpl]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const tplId = btn.dataset.tpl;
+        close();
+        this.emptyStateDismissed = true;
+        const map = {
+          architecture: 'pack-linux-boot',
+          flowchart: 'pack-dns-flow',
+          mindmap: 'pack-k8s-arch',
+        };
+        const packId = map[tplId];
+        if (packId) this.insertDiagramPack(packId);
+      });
+    });
+
+    // Quick actions.
+    sheet.querySelector('#wb-mobile-sheet-blank')?.addEventListener('click', () => {
+      this.haptic('light');
+      close();
+      this.emptyStateDismissed = true;
+    });
+    sheet.querySelector('#wb-mobile-sheet-library')?.addEventListener('click', () => {
+      this.haptic('light');
+      close();
+      this.emptyStateDismissed = true;
+      this.togglePanel('wb-library-panel');
+    });
+    sheet.querySelector('#wb-mobile-sheet-workflows')?.addEventListener('click', () => {
+      this.haptic('light');
+      close();
+      this.emptyStateDismissed = true;
+      this.togglePanel('wb-library-panel');
+      const panel = document.getElementById('wb-library-panel');
+      const wfTab = panel?.querySelector('[data-tab="workflows"]');
+      if (wfTab) wfTab.click();
+    });
+    sheet.querySelector('#wb-mobile-sheet-clear')?.addEventListener('click', () => {
+      this.haptic('medium');
+      close();
+      this.clearBoard();
+    });
+
+    // Template cards inside the sheet.
+    sheet.querySelectorAll('[data-tpl]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.haptic('light');
+        const tplId = btn.dataset.tpl;
+        close();
+        this.emptyStateDismissed = true;
+        const map = {
+          architecture: 'pack-linux-boot',
+          flowchart: 'pack-dns-flow',
+          mindmap: 'pack-k8s-arch',
+        };
+        const packId = map[tplId];
+        if (packId) this.insertDiagramPack(packId);
+      });
+    });
+
+    // Close / backdrop haptic.
+    closeBtn?.addEventListener('click', () => { this.haptic('light'); close(); });
+    backdrop?.addEventListener('click', () => { this.haptic('light'); close(); });
+
+    // Expose open so the mobile dock "More" button can trigger it.
+    this.openMobileSheet = open;
+    this.closeMobileSheet = close;
+  }
+
+  _renderMobilePagesList() {
+    const list = document.getElementById('wb-mobile-sheet-pages-list');
+    if (!list) return;
+    const pages = this.scene.pages;
+    const activeId = this.scene.activePageId;
+    list.innerHTML = pages.map((p, idx) => {
+      const isActive = p.id === activeId;
+      return `
+        <button
+          type="button"
+          class="wb-mobile-sheet-item ${isActive ? 'active' : ''}"
+          data-switch-page="${p.id}"
+          aria-pressed="${isActive}"
+          title="${escapeXml(p.name)}"
+        >
+          <span class="wb-mobile-sheet-item-icon">${isActive ? '📄' : '📃'}</span>
+          <span class="wb-mobile-sheet-item-label">${escapeXml(p.name)}</span>
+          <span class="wb-mobile-sheet-item-badge">Page ${idx + 1}</span>
+        </button>`;
+    }).join('');
+    list.querySelectorAll('[data-switch-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.haptic('light');
+        this.switchPage(btn.dataset.switchPage);
+        close();
+        this._renderMobilePagesList();
+      });
+    });
+  }
+
+  // ── Haptic feedback for mobile touch targets ──
+  haptic(type = 'light') {
+    // Only vibrate on devices that support it, and keep it subtle so it never
+    // feels like a notification — just a tactile confirmation of the tap.
+    if (!navigator.vibrate) return;
+    const pattern = { light: 8, medium: 15, heavy: 25, selection: [5, 5, 5] }[type] || 8;
+    try { navigator.vibrate(pattern); } catch { /* ignored */ }
+  }
+
   _getToolHandler() {
     if (this.activeSubInteraction) return this.activeSubInteraction;
     const t = this.activeTool;
@@ -2574,6 +2856,71 @@ export class WhiteboardApp {
     if (t === 'math') return this.mathTool;
     if (t === 'pointer' || t === 'question') return this.classroomTool;
     return this.shapeTool;
+  }
+
+  // ── Two-finger pinch zoom ──────────────────────────────────────────────
+
+  _startPinch(ev) {
+    const rect = this.canvas.getBoundingClientRect();
+    const id1 = this._capturedPointerId;
+    const id2 = ev.pointerId;
+    const p1 = this._activeTouches.get(id1) || { x: ev.clientX, y: ev.clientY };
+    const p2 = { x: ev.clientX, y: ev.clientY };
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const cam = this.getPage().camera;
+    this._pinchState = {
+      id1, id2,
+      startDist: dist,
+      startCenter: center,
+      startZoom: cam.zoom,
+      startCamX: cam.x,
+      startCamY: cam.y,
+      startScreenCenter: { x: center.x - rect.left, y: center.y - rect.top },
+    };
+    this.isPanning = false;
+    this._canvasPointerActive = false;
+    this._updateCanvasCursor();
+  }
+
+  _handlePinch(ev) {
+    if (!this._pinchState) return;
+    const { id1, id2, startDist, startCenter, startZoom, startCamX, startCamY } = this._pinchState;
+    const p1 = this._activeTouches.get(id1);
+    const p2 = ev.pointerId === id2 ? { x: ev.clientX, y: ev.clientY } : this._activeTouches.get(id2);
+    if (!p1 || !p2) return;
+
+    // Update the moved touch position
+    if (ev.pointerId === id2) this._activeTouches.set(id2, { x: ev.clientX, y: ev.clientY });
+
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (dist < 1) return;
+
+    const scale = dist / startDist;
+    const cam = this.getPage().camera;
+    const nextZoom = Math.max(0.1, Math.min(8, startZoom * scale));
+
+    // Zoom around the pinch center point on screen
+    const centerX = (p1.x + p2.x) / 2;
+    const centerY = (p1.y + p2.y) / 2;
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = centerX - rect.left;
+    const cy = centerY - rect.top;
+
+    const wx = (cx - startCamX) / startZoom;
+    const wy = (cy - startCamY) / startZoom;
+    cam.zoom = nextZoom;
+    cam.x = cx - wx * nextZoom;
+    cy = cy - wy * nextZoom;
+    cam.y = cy;
+
+    this.collab.broadcastTeacherCamera();
+    this.toolbarUI.update();
+    this.requestRender();
+  }
+
+  _endPinch() {
+    this._pinchState = null;
   }
 
   _onPointerDown(ev) {
@@ -2597,6 +2944,16 @@ export class WhiteboardApp {
         this._capturedPointerId = ev.pointerId;
       } catch {
         // Capture is best-effort; window-level listeners remain the fallback.
+      }
+    }
+
+    // Two-finger pinch zoom: when a second touch arrives while one is active,
+    // enter pinch mode instead of normal tool interaction.
+    if (ev.pointerType === 'touch') {
+      this._activeTouches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (this._capturedPointerId != null && ev.pointerId !== this._capturedPointerId) {
+        this._startPinch(ev);
+        return;
       }
     }
 
@@ -2632,11 +2989,24 @@ export class WhiteboardApp {
 
   _onPointerMove(ev) {
     const rect = this.canvas.getBoundingClientRect();
+
+    // Track touch positions for pinch detection
+    if (ev.pointerType === 'touch') {
+      this._activeTouches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    }
+
     // Remote lens: untouched by the local cursor (see _onPointerDown).
     if (!this.spotlight.remote && !(this.spotlight.active && this.spotlight.pinned)) {
       this.spotlight.x = ev.clientX - rect.left;
       this.spotlight.y = ev.clientY - rect.top;
     }
+
+    // Two-finger pinch zoom takes priority over all other interaction.
+    if (this._pinchState && ev.pointerType === 'touch') {
+      this._handlePinch(ev);
+      return;
+    }
+
     if (this.spotlight.active && !this.spotlight.remote) {
       this.broadcastSpotlight(); // throttled — fires ~8×/s, not per move
       this.requestRender();
@@ -2676,6 +3046,15 @@ export class WhiteboardApp {
 
   _onPointerUp(ev) {
     this._releasePointerCapture(ev);
+    if (ev.pointerType === 'touch') {
+      this._activeTouches.delete(ev.pointerId);
+    }
+    if (this._pinchState) {
+      this._endPinch();
+      this._canvasPointerActive = false;
+      this._updateCanvasCursor();
+      return;
+    }
     if (this.isPanning) {
       this.isPanning = false;
       this._canvasPointerActive = false;

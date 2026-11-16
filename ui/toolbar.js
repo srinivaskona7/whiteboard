@@ -46,6 +46,7 @@ export function initToolbar(app) {
         </button>
         <input type="text" id="wb-doc-title" class="wb-doc-title-input" value="" aria-label="Document Title" title="Click to rename lesson/board" />
         <span id="wb-autosave-status" class="wb-status-pill" aria-live="polite" title="Local storage save status">Saved locally</span>
+        <span id="wb-storage-size" class="wb-status-pill wb-storage-pill" title="Local storage usage">—</span>
         <button type="button" id="wb-conn-status" class="wb-status-pill wb-conn-pill" title="Collaboration connection status">Local board</button>
       </div>
 
@@ -115,6 +116,9 @@ export function initToolbar(app) {
             <button type="button" class="wb-menu-item" id="btn-share-url">${ICONS.share} Short Share Links & Live Room…</button>
             <button type="button" class="wb-menu-item" id="btn-mermaid">${ICONS.mermaid} Mermaid Diagram → Editable Nodes…</button>
             <button type="button" class="wb-menu-item" id="btn-auto-layout-board">⇄ Auto-Layout Architecture Diagram</button>
+            <button type="button" class="wb-menu-item wb-danger" id="btn-clear-board">🗑 Clear Board</button>
+            <button type="button" class="wb-menu-item" id="btn-storage-quota">💾 Check Storage Quota</button>
+            <button type="button" class="wb-menu-item" id="btn-fullscreen">${ICONS.fullscreen} Fullscreen</button>
             <button type="button" class="wb-menu-item" id="btn-recovery">${ICONS.history} Recovery Snapshots & Checkpoints…</button>
             <button type="button" class="wb-menu-item" id="btn-shortcuts">${ICONS.keyboard} Keyboard Shortcuts (?)</button>
           </div>
@@ -181,6 +185,19 @@ export function initToolbar(app) {
     topBar.querySelector('#btn-theme')?.addEventListener('click', () => app.cycleTheme());
     topBar.querySelector('#btn-mermaid')?.addEventListener('click', () => app.dialogs.openMermaidModal());
     topBar.querySelector('#btn-auto-layout-board')?.addEventListener('click', () => app.autoLayoutSelection('LR'));
+    topBar.querySelector('#btn-clear-board')?.addEventListener('click', () => app.clearBoard());
+    topBar.querySelector('#btn-storage-quota')?.addEventListener('click', async () => {
+      await app._refreshStorageSize();
+      const { usage, quota } = await app.getStorageEstimate();
+      const pct = quota ? Math.round((usage / quota) * 100) : null;
+      app.dialogs.showToast(
+        pct != null
+          ? `Storage quota: ${app.formatBytes(usage)} / ${app.formatBytes(quota)} (${pct}% used)`
+          : `Storage usage: ${app.formatBytes(usage)} (quota not reported by browser)`,
+        'info'
+      );
+    });
+    topBar.querySelector('#btn-fullscreen')?.addEventListener('click', () => app.toggleFullscreen());
     topBar.querySelector('#btn-save-json')?.addEventListener('click', () => app.saveSceneFile());
     topBar.querySelector('#btn-open-json')?.addEventListener('click', () => document.getElementById('wb-file-open-json')?.click());
     topBar.querySelector('#btn-export')?.addEventListener('click', () => app.dialogs.openExportModal());
@@ -434,8 +451,140 @@ export function initToolbar(app) {
 
   let lastDockSignature = '';
 
+  // ── Mobile / tablet simplified dock ────────────────────────────────────
+
+  function isMobileViewport() {
+    return window.innerWidth <= 768 || window.matchMedia?.('(pointer: coarse)').matches;
+  }
+
+  const MOBILE_PRIMARY_IDS = ['select', 'hand', 'pen', 'highlighter', 'eraser', 'image'];
+  const MOBILE_DIAGRAM_IDS = ['rect', 'ellipse', 'arrow', 'line'];
+
+  function renderMobileDock() {
+    if (!dock) return;
+    const canEdit = app.collab ? app.collab.canEditBoard() : true;
+
+    dock.innerHTML = `
+      <div class="wb-mobile-dock" role="toolbar" aria-label="Mobile drawing tools">
+        <div class="wb-mobile-row wb-mobile-row-tools">
+          ${MOBILE_PRIMARY_IDS
+            .map((id) => {
+              const t = TOOL_REGISTRY.find((x) => x.id === id);
+              if (!t) return '';
+              const isActive = app.activeTool === id;
+              return `
+            <button
+              type="button"
+              class="wb-mobile-btn ${isActive ? 'active' : ''}"
+              data-tool="${t.id}"
+              aria-label="${t.label} (${t.shortcut})"
+              aria-pressed="${isActive}"
+              title="${t.label} (${t.shortcut})"
+            >
+              <span class="wb-mobile-icon">${t.icon || '•'}</span>
+              <span class="wb-mobile-label">${t.label}</span>
+            </button>`;
+            })
+            .join('')}
+        </div>
+        ${
+          canEdit
+            ? `
+          <div class="wb-mobile-row wb-mobile-row-diagram">
+            ${MOBILE_DIAGRAM_IDS
+              .map((id) => {
+                const t = TOOL_REGISTRY.find((x) => x.id === id);
+                if (!t) return '';
+                const isActive = app.activeTool === id;
+                return `
+              <button
+                type="button"
+                class="wb-mobile-btn ${isActive ? 'active' : ''}"
+                data-tool="${t.id}"
+                aria-label="${t.label} (${t.shortcut})"
+                aria-pressed="${isActive}"
+                title="${t.label} (${t.shortcut})"
+              >
+                <span class="wb-mobile-icon">${t.icon || '•'}</span>
+                <span class="wb-mobile-label">${t.label}</span>
+              </button>`;
+              })
+              .join('')}
+            <button
+              type="button"
+              class="wb-mobile-btn wb-mobile-btn-clear wb-danger"
+              id="btn-mobile-clear-board"
+              aria-label="Clear Board"
+              title="Clear Board"
+            >
+              <span class="wb-mobile-icon">🗑</span>
+              <span class="wb-mobile-label">Clear</span>
+            </button>
+          </div>`
+            : ''
+        }
+        <div class="wb-mobile-row wb-mobile-row-actions">
+          <button
+            type="button"
+            class="wb-mobile-btn wb-mobile-btn-more"
+            id="btn-mobile-more"
+            aria-label="More tools & options"
+            title="More tools & options"
+          >
+            <span class="wb-mobile-icon">⋯</span>
+            <span class="wb-mobile-label">More</span>
+          </button>
+          <button
+            type="button"
+            class="wb-mobile-btn wb-mobile-btn-full"
+            id="btn-mobile-full-ui"
+            aria-label="Open full desktop UI"
+            title="Open full desktop UI"
+          >
+            <span class="wb-mobile-icon">🖥</span>
+            <span class="wb-mobile-label">Desktop</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    dock.querySelectorAll('[data-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tid = btn.dataset.tool;
+        if (tid === 'image') {
+          app.haptic('light');
+          document.getElementById('wb-file-image')?.click();
+          return;
+        }
+        app.haptic('light');
+        app.setTool(tid);
+      });
+    });
+
+    dock.querySelector('#btn-mobile-clear-board')?.addEventListener('click', () => {
+      app.haptic('medium');
+      app.clearBoard();
+    });
+    dock.querySelector('#btn-mobile-more')?.addEventListener('click', () => {
+      app.haptic('light');
+      app.openMobileSheet?.();
+    });
+    dock.querySelector('#btn-mobile-full-ui')?.addEventListener('click', () => {
+      app.haptic('light');
+      const el = document.getElementById('wb-app');
+      el?.classList.toggle('wb-force-desktop');
+    });
+  }
+
   function renderDock(forceRebuild = false) {
     if (!dock) return;
+
+    // On mobile / tablet, show a simplified touch-friendly dock.
+    if (isMobileViewport()) {
+      renderMobileDock();
+      return;
+    }
+
     const canEdit = app.collab ? app.collab.canEditBoard() : true;
     const collabStatus = app.collab?.status || 'local';
     const rawPinnedIds = !canEdit
@@ -461,6 +610,7 @@ export function initToolbar(app) {
       app.currentBrush || '',
       app.pendingArrowPreset || '',
       pinnedIds.join(','),
+      isMobileViewport() ? 'mobile' : 'desktop',
     ].join('|');
 
     if (!forceRebuild && sig === lastDockSignature && dock.querySelector('.wb-tool-list')) {
@@ -995,6 +1145,10 @@ export function initToolbar(app) {
       const mode = app.viewMode || 'diagram';
       bottomBar.querySelector('#btn-view-diagram')?.classList.toggle('active', mode === 'diagram');
       bottomBar.querySelector('#btn-view-notebook')?.classList.toggle('active', mode === 'notebook');
+      const range = bottomBar.querySelector('#wb-zoom-range');
+      const rangeVal = bottomBar.querySelector('#wb-zoom-range-val');
+      if (range) range.value = String(zoomPct);
+      if (rangeVal) rangeVal.textContent = `${zoomPct}%`;
       return;
     }
     bottomBar.innerHTML = `
@@ -1009,6 +1163,10 @@ export function initToolbar(app) {
         <button type="button" class="wb-btn wb-sm" id="btn-zoom-fit" title="Fit Entire Board (Shift+1)">Fit Board</button>
         <button type="button" class="wb-btn wb-sm" id="btn-zoom-sel" title="Zoom to Selection (Shift+2)">Zoom Sel</button>
         <button type="button" class="wb-btn wb-sm ${app.minimapOpen ? 'active' : ''}" id="btn-minimap" title="Toggle Minimap">Map</button>
+        <div class="wb-zoom-slider">
+          <input type="range" id="wb-zoom-range" min="10" max="400" value="${zoomPct}" aria-label="Zoom level" />
+          <span id="wb-zoom-range-val">${zoomPct}%</span>
+        </div>
       </div>
     `;
     bottomBar.querySelector('#btn-view-diagram')?.addEventListener('click', () => app.setViewMode('diagram'));
@@ -1037,6 +1195,18 @@ export function initToolbar(app) {
       app.minimapOpen = !app.minimapOpen;
       renderBottomBar();
       app.requestRender();
+    });
+    const zoomRange = bottomBar.querySelector('#wb-zoom-range');
+    const zoomRangeVal = bottomBar.querySelector('#wb-zoom-range-val');
+    zoomRange?.addEventListener('input', (ev) => {
+      const pct = Number(ev.target.value) || 100;
+      if (zoomRangeVal) zoomRangeVal.textContent = `${pct}%`;
+      app.setZoom(pct / 100);
+    });
+    zoomRange?.addEventListener('change', (ev) => {
+      const pct = Number(ev.target.value) || 100;
+      if (zoomRangeVal) zoomRangeVal.textContent = `${pct}%`;
+      app.setZoom(pct / 100);
     });
   }
 

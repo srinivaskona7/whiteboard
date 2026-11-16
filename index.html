@@ -39,12 +39,27 @@
           <!-- Empty board guidance — shows when the active page has no content -->
           <div id="wb-empty-state" class="wb-empty-state wb-hidden" role="region" aria-label="Get started on an empty board">
             <div class="wb-empty-state-card">
+              <div class="wb-empty-icon">⚪</div>
               <h2>Start with a blank board</h2>
-              <p>Nothing on the canvas yet. Choose how to begin:</p>
+              <p class="wb-empty-subtitle">Nothing on the canvas yet. Choose how to begin:</p>
               <div class="wb-empty-actions">
-                <button type="button" class="wb-btn wb-sm" id="btn-empty-blank">Blank board</button>
-                <button type="button" class="wb-btn wb-sm wb-primary" id="btn-empty-template">Use a template</button>
+                <button type="button" class="wb-btn wb-sm wb-primary" id="btn-empty-blank">Blank board</button>
+                <button type="button" class="wb-btn wb-sm" id="btn-empty-template">Use a template</button>
                 <button type="button" class="wb-btn wb-sm" id="btn-empty-workflows">Explore workflows</button>
+              </div>
+              <div class="wb-empty-templates" aria-label="Quick templates">
+                <button type="button" class="wb-empty-tpl" data-tpl="architecture" title="Architecture diagram">
+                  <div class="wb-empty-tpl-thumb">☁</div>
+                  <span class="wb-empty-tpl-label">Architecture</span>
+                </button>
+                <button type="button" class="wb-empty-tpl" data-tpl="flowchart" title="Flowchart">
+                  <div class="wb-empty-tpl-thumb">⬡</div>
+                  <span class="wb-empty-tpl-label">Flowchart</span>
+                </button>
+                <button type="button" class="wb-empty-tpl" data-tpl="mindmap" title="Mind map">
+                  <div class="wb-empty-tpl-thumb">⬢</div>
+                  <span class="wb-empty-tpl-label">Mind Map</span>
+                </button>
               </div>
             </div>
           </div>
@@ -52,6 +67,59 @@
 
         <!-- Right Properties Inspector -->
         <aside id="wb-props-panel" class="wb-side-panel wb-right-panel" aria-label="Element Properties Inspector"></aside>
+      </div>
+
+      <!-- Mobile / Tablet Bottom Sheet — Templates & Quick Actions -->
+      <div id="wb-mobile-sheet" class="wb-mobile-sheet wb-hidden" role="dialog" aria-modal="true" aria-label="Templates & Quick Actions">
+        <div class="wb-mobile-sheet-backdrop"></div>
+        <div class="wb-mobile-sheet-panel">
+          <div class="wb-mobile-sheet-header">
+            <h3>Templates</h3>
+            <button type="button" class="wb-icon-btn" id="wb-mobile-sheet-close" aria-label="Close">✕</button>
+          </div>
+          <div class="wb-mobile-sheet-body">
+            <div class="wb-mobile-sheet-section">
+              <div class="wb-mobile-sheet-section-title">Start from scratch</div>
+              <button type="button" class="wb-mobile-sheet-item" id="wb-mobile-sheet-blank">
+                <span class="wb-mobile-sheet-item-icon">⚪</span>
+                <span class="wb-mobile-sheet-item-label">Blank board</span>
+              </button>
+            </div>
+            <div class="wb-mobile-sheet-section">
+              <div class="wb-mobile-sheet-section-title">Quick templates</div>
+              <button type="button" class="wb-mobile-sheet-item" data-tpl="architecture">
+                <span class="wb-mobile-sheet-item-icon">☁</span>
+                <span class="wb-mobile-sheet-item-label">Architecture</span>
+              </button>
+              <button type="button" class="wb-mobile-sheet-item" data-tpl="flowchart">
+                <span class="wb-mobile-sheet-item-icon">⬡</span>
+                <span class="wb-mobile-sheet-item-label">Flowchart</span>
+              </button>
+              <button type="button" class="wb-mobile-sheet-item" data-tpl="mindmap">
+                <span class="wb-mobile-sheet-item-icon">⬢</span>
+                <span class="wb-mobile-sheet-item-label">Mind Map</span>
+              </button>
+            </div>
+            <div class="wb-mobile-sheet-section">
+              <div class="wb-mobile-sheet-section-title">Pages</div>
+              <div id="wb-mobile-sheet-pages-list" class="wb-mobile-sheet-pages-list"></div>
+            </div>
+            <div class="wb-mobile-sheet-section">
+              <div class="wb-mobile-sheet-section-title">More</div>
+              <button type="button" class="wb-mobile-sheet-item" id="wb-mobile-sheet-library">
+                <span class="wb-mobile-sheet-item-icon">📦</span>
+                <span class="wb-mobile-sheet-item-label">Full Library</span>
+              </button>
+              <button type="button" class="wb-mobile-sheet-item" id="wb-mobile-sheet-workflows">
+                <span class="wb-mobile-sheet-item-icon">🔄</span>
+                <span class="wb-mobile-sheet-item-label">Workflows</span>
+              </button>
+            </div>
+          </div>
+          <div class="wb-mobile-sheet-footer">
+            <button type="button" class="wb-btn wb-sm wb-primary wb-mobile-sheet-clear" id="wb-mobile-sheet-clear">🗑 Clear Board</button>
+          </div>
+        </div>
       </div>
 
       <!-- Bottom Bar (Pages + Zoom) -->

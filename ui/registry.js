@@ -111,6 +111,7 @@ export const TOOL_REGISTRY = [
   { id: 'table', label: 'Editable Table', shortcut: 'B', group: 'insert', icon: ICONS.table },
   { id: 'code', label: 'Code Block', shortcut: 'J', group: 'insert', icon: ICONS.code },
   { id: 'stamp', label: 'Classroom Stamp', shortcut: 'S', group: 'insert', icon: ICONS.stamp },
+  { id: 'image', label: 'Insert Image', shortcut: 'I', group: 'insert', icon: ICONS.image },
   { id: 'laser', label: 'Laser Pointer', shortcut: 'K', group: 'teaching', icon: ICONS.laser },
 ];
 
