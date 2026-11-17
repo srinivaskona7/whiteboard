@@ -191,6 +191,7 @@ export class CanvasRenderer {
       tableSelection = null,
       smartGuides = [],
       laserTrail = [],
+      laserColor = '#ef4444',
       spotlight = null,
       presentState = null,
       animationState = null,
@@ -578,7 +579,7 @@ export class CanvasRenderer {
 
     if (laserTrail && laserTrail.length > 0) {
       try {
-        this.drawLaserTrail(ctx, laserTrail, cam.zoom, now);
+        this.drawLaserTrail(ctx, laserTrail, cam.zoom, now, laserColor);
       } catch (err) {
         this._reportRenderError('laserTrail', err);
       }
@@ -933,8 +934,16 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  drawLaserTrail(ctx, trail, zoom, now) {
+  drawLaserTrail(ctx, trail, zoom, now, color = '#ef4444') {
     if (!Array.isArray(trail) || trail.length === 0) return;
+    const rgba = (alpha) => {
+      const hex = String(color || '#ef4444').replace('#', '');
+      const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+      const r = parseInt(full.slice(0, 2), 16) || 239;
+      const g = parseInt(full.slice(2, 4), 16) || 68;
+      const b = parseInt(full.slice(4, 6), 16) || 68;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -944,7 +953,7 @@ export class CanvasRenderer {
       const age = Math.max(0, now - (p1.time ?? p1.t ?? now));
       const alpha = Math.max(0, 1 - age / 1200);
       if (alpha <= 0) continue;
-      ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+      ctx.strokeStyle = rgba(alpha);
       ctx.lineWidth = (6 * alpha) / zoom;
       ctx.beginPath();
       ctx.moveTo(p0.x, p0.y);
@@ -955,7 +964,7 @@ export class CanvasRenderer {
     const tipAge = Math.max(0, now - (tip.time ?? tip.t ?? now));
     const tipAlpha = Math.max(0, 1 - tipAge / 1200);
     if (tipAlpha > 0 && Number.isFinite(tip.x) && Number.isFinite(tip.y)) {
-      ctx.fillStyle = `rgba(239, 68, 68, ${tipAlpha})`;
+      ctx.fillStyle = rgba(tipAlpha);
       ctx.beginPath();
       ctx.arc(tip.x, tip.y, 4.5 / zoom, 0, Math.PI * 2);
       ctx.fill();

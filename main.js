@@ -64,6 +64,10 @@ import {
   clearBoardFromIDB,
   clearAllBackups,
   listBackups,
+  saveRecentBoard,
+  listRecentBoards,
+  restoreRecentBoard,
+  deleteRecentBoard,
 } from './scene/indexeddb-backup.js';
 import { canWrap, wrapTextIntoShape, unwrapShapeText } from './scene/text-wrap.js';
 import { initTeachingQuickbar } from './ui/teaching-quickbar.js';
@@ -131,12 +135,7 @@ export class WhiteboardApp {
     this.clipboard = [];
     this.formatPainterStyle = null;
     this.currentStyle = { ...DEFAULT_STYLE };
-    // Excalidraw-style default ink: near-black so shapes read like pen-on-paper.
-    if (this.scene.theme === 'excalidraw') {
-      this.currentStyle.stroke = '#1e1e1e';
-      this.currentStyle.textColor = '#1e1e1e';
-      this.currentStyle.fontFamily = 'hand';
-    }
+    this._applyThemeInkDefaults();
     this._lastSaveInfo = null; // { backend, at, bytes } from last successful save
     this.nextStampNumber = 1;
     this.hoveredElement = null;
@@ -231,6 +230,7 @@ export class WhiteboardApp {
     this.connectorTool = new ConnectorTool(this);
     this.textTool = new TextTool(this);
     this.laserTool = new LaserTool(this);
+    this.laserTool.color = this.workspacePrefs.laserColor || '#ef4444';
     this.stampTool = new StampTool(this);
     this.mathTool = new MathOverlayTool(this);
     this.classroomTool = new ClassroomTool(this);
@@ -951,6 +951,7 @@ export class WhiteboardApp {
       // prefs may not be saved yet
     }
     this.haptic?.('light');
+    this.requestRender();
     this.dialogs.showToast(`Laser color: ${color}`, 'info');
   }
 
@@ -1021,6 +1022,70 @@ export class WhiteboardApp {
     this.updateUI();
     this.requestRender();
     this.dialogs.showToast(`Duplicated "${src.name}" with ${templateType} template.`, 'success');
+  }
+
+  openLaserColorPicker() {
+    const colors = [
+      ['#ef4444', 'Red'], ['#22c55e', 'Green'], ['#3b82f6', 'Blue'],
+      ['#eab308', 'Yellow'], ['#a855f7', 'Purple'], ['#ffffff', 'White'],
+    ];
+    this.dialogs.openHtml(
+      'Laser Pointer Color',
+      `<p class="wb-muted">Choose a laser color (applies to new trail segments):</p>
+       <div class="wb-btn-group" style="flex-wrap:wrap;gap:8px;">
+         ${colors.map(([hex, name]) => `
+           <button type="button" class="wb-btn wb-sm" data-laser-color="${hex}"
+             style="border-left:6px solid ${hex};">${name}</button>`).join('')}
+       </div>`,
+      (box) => {
+        box.querySelectorAll('[data-laser-color]').forEach((b) => {
+          b.addEventListener('click', () => {
+            this.setLaserColor(b.dataset.laserColor);
+            this.dialogs.close();
+          });
+        });
+      }
+    );
+  }
+
+  openSpotlightPicker() {
+    const sizes = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['xlarge', 'Extra Large']];
+    this.dialogs.openHtml(
+      'Spotlight Size',
+      `<p class="wb-muted">Choose a spotlight lens size:</p>
+       <div class="wb-btn-group" style="flex-wrap:wrap;gap:8px;">
+         ${sizes.map(([id, name]) => `<button type="button" class="wb-btn wb-sm" data-spot-size="${id}">${name}</button>`).join('')}
+       </div>`,
+      (box) => {
+        box.querySelectorAll('[data-spot-size]').forEach((b) => {
+          b.addEventListener('click', () => {
+            this.setSpotlightSizePreset(b.dataset.spotSize);
+            this.dialogs.close();
+          });
+        });
+      }
+    );
+  }
+
+  openDuplicatePagePicker() {
+    this.dialogs.openHtml(
+      'Duplicate Page with Template',
+      `<p class="wb-muted">Duplicate the current page and add a starter template:</p>
+       <div class="wb-btn-group" style="flex-wrap:wrap;gap:8px;">
+         <button type="button" class="wb-btn wb-sm" data-dup-tpl="notes">📝 Notes</button>
+         <button type="button" class="wb-btn wb-sm" data-dup-tpl="discussion">💬 Discussion</button>
+         <button type="button" class="wb-btn wb-sm" data-dup-tpl="answers">✅ Answers</button>
+       </div>`,
+      (box) => {
+        box.querySelectorAll('[data-dup-tpl]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const page = this.getPage();
+            this.dialogs.close();
+            this.duplicatePageWithTemplate(page.id, b.dataset.dupTpl);
+          });
+        });
+      }
+    );
   }
 
   // ── Teaching Efficiency: Export Lesson Handout (PDF) ─────────────────
@@ -1248,6 +1313,7 @@ export class WhiteboardApp {
       marqueeBox: this.marqueeBox,
       tableSelection: this.tableSelection,
       laserTrail: activeTrail,
+      laserColor: this.laserTool?.color || this.workspacePrefs.laserColor || '#ef4444',
       studentPointers: this.studentPointers,
       classroomPointers: this.studentPointers,
       spotlight: this.spotlight,
@@ -2667,7 +2733,18 @@ export class WhiteboardApp {
   }
 
   _initTheme() {
-    document.documentElement.setAttribute('data-theme', this.scene.theme || 'light');
+    document.documentElement.setAttribute('data-theme', this.scene.theme || 'excalidraw');
+    this._applyThemeInkDefaults();
+  }
+
+  // Excalidraw-style ink defaults: near-black pen, hand font, and the built-in
+  // deterministic "sloppy" (double-stroke, wobbly edge) renderer for shapes.
+  _applyThemeInkDefaults() {
+    const excalidraw = this.scene?.theme === 'excalidraw';
+    this.currentStyle.stroke = excalidraw ? '#1e1e1e' : DEFAULT_STYLE.stroke;
+    this.currentStyle.textColor = excalidraw ? '#1e1e1e' : DEFAULT_STYLE.textColor;
+    this.currentStyle.fontFamily = excalidraw ? 'hand' : DEFAULT_STYLE.fontFamily;
+    this.currentStyle.sloppy = excalidraw;
   }
 
   cycleTheme() {
@@ -2675,9 +2752,11 @@ export class WhiteboardApp {
     const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
     this.scene.theme = next;
     document.documentElement.setAttribute('data-theme', next);
+    this._applyThemeInkDefaults();
     saveThemePreference(next);
     this.scheduleAutosave(this.scene);
     this.requestRender();
+    this.dialogs?.showToast(`Theme: ${next === 'excalidraw' ? 'Excalidraw' : next[0].toUpperCase() + next.slice(1)}`, 'info');
   }
 
   toggleTheme() {
@@ -2797,6 +2876,7 @@ export class WhiteboardApp {
         .replace(/[^a-z0-9-_]+/g, '-');
       this.downloadBlob(blob, `${safeName}.whiteboard.json`);
       addRecentBoard(this.scene);
+      saveRecentBoard(this.scene);
     } catch (err) {
       this.dialogs.showToast(`Save aborted: ${err.message}`);
     }

@@ -8,6 +8,8 @@ import {
   parseSceneJson,
 } from '../scene/storage.js';
 import { renderUrlQrSvg } from './qr.js';
+import { formatVersionTime } from '../scene/version-history.js';
+import { listRecentBoards, restoreRecentBoard, deleteRecentBoard } from '../scene/indexeddb-backup.js';
 import { autoGrowShapeForText, createElement } from '../scene/model.js';
 import { pasteTsvIntoTable, replaceTsvIntoTable, fitTable, ensureCellGrid } from '../scene/table.js';
 import { TOOL_REGISTRY, SHORTCUT_REFERENCE, formatShortcut } from './registry.js';
@@ -828,6 +830,140 @@ export function initDialogs(app) {
     renderSnapshots();
   }
 
+  function openVersionHistoryModal() {
+    const history = app.versionHistory;
+    const renderVersions = () => {
+      const versions = history.list();
+      openHtml(
+        'Version History',
+        `
+          <p class="wb-muted">Automatic snapshots of your board. Restore any earlier version, or save one now.</p>
+          <div class="wb-modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
+            <button type="button" class="wb-btn wb-primary" id="btn-save-version">+ Save Version Now</button>
+          </div>
+          <div class="wb-timeline-list">
+            ${
+              versions.length === 0
+                ? `<div class="wb-muted">No versions saved yet. They are created automatically as you work.</div>`
+                : versions
+                    .map((v, idx) => {
+                      let pageCount = 0;
+                      let elementCount = 0;
+                      try {
+                        const parsed = JSON.parse(v.sceneJson);
+                        pageCount = (parsed.pages || []).length;
+                        elementCount = (parsed.pages || []).reduce((a, p) => a + (p.elements?.length || 0), 0);
+                      } catch { /* ignore */ }
+                      return `
+                        <div class="wb-timeline-row">
+                          <div>
+                            <strong>${escapeXml(v.label)}</strong>
+                            <div class="wb-muted">${formatVersionTime(v.timestamp)} · ${pageCount} page(s) · ${elementCount} objects</div>
+                          </div>
+                          <div class="wb-btn-group">
+                            <button type="button" class="wb-btn wb-sm wb-primary" data-restore-version="${escapeXml(v.id)}">Restore</button>
+                            <button type="button" class="wb-btn wb-sm" data-delete-version="${escapeXml(v.id)}" aria-label="Delete version">✕</button>
+                          </div>
+                        </div>`;
+                    })
+                    .join('')
+            }
+          </div>
+        `,
+        (modal) => {
+          modal.querySelector('#btn-save-version')?.addEventListener('click', () => {
+            history.save(app.scene, { label: `Manual version ${new Date().toLocaleString()}`, force: true });
+            showToast('Version saved.', 'success');
+            renderVersions();
+          });
+          modal.querySelectorAll('[data-restore-version]').forEach((b) => {
+            b.addEventListener('click', () => {
+              const restored = history.restore(b.dataset.restoreVersion);
+              if (restored) {
+                saveRecoverySnapshot(app.scene, 'Before Version Restore');
+                app.scene = parseSceneJson(JSON.stringify(restored));
+                for (const p of app.scene.pages) app.history.initPage(p);
+                app.selectedIds.clear();
+                app.scheduleAutosave(app.scene);
+                app._initTheme && app._initTheme();
+                app.collab?.broadcastSceneChange();
+                app.updateUI();
+                app.requestRender();
+                close();
+                showToast('Restored earlier version.', 'success');
+              }
+            });
+          });
+          modal.querySelectorAll('[data-delete-version]').forEach((b) => {
+            b.addEventListener('click', () => {
+              history.delete(b.dataset.deleteVersion);
+              renderVersions();
+            });
+          });
+        }
+      );
+    };
+    renderVersions();
+  }
+
+  async function openRecentBoardsModal() {
+    const render = async () => {
+      const boards = await listRecentBoards();
+      openHtml(
+        'Recent Boards',
+        `
+          <p class="wb-muted">Boards you saved recently. Opening a board replaces the current one — a checkpoint is saved first.</p>
+          <div class="wb-timeline-list">
+            ${
+              boards.length === 0
+                ? `<div class="wb-muted">No recent boards yet. Use Board → Save Board to add one.</div>`
+                : boards
+                    .map((b) => `
+                      <div class="wb-timeline-row">
+                        <div>
+                          <strong>${escapeXml(b.title)}</strong>
+                          <div class="wb-muted">${formatVersionTime(b.updatedAt)} · ${b.pageCount} page(s) · ${b.elementCount} objects</div>
+                        </div>
+                        <div class="wb-btn-group">
+                          <button type="button" class="wb-btn wb-sm wb-primary" data-open-recent="${escapeXml(b.id)}">Open</button>
+                          <button type="button" class="wb-btn wb-sm" data-del-recent="${escapeXml(b.id)}" aria-label="Remove">✕</button>
+                        </div>
+                      </div>`)
+                    .join('')
+            }
+          </div>
+        `,
+        (modal) => {
+          modal.querySelectorAll('[data-open-recent]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const board = await restoreRecentBoard(btn.dataset.openRecent);
+              if (board) {
+                saveRecoverySnapshot(app.scene, 'Before Open Recent Board');
+                app.scene = parseSceneJson(JSON.stringify(board));
+                for (const p of app.scene.pages) app.history.initPage(p);
+                app.selectedIds.clear();
+                app.scheduleAutosave(app.scene);
+                app._initTheme && app._initTheme();
+                app.collab?.broadcastSceneChange();
+                app.updateUI();
+                app.requestRender();
+                close();
+                showToast(`Opened "${board.title}".`, 'success');
+              }
+            });
+          });
+          modal.querySelectorAll('[data-del-recent]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              await deleteRecentBoard(btn.dataset.delRecent);
+              render();
+            });
+          });
+        }
+      );
+    };
+    render();
+  }
+
   function openHyperlinkModal() {
     const selected = app.getSelectedElements();
     if (selected.length === 0) return;
@@ -1382,6 +1518,8 @@ export function initDialogs(app) {
     openShareModal: openShareUrlModal,
     openRevealTimelineModal,
     openRecoveryModal,
+    openVersionHistoryModal,
+    openRecentBoardsModal,
     openHyperlinkModal,
     openPromptModal,
     openConfirmModal,

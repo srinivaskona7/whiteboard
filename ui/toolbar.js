@@ -982,6 +982,11 @@ export function initToolbar(app) {
             <span>Radius ${Math.round(app.spotlight.radius)}px</span>
             <input type="range" id="spot-radius-slider" min="60" max="280" value="${Math.round(app.spotlight.radius)}" aria-label="Spotlight Radius"/>
           </label>
+          <div class="wb-btn-group" role="group" aria-label="Spotlight size presets">
+            ${[['small', 'S'], ['medium', 'M'], ['large', 'L']]
+              .map(([id, label]) => `<button type="button" class="wb-btn wb-sm" data-spot-preset="${id}" title="${id} spotlight">${label}</button>`)
+              .join('')}
+          </div>
           <label class="wb-spot-slider" title="Backdrop Dimming">
             <span>Dim ${pct}%</span>
             <input type="range" id="spot-dim-slider" min="25" max="90" value="${pct}" aria-label="Spotlight Dimming"/>
@@ -1091,6 +1096,12 @@ export function initToolbar(app) {
     });
     modeBanner.querySelector('#spot-radius-slider')?.addEventListener('change', () => {
       app.broadcastSpotlight({ throttle: false });
+    });
+    modeBanner.querySelectorAll('[data-spot-preset]')?.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        app.setSpotlightSizePreset(btn.dataset.spotPreset);
+        renderModeBanner();
+      });
     });
     modeBanner.querySelector('#spot-dim-slider')?.addEventListener('input', (e) => {
       app.spotlight.dimOpacity = Number(e.target.value) / 100;

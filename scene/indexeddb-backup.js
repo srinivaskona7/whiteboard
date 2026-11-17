@@ -122,6 +122,97 @@ export async function clearBoardFromIDB() {
   }
 }
 
+// ── Recent boards (full scene snapshots, keyed "recent:<id>") ────────────
+
+const RECENT_PREFIX = 'recent:';
+const MAX_RECENT = 10;
+
+async function _allRecentRecords() {
+  const db = await _openDB();
+  const tx = db.transaction(BOARD_STORE, 'readonly');
+  return new Promise((resolve, reject) => {
+    const out = [];
+    const req = tx.objectStore(BOARD_STORE).openCursor();
+    req.onsuccess = (ev) => {
+      const cursor = ev.target.result;
+      if (cursor) {
+        if (typeof cursor.key === 'string' && cursor.key.startsWith(RECENT_PREFIX)) out.push(cursor.value);
+        cursor.continue();
+      } else resolve(out);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function saveRecentBoard(scene) {
+  try {
+    if (!scene) return null;
+    const db = await _openDB();
+    const id = `rb${Date.now()}`;
+    const json = JSON.stringify(scene);
+    const rec = {
+      key: RECENT_PREFIX + id,
+      id,
+      title: scene.title || 'Untitled Board',
+      sceneJson: json,
+      bytes: _byteLength(json),
+      updatedAt: Date.now(),
+      pageCount: scene.pages ? scene.pages.length : 0,
+      elementCount: scene.pages ? scene.pages.reduce((a, p) => a + (p.elements?.length || 0), 0) : 0,
+    };
+    const tx = db.transaction(BOARD_STORE, 'readwrite');
+    const store = tx.objectStore(BOARD_STORE);
+    store.put(rec);
+    await _txDone(tx);
+
+    // Enforce cap by deleting oldest recents.
+    const all = await _allRecentRecords();
+    if (all.length > MAX_RECENT) {
+      const oldest = all.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0)).slice(0, all.length - MAX_RECENT);
+      const tx2 = db.transaction(BOARD_STORE, 'readwrite');
+      for (const o of oldest) tx2.objectStore(BOARD_STORE).delete(o.key);
+      await _txDone(tx2);
+    }
+    return rec;
+  } catch {
+    return null;
+  }
+}
+
+export async function listRecentBoards() {
+  try {
+    const all = await _allRecentRecords();
+    return all
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .map(({ sceneJson, ...meta }) => meta);
+  } catch {
+    return [];
+  }
+}
+
+export async function restoreRecentBoard(id) {
+  try {
+    const db = await _openDB();
+    const tx = db.transaction(BOARD_STORE, 'readonly');
+    const rec = await _req(tx.objectStore(BOARD_STORE).get(RECENT_PREFIX + id));
+    return rec ? JSON.parse(rec.sceneJson) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteRecentBoard(id) {
+  try {
+    const db = await _openDB();
+    const tx = db.transaction(BOARD_STORE, 'readwrite');
+    tx.objectStore(BOARD_STORE).delete(RECENT_PREFIX + id);
+    await _txDone(tx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Checkpoint backups ──────────────────────────────────────────────────
 
 export async function listBackups() {
